@@ -1,5 +1,6 @@
 import arcade
 import os
+from multiprocessing import Process, Queue
 
 from ship import PlayerShip
 from waypoint import Waypoint
@@ -16,18 +17,31 @@ file_path = os.path.dirname(os.path.abspath(__file__))
 asset_folder = os.path.join(file_path, "assets")  # Make sure you have an 'assets' folder with the necessary images.
 
 
+def start_game(queue, player_image, ship_initial_position, player_num):
+    window = MyGame(queue, player_image, ship_initial_position, player_num)
+    arcade.run()
+
 class MyGame(arcade.Window):
-    def __init__(self):
+    def __init__(self, queue, player_image, ship_initial_position, player_num):
         super().__init__(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE)
 
-        # Sprite lists
+        self.queue = queue
         self.player_list = arcade.SpriteList()
 
-        # Set up the player
-        self.player = PlayerShip(os.path.join(asset_folder, "ship.png"), scale=0.5, max_speed=5, max_acceleration=.01)  # Add your ship image in 'assets' folder
-        self.player.center_x = SCREEN_WIDTH / 2
-        self.player.center_y = SCREEN_HEIGHT / 2
+        # Player setup
+        self.player = PlayerShip(player_image, scale=0.5, max_speed=5, max_acceleration=.01, player_num=player_num)
+        self.player.center_x, self.player.center_y = ship_initial_position
         self.player_list.append(self.player)
+
+        self.enemy_list = arcade.SpriteList()  # A new sprite list for enemy ships
+
+        # Assuming you are using a different image for the enemy ship, or you can use the player_image
+        enemy_image = os.path.join('assets', "ship1.png")  # make sure this file exists
+
+        # Create an enemy ship instance. It won't do anything until updated with real data.
+        self.enemy_ship = PlayerShip(enemy_image, scale=0.5, max_speed=5, max_acceleration=.01, player_num=player_num)  # Assuming 1 and 2 are the player numbers
+        self.enemy_list.append(self.enemy_ship)
+        
 
         # Background color
         arcade.set_background_color(arcade.color.BLACK)
@@ -35,6 +49,7 @@ class MyGame(arcade.Window):
     def on_draw(self):
         arcade.start_render()
         self.player_list.draw()
+        self.enemy_list.draw() 
 
         self.player.draw_trajectory()
 
@@ -43,7 +58,32 @@ class MyGame(arcade.Window):
             arcade.draw_circle_filled(waypoint.position[0], waypoint.position[1], 3, arcade.color.BLUE)
 
     def on_update(self, delta_time):
-        self.player.update()
+        self.player_list.update()
+
+        # Prepare data to send
+        data_to_send = {
+            'player_num': self.player.player_num,
+            'x': self.player.center_x,
+            'y': self.player.center_y,
+            'velocity_x': self.player.velocity_x,
+            'velocity_y': self.player.velocity_y
+        }
+
+        # Send data to the other game instance
+        self.queue.put(data_to_send)
+
+        # Check for new data from the other game instance
+        while not self.queue.empty():
+            # For now, we just read the data and do nothing with it. 
+            # Later, you could use this data to update your game state, display the enemy ship, calculate time lag, etc.
+            other_ship_data = self.queue.get()
+            if other_ship_data['player_num'] != self.player.player_num:  # Check if the data received is not from the same player
+                # Update the enemy ship's state with the new data
+                self.enemy_ship.update_from_data(other_ship_data)
+            
+        # Update the game state with the enemy ship's new position, velocity, etc.
+        self.enemy_list.update()
+
 
     def on_mouse_press(self, x, y, button, modifiers):
         if button == arcade.MOUSE_BUTTON_LEFT:
@@ -59,4 +99,25 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # Create a Queue to share data between game instances
+    queue = Queue()
+
+    # Define initial positions for the ships
+    ship1_initial_position = (SCREEN_WIDTH / 4, SCREEN_HEIGHT / 2)
+    ship2_initial_position = (3 * SCREEN_WIDTH / 4, SCREEN_HEIGHT / 2)
+
+    # Assets for the ships
+    ship1_image = os.path.join(asset_folder, "ship1.png")  # assume you have ship1.png and ship2.png in your assets folder
+    ship2_image = os.path.join(asset_folder, "ship2.png")
+
+    # Create two game processes
+    game1 = Process(target=start_game, args=(queue, ship1_image, ship1_initial_position, 1))
+    game2 = Process(target=start_game, args=(queue, ship2_image, ship2_initial_position, 2))
+
+    # Start the games
+    game1.start()
+    game2.start()
+
+    # Join the games, so the main thread waits for these processes to complete
+    game1.join()
+    game2.join()
