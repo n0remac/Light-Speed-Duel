@@ -2,8 +2,9 @@ import math
 import arcade
 
 class PlayerShip(arcade.Sprite):
-    def __init__(self, image, scale, max_speed, max_acceleration):
+    def __init__(self, image, scale, max_speed, max_acceleration, player_num):
         super().__init__(image, scale)
+        self.player_num = player_num
         self.max_speed = max_speed
         self.max_acceleration = max_acceleration
         self.velocity_x = 0
@@ -11,6 +12,7 @@ class PlayerShip(arcade.Sprite):
         self.angle_speed = 100  # Speed the ship rotates. Adjust as needed.
 
         self.waypoints = []
+
 
     def update(self):
         if self.waypoints:
@@ -87,3 +89,9 @@ class PlayerShip(arcade.Sprite):
             next_point = waypoint.position
             arcade.draw_line(previous_point[0], previous_point[1], next_point[0], next_point[1], arcade.color.WHITE, 2)
             previous_point = next_point
+    
+    def update_from_data(self, data):
+        self.center_x = data['x']
+        self.center_y = data['y']
+        self.velocity_x = data['velocity_x']
+        self.velocity_y = data['velocity_y']
