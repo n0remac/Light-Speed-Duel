@@ -59,30 +59,11 @@ class MyGame(arcade.Window):
 
     def on_update(self, delta_time):
         self.player_list.update()
-
-        # Prepare data to send
-        data_to_send = {
-            'player_num': self.player.player_num,
-            'x': self.player.center_x,
-            'y': self.player.center_y,
-            'velocity_x': self.player.velocity_x,
-            'velocity_y': self.player.velocity_y
-        }
-
-        # Send data to the other game instance
-        self.queue.put(data_to_send)
-
-        # Check for new data from the other game instance
-        while not self.queue.empty():
-            # For now, we just read the data and do nothing with it. 
-            # Later, you could use this data to update your game state, display the enemy ship, calculate time lag, etc.
-            other_ship_data = self.queue.get()
-            if other_ship_data['player_num'] != self.player.player_num:  # Check if the data received is not from the same player
-                # Update the enemy ship's state with the new data
-                self.enemy_ship.update_from_data(other_ship_data)
             
         # Update the game state with the enemy ship's new position, velocity, etc.
-        self.enemy_list.update()
+        # self.enemy_list.update()
+
+        self.player.update_enemy_position(self.enemy_ship, queue)
 
 
     def on_mouse_press(self, x, y, button, modifiers):

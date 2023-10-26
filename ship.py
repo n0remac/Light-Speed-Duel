@@ -1,5 +1,9 @@
 import math
+import time
 import arcade
+from multiprocessing import Queue
+from collections import deque
+
 
 class PlayerShip(arcade.Sprite):
     def __init__(self, image, scale, max_speed, max_acceleration, player_num):
@@ -12,6 +16,8 @@ class PlayerShip(arcade.Sprite):
         self.angle_speed = 100  # Speed the ship rotates. Adjust as needed.
 
         self.waypoints = []
+
+        self.enemy_queue = deque()
 
 
     def update(self):
@@ -95,3 +101,47 @@ class PlayerShip(arcade.Sprite):
         self.center_y = data['y']
         self.velocity_x = data['velocity_x']
         self.velocity_y = data['velocity_y']
+
+    def calculate_distance_to(self, other_ship):
+        """
+        Calculate the Euclidean distance to another ship.
+        """
+        distance = math.sqrt((other_ship.center_x - self.center_x) ** 2 + 
+                             (other_ship.center_y - self.center_y) ** 2)
+        return distance
+    
+    def calculate_light_speed_delay(self, distance):
+        c = 100    # Time delay in seconds
+        time_delay = distance / c
+        return time_delay
+    
+
+    def update_enemy_position(self, enemy_ship, queue: Queue):
+        distance = self.calculate_distance_to(enemy_ship)
+        time_delay = self.calculate_light_speed_delay(distance)
+
+        current_time = time.time()
+
+        # Prepare data to send
+        data_to_send = {
+            'player_num': self.player_num,
+            'x': self.center_x,
+            'y': self.center_y,
+            'velocity_x': self.velocity_x,
+            'velocity_y': self.velocity_y,
+            'timestamp': time.time(),
+        }
+
+        # Send data to the other game instance
+        queue.put(data_to_send)
+
+        # Check for new data from the other game instance
+        while not queue.empty():
+            other_ship_data = queue.get()
+
+            if other_ship_data['player_num'] != self.player_num:  # Check if the data received is not from the same player
+                # Update the enemy ship's state with the new data
+                self.enemy_queue.append(other_ship_data)
+                
+                if self.enemy_queue[0]['timestamp'] < current_time - time_delay:
+                    enemy_ship.update_from_data(self.enemy_queue.popleft())
