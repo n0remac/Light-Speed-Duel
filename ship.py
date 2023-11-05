@@ -97,10 +97,11 @@ class PlayerShip(arcade.Sprite):
             previous_point = next_point
     
     def update_from_data(self, data):
+        print(data['time_delay'])
         self.center_x = data['x']
         self.center_y = data['y']
-        self.velocity_x = data['velocity_x']
-        self.velocity_y = data['velocity_y']
+        # self.velocity_x = data['velocity_x']
+        # self.velocity_y = data['velocity_y']
 
     def calculate_distance_to(self, other_ship):
         """
@@ -116,7 +117,7 @@ class PlayerShip(arcade.Sprite):
         return time_delay
     
 
-    def update_enemy_position(self, enemy_ship, queue: Queue):
+    def update_enemy_position(self, enemy_ship, enemy_time_delay_ship,  queue: Queue):
         distance = self.calculate_distance_to(enemy_ship)
         time_delay = self.calculate_light_speed_delay(distance)
 
@@ -130,6 +131,8 @@ class PlayerShip(arcade.Sprite):
             'velocity_x': self.velocity_x,
             'velocity_y': self.velocity_y,
             'timestamp': time.time(),
+            'distance': distance,
+            'time_delay': time_delay,
         }
 
         # Send data to the other game instance
@@ -142,6 +145,6 @@ class PlayerShip(arcade.Sprite):
             if other_ship_data['player_num'] != self.player_num:  # Check if the data received is not from the same player
                 # Update the enemy ship's state with the new data
                 self.enemy_queue.append(other_ship_data)
-                
+                # enemy_ship.update_from_data(other_ship_data)
                 if self.enemy_queue[0]['timestamp'] < current_time - time_delay:
                     enemy_ship.update_from_data(self.enemy_queue.popleft())

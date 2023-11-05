@@ -38,8 +38,9 @@ class MyGame(arcade.Window):
         # Assuming you are using a different image for the enemy ship, or you can use the player_image
         enemy_image = os.path.join('assets', "ship1.png")  # make sure this file exists
 
-        # Create an enemy ship instance. It won't do anything until updated with real data.
         self.enemy_ship = PlayerShip(enemy_image, scale=0.5, max_speed=5, max_acceleration=.01, player_num=player_num)  # Assuming 1 and 2 are the player numbers
+        self.enemy_time_delay_ship = PlayerShip(enemy_image, scale=0.5, max_speed=5, max_acceleration=.01, player_num=player_num)  # Assuming 1 and 2 are the player numbers
+        
         self.enemy_list.append(self.enemy_ship)
         
 
@@ -63,7 +64,7 @@ class MyGame(arcade.Window):
         # Update the game state with the enemy ship's new position, velocity, etc.
         # self.enemy_list.update()
 
-        self.player.update_enemy_position(self.enemy_ship, queue)
+        self.player.update_enemy_position(self.enemy_ship, self.enemy_time_delay_ship, self.queue)
 
 
     def on_mouse_press(self, x, y, button, modifiers):
