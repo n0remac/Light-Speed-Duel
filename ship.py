@@ -6,7 +6,7 @@ from collections import deque
 
 
 class PlayerShip(arcade.Sprite):
-    def __init__(self, image, scale, max_speed, max_acceleration, player_num):
+    def __init__(self, queue, image, scale, max_speed, max_acceleration, player_num):
         super().__init__(image, scale)
         self.player_num = player_num
         self.max_speed = max_speed
@@ -15,71 +15,76 @@ class PlayerShip(arcade.Sprite):
         self.velocity_y = 0
         self.angle_speed = 100  # Speed the ship rotates. Adjust as needed.
 
+        self.enemy_queue = queue
+
         self.waypoints = []
 
-        self.enemy_queue = deque()
+        self.enemy_updates = deque()
 
 
     def update(self):
-        if self.waypoints:
-            # If there are waypoints, set the first one as the current target.
-            target = self.waypoints[0].position
-
-            # Calculate the desired angle.
-            start_x, start_y = self.position
-            target_x, target_y = target
-            desired_angle_rad = math.atan2(target_y - start_y, target_x - start_x)
-            desired_angle_deg = math.degrees(desired_angle_rad)
-
-            # Calculate the difference in angles and adjust the ship's angle.
-            delta_angle = desired_angle_deg - self.angle
-            while delta_angle > 180:
-                delta_angle -= 360
-            while delta_angle < -180:
-                delta_angle += 360
-
-            if abs(delta_angle) < self.angle_speed:
-                self.angle = desired_angle_deg
-            elif delta_angle > 0:
-                self.angle += self.angle_speed
-            else:
-                self.angle -= self.angle_speed
-
-            # Recalculate the angle after potential correction.
-            new_angle_rad = math.radians(self.angle)
-
-            # Calculate the distance to the next waypoint.
-            distance = arcade.get_distance(self.center_x, self.center_y, target_x, target_y)
-
-            # Manage acceleration and deceleration.
-            if distance > 10:  # Accelerate if far from the waypoint.
-                # Accelerate in the direction the ship is facing.
-                self.velocity_x += math.cos(new_angle_rad) * self.max_acceleration
-                self.velocity_y += math.sin(new_angle_rad) * self.max_acceleration
-
-                # Clamp at max speed.
-                speed = math.sqrt(self.velocity_x ** 2 + self.velocity_y ** 2)
-                if speed > self.max_speed:
-                    scale = self.max_speed // speed
-                    self.velocity_x *= scale
-                    self.velocity_y *= scale
-
-            else:  # Decelerate if close to the waypoint.
-                deceleration_vector = (-self.velocity_x, -self.velocity_y)
-                self.velocity_x += deceleration_vector[0] * self.max_acceleration // 2
-                self.velocity_y += deceleration_vector[1] * self.max_acceleration // 2
-
-            # Move the ship.
-            self.center_x += self.velocity_x
-            self.center_y += self.velocity_y
-
-            # Remove the waypoint if it's reached.
-            if distance < 10:  # This tolerance can be adjusted.
-                self.waypoints.pop(0)
-                self.velocity_x = 0  # Reset the velocity to avoid drifting.
-                self.velocity_y = 0
-
         super().update()  # Call the parent class update method.
+
+        if not self.waypoints:
+            return
+    
+        # If there are waypoints, set the first one as the current target.
+        target = self.waypoints[0].position
+
+        # Calculate the desired angle.
+        start_x, start_y = self.position
+        target_x, target_y = target
+        desired_angle_rad = math.atan2(target_y - start_y, target_x - start_x)
+        desired_angle_deg = math.degrees(desired_angle_rad)
+
+        # Calculate the difference in angles and adjust the ship's angle.
+        delta_angle = desired_angle_deg - self.angle
+        while delta_angle > 180:
+            delta_angle -= 360
+        while delta_angle < -180:
+            delta_angle += 360
+
+        if abs(delta_angle) < self.angle_speed:
+            self.angle = desired_angle_deg
+        elif delta_angle > 0:
+            self.angle += self.angle_speed
+        else:
+            self.angle -= self.angle_speed
+
+        # Recalculate the angle after potential correction.
+        new_angle_rad = math.radians(self.angle)
+
+        # Calculate the distance to the next waypoint.
+        distance = arcade.get_distance(self.center_x, self.center_y, target_x, target_y)
+
+        # Manage acceleration and deceleration.
+        if distance > 10:  # Accelerate if far from the waypoint.
+            # Accelerate in the direction the ship is facing.
+            self.velocity_x += math.cos(new_angle_rad) * self.max_acceleration
+            self.velocity_y += math.sin(new_angle_rad) * self.max_acceleration
+
+            # Clamp at max speed.
+            speed = math.sqrt(self.velocity_x ** 2 + self.velocity_y ** 2)
+            if speed > self.max_speed:
+                scale = self.max_speed // speed
+                self.velocity_x *= scale
+                self.velocity_y *= scale
+
+        else:  # Decelerate if close to the waypoint.
+            deceleration_vector = (-self.velocity_x, -self.velocity_y)
+            self.velocity_x += deceleration_vector[0] * self.max_acceleration // 2
+            self.velocity_y += deceleration_vector[1] * self.max_acceleration // 2
+
+        # Move the ship.
+        self.center_x += self.velocity_x
+        self.center_y += self.velocity_y
+
+        # Remove the waypoint if it's reached.
+        if distance < 10:  # This tolerance can be adjusted.
+            self.waypoints.pop(0)
+            # Reset the velocity to avoid drifting.
+            self.velocity_x = 0  
+            self.velocity_y = 0
 
     def draw_trajectory(self):
         current_x, current_y = self.position
@@ -112,12 +117,12 @@ class PlayerShip(arcade.Sprite):
         return distance
     
     def calculate_light_speed_delay(self, distance):
-        c = 100    # Time delay in seconds
+        c = 100    # Speed of light?
         time_delay = distance / c
         return time_delay
     
-
-    def update_enemy_position(self, enemy_ship, enemy_time_delay_ship,  queue: Queue):
+    # def update_enemy_position(self, enemy_ship, enemy_time_delay_ship,  queue: Queue):
+    def update_enemy_position(self, enemy_ship):
         distance = self.calculate_distance_to(enemy_ship)
         time_delay = self.calculate_light_speed_delay(distance)
 
@@ -125,7 +130,6 @@ class PlayerShip(arcade.Sprite):
 
         # Prepare data to send
         data_to_send = {
-            'player_num': self.player_num,
             'x': self.center_x,
             'y': self.center_y,
             'velocity_x': self.velocity_x,
@@ -136,15 +140,15 @@ class PlayerShip(arcade.Sprite):
         }
 
         # Send data to the other game instance
-        queue.put(data_to_send)
-
+        self.enemy_queue.put(data_to_send)
+        # queue.put(data_to_send)
+        
         # Check for new data from the other game instance
-        while not queue.empty():
-            other_ship_data = queue.get()
+        while not self.enemy_queue.empty():
+            other_ship_data = self.enemy_queue.get()
 
-            if other_ship_data['player_num'] != self.player_num:  # Check if the data received is not from the same player
-                # Update the enemy ship's state with the new data
-                self.enemy_queue.append(other_ship_data)
-                # enemy_ship.update_from_data(other_ship_data)
-                if self.enemy_queue[0]['timestamp'] < current_time - time_delay:
-                    enemy_ship.update_from_data(self.enemy_queue.popleft())
+            # Update the enemy ship's state with the new data
+            self.enemy_updates.append(other_ship_data)
+            enemy_ship.update_from_data(other_ship_data)
+            # if self.enemy_updates[0]['timestamp'] < current_time - time_delay:
+            #     enemy_ship.update_from_data(self.enemy_updates.popleft())
