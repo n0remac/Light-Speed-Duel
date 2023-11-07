@@ -1,6 +1,9 @@
 import arcade
 import os
+import math
+import time
 from multiprocessing import Process, Queue
+from collections import deque
 
 from ship import PlayerShip
 from waypoint import Waypoint
@@ -27,32 +30,27 @@ class MyGame(arcade.Window):
 
         self.player_list = arcade.SpriteList()
 
+        self.queue1 = queue1
+        self.queue2 = queue2
+
+        self.time_delay_queue = deque()
+
         # Player setup
         if player_num == 1:
-            self.player1 = PlayerShip(queue1, player1_image, scale=0.5, max_speed=5, max_acceleration=.01, player_num=player_num)
+            self.player1 = PlayerShip(player1_image, scale=0.5, max_speed=5, max_acceleration=.01, player_num=player_num)
             self.player1.center_x, self.player1.center_y = ship1_initial_position
             
-            self.player2 = PlayerShip(queue1, player1_image, scale=0.5, max_speed=5, max_acceleration=.01, player_num=player_num)
+            self.player2 = PlayerShip(player2_image, scale=0.5, max_speed=5, max_acceleration=.01, player_num=player_num)
             self.player2.center_x, self.player2.center_y = ship2_initial_position
         else:
-            self.player1 = PlayerShip(queue2, player2_image, scale=0.5, max_speed=5, max_acceleration=.01, player_num=player_num)
+            self.player1 = PlayerShip(player1_image, scale=0.5, max_speed=5, max_acceleration=.01, player_num=player_num)
             self.player1.center_x, self.player1.center_y = ship2_initial_position
 
-            self.player2 = PlayerShip(queue2, player2_image, scale=0.5, max_speed=5, max_acceleration=.01, player_num=player_num)
+            self.player2 = PlayerShip(player2_image, scale=0.5, max_speed=5, max_acceleration=.01, player_num=player_num)
             self.player2.center_x, self.player2.center_y = ship1_initial_position
         
         self.player_list.append(self.player1)
         self.player_list.append(self.player2)
-
-        # self.enemy_list = arcade.SpriteList()  # A new sprite list for enemy ships
-
-        # if player_num == 1:
-        #     self.enemy_ship = PlayerShip(queue1, player1_image, scale=0.5, max_speed=5, max_acceleration=.01, player_num=player_num)
-        # else:
-        #     self.enemy_ship = PlayerShip(queue2, player2_image, scale=0.5, max_speed=5, max_acceleration=.01, player_num=player_num)
-        
-        # self.enemy_list.append(self.enemy_ship)
-        
 
         # Background color
         arcade.set_background_color(arcade.color.BLACK)
@@ -60,7 +58,6 @@ class MyGame(arcade.Window):
     def on_draw(self):
         arcade.start_render()
         self.player_list.draw()
-        # self.enemy_list.draw() 
 
         self.player1.draw_trajectory()
 
@@ -70,13 +67,52 @@ class MyGame(arcade.Window):
 
     def on_update(self, delta_time):
         self.player_list.update()
+        self.send_position_to_other_process(self.queue1)
+
+        while not self.queue2.empty():
+            # update the other player with the queue data
+            data = self.queue2.get()
+
+            self.time_delay_queue.append(data)
+
+            time_delay = self.time_delay_queue[0]['time_delay']
+            timestamp = self.time_delay_queue[0]['timestamp']
+            player2_x = self.time_delay_queue[0]['x']
+            player2_y = self.time_delay_queue[0]['y']
+            current_time = time.time()
+
+            print(self.player2.player_num, data['time_delay'])
             
-        # Update the game state with the enemy ship's new position, velocity, etc.
-        # self.enemy_list.update()
+            if (timestamp + time_delay) - current_time <= 0:
+                data = self.time_delay_queue.popleft()
+                
+                self.player2.center_x = data['x']
+                self.player2.center_y = data['y']
 
-        # self.player.update_enemy_position(self.enemy_ship, self.enemy_time_delay_ship, self.queue)
-        # self.player1.update_enemy_position(self.player2)
+            
+            #     data = self.time_delay_queue.popleft()
 
+            
+        
+    def send_position_to_other_process(self, queue):
+        distance = self.calculate_distance_between()
+        time_delay = self.calculate_light_speed_delay(distance)
+
+        # current_time = time.time()
+
+        # Prepare data to send
+        data_to_send = {
+            'x': self.player1.center_x,
+            'y': self.player1.center_y,
+            'velocity_x': self.player1.velocity_x,
+            'velocity_y': self.player1.velocity_y,
+            'distance': distance,
+            'time_delay': time_delay,
+            'timestamp': time.time(),
+        }
+
+        # Send data to the other game instance
+        queue.put(data_to_send)
 
     def on_mouse_press(self, x, y, button, modifiers):
         if button == arcade.MOUSE_BUTTON_LEFT:
@@ -84,6 +120,19 @@ class MyGame(arcade.Window):
             ship_position = (self.player1.center_x, self.player1.center_y)
             waypoint = Waypoint((x, y), ship_position)
             self.player1.waypoints.append(waypoint)
+
+    def calculate_distance_between(self):
+        """
+        Calculate the Euclidean distance between ships.
+        """
+        distance = math.sqrt((self.player1.center_x - self.player2.center_x) ** 2 + 
+                             (self.player1.center_y - self.player2.center_y) ** 2)
+        return distance
+    
+    def calculate_light_speed_delay(self, distance):
+        c = 100
+        time_delay = distance / c
+        return time_delay
 
 
 def main():
@@ -107,7 +156,7 @@ if __name__ == "__main__":
 
     # Create two game processes
     game1 = Process(target=start_game, args=(queue1, queue2, ship1_image, ship2_image, ship1_initial_position, ship2_initial_position, 1))
-    game2 = Process(target=start_game, args=(queue1, queue2, ship2_image, ship1_image, ship1_initial_position, ship2_initial_position, 2))
+    game2 = Process(target=start_game, args=(queue2, queue1, ship2_image, ship1_image, ship1_initial_position, ship2_initial_position, 2))
 
     # Start the games
     game1.start()

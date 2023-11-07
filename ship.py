@@ -1,26 +1,27 @@
 import math
-import time
 import arcade
-from multiprocessing import Queue
-from collections import deque
 
+class Ship(arcade.Sprite):
+    def __init__(self, image, scale):
+        super().__init__(image, scale)
+        self.velocity_x = 0
+        self.velocity_y = 0
+        self.angle_speed = 100
 
-class PlayerShip(arcade.Sprite):
-    def __init__(self, queue, image, scale, max_speed, max_acceleration, player_num):
+    def update(self):
+        super().update()
+
+class DelayedShip(Ship):
+    def __init__(self, image, scale):
+        super().__init__(image, scale)
+
+class PlayerShip(Ship):
+    def __init__(self, image, scale, max_speed, max_acceleration, player_num):
         super().__init__(image, scale)
         self.player_num = player_num
         self.max_speed = max_speed
         self.max_acceleration = max_acceleration
-        self.velocity_x = 0
-        self.velocity_y = 0
-        self.angle_speed = 100  # Speed the ship rotates. Adjust as needed.
-
-        self.enemy_queue = queue
-
         self.waypoints = []
-
-        self.enemy_updates = deque()
-
 
     def update(self):
         super().update()  # Call the parent class update method.
@@ -100,55 +101,3 @@ class PlayerShip(arcade.Sprite):
             next_point = waypoint.position
             arcade.draw_line(previous_point[0], previous_point[1], next_point[0], next_point[1], arcade.color.WHITE, 2)
             previous_point = next_point
-    
-    def update_from_data(self, data):
-        print(data['time_delay'])
-        self.center_x = data['x']
-        self.center_y = data['y']
-        # self.velocity_x = data['velocity_x']
-        # self.velocity_y = data['velocity_y']
-
-    def calculate_distance_to(self, other_ship):
-        """
-        Calculate the Euclidean distance to another ship.
-        """
-        distance = math.sqrt((other_ship.center_x - self.center_x) ** 2 + 
-                             (other_ship.center_y - self.center_y) ** 2)
-        return distance
-    
-    def calculate_light_speed_delay(self, distance):
-        c = 100    # Speed of light?
-        time_delay = distance / c
-        return time_delay
-    
-    # def update_enemy_position(self, enemy_ship, enemy_time_delay_ship,  queue: Queue):
-    def update_enemy_position(self, enemy_ship):
-        distance = self.calculate_distance_to(enemy_ship)
-        time_delay = self.calculate_light_speed_delay(distance)
-
-        current_time = time.time()
-
-        # Prepare data to send
-        data_to_send = {
-            'x': self.center_x,
-            'y': self.center_y,
-            'velocity_x': self.velocity_x,
-            'velocity_y': self.velocity_y,
-            'timestamp': time.time(),
-            'distance': distance,
-            'time_delay': time_delay,
-        }
-
-        # Send data to the other game instance
-        self.enemy_queue.put(data_to_send)
-        # queue.put(data_to_send)
-        
-        # Check for new data from the other game instance
-        while not self.enemy_queue.empty():
-            other_ship_data = self.enemy_queue.get()
-
-            # Update the enemy ship's state with the new data
-            self.enemy_updates.append(other_ship_data)
-            enemy_ship.update_from_data(other_ship_data)
-            # if self.enemy_updates[0]['timestamp'] < current_time - time_delay:
-            #     enemy_ship.update_from_data(self.enemy_updates.popleft())
