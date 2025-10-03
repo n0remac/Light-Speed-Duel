@@ -8,11 +8,29 @@
   const Tspan = document.getElementById("t");
   const Cspan = document.getElementById("c");
   const WHspan = document.getElementById("wh");
+  const HPspan = document.getElementById("ship-hp");
   const speedSlider = document.getElementById("speed-slider");
   const speedValue = document.getElementById("speed-value");
   const selectionPanel = document.getElementById("selection-panel");
   const selectionLabel = document.getElementById("selection-label");
   const deleteWaypointBtn = document.getElementById("delete-waypoint");
+  const routeToggle = document.getElementById("toggle-route");
+  const missileModeToggle = document.getElementById("toggle-missile-mode");
+  const missileSpeedSlider = document.getElementById("missile-speed");
+  const missileSpeedValue = document.getElementById("missile-speed-value");
+  const missileAccelSlider = document.getElementById("missile-accel");
+  const missileAccelValue = document.getElementById("missile-accel-value");
+  const missileAgroSlider = document.getElementById("missile-agro");
+  const missileAgroValue = document.getElementById("missile-agro-value");
+  const missileLifetimeValue = document.getElementById("missile-lifetime");
+  const launchMissileBtn = document.getElementById("launch-missile");
+  const clearMissileWaypointsBtn = document.getElementById("clear-missile-waypoints");
+
+  const MISSILE_MIN_SPEED = 40;
+  const MISSILE_MAX_SPEED = 250;
+  const MISSILE_MIN_ACCEL = 20;
+  const MISSILE_MAX_ACCEL = 240;
+  const MISSILE_MAX_LIFETIME = 120;
 
   let ws;
   function connect() {
@@ -28,8 +46,32 @@
           state.me.waypoints = Array.isArray(msg.me.waypoints) ? msg.me.waypoints : [];
         }
         state.ghosts = msg.ghosts || [];
+        state.missiles = Array.isArray(msg.missiles) ? msg.missiles : [];
+        state.missileWaypoints = Array.isArray(msg.missile_waypoints) ? msg.missile_waypoints : [];
+        if (msg.missile_config) {
+          const cfg = sanitizeMissileConfigJS({
+            speed: msg.missile_config.speed,
+            accel: msg.missile_config.accel,
+            agroRadius: msg.missile_config.agro_radius,
+          });
+          if (Number.isFinite(msg.missile_config.accel_limit)) {
+            cfg.accelLimit = msg.missile_config.accel_limit;
+          }
+          if (Number.isFinite(msg.missile_config.lifetime)) {
+            cfg.lifetime = msg.missile_config.lifetime;
+          }
+          state.missileConfig = cfg;
+          syncMissileUIFromState();
+        }
         Cspan.textContent = msg.meta?.c?.toFixed(0) ?? "–";
         WHspan.textContent = `${(msg.meta?.w ?? 0).toFixed(0)}×${(msg.meta?.h ?? 0).toFixed(0)}`;
+        if (HPspan) {
+          if (state.me && Number.isFinite(state.me.hp)) {
+            HPspan.textContent = Number(state.me.hp).toString();
+          } else {
+            HPspan.textContent = "–";
+          }
+        }
         refreshSelectionUI();
       }
     };
@@ -60,9 +102,30 @@
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     const canvasPoint = { x, y };
+    if (missileSetupMode) {
+      const wpWorld = canvasToWorld(canvasPoint);
+      ws?.send(
+        JSON.stringify({
+          type: "add_missile_waypoint",
+          x: wpWorld.x,
+          y: wpWorld.y,
+        })
+      );
+      state.missileWaypoints = [...state.missileWaypoints, { x: wpWorld.x, y: wpWorld.y }];
+      return;
+    }
     const hit = hitTestRoute(canvasPoint);
     if (hit) {
-      setSelection(hit);
+      if (
+        hit.type === "leg" &&
+        selection &&
+        selection.type === "leg" &&
+        selection.index === hit.index
+      ) {
+        setSelection(null);
+      } else {
+        setSelection(hit);
+      }
       return;
     }
     const wp = canvasToWorld(canvasPoint);
@@ -71,8 +134,12 @@
       const wps = Array.isArray(state.me.waypoints) ? state.me.waypoints.slice() : [];
       wps.push({ x: wp.x, y: wp.y, speed: defaultSpeed });
       state.me.waypoints = wps;
+      if (wps.length > 0) {
+        setSelection({ type: "leg", index: wps.length - 1 });
+        return;
+      }
     }
-    refreshSelectionUI();
+    setSelection(null);
   });
 
   speedSlider?.addEventListener("input", (e) => {
@@ -87,6 +154,13 @@
   });
 
   deleteWaypointBtn?.addEventListener("click", () => {
+    if (missileSetupMode) {
+      const count = state.missileWaypoints.length;
+      if (count === 0) return;
+      ws?.send(JSON.stringify({ type: "delete_missile_waypoint", index: count - 1 }));
+      state.missileWaypoints = state.missileWaypoints.slice(0, count - 1);
+      return;
+    }
     if (!selection) return;
     ws?.send(JSON.stringify({ type: "delete_waypoint", index: selection.index }));
     if (state.me && Array.isArray(state.me.waypoints)) {
@@ -95,14 +169,75 @@
     setSelection(null);
   });
 
+  routeToggle?.addEventListener("change", (e) => {
+    const checked = Boolean(e.target.checked);
+    showRouteLines = checked;
+    if (!checked) {
+      setSelection(null);
+    }
+  });
+
   const state = {
     now: 0,
     me: null,
     ghosts: [],
+    missiles: [],
+    missileWaypoints: [],
+    missileConfig: {
+      speed: 180,
+      accel: 120,
+      agroRadius: 800,
+      lifetime: missileLifetimeFor(180, 120),
+      accelLimit: missileAllowedAccelForSpeed(180),
+    },
   };
+
+  const legDashOffsets = new Map();
 
   let selection = null; // { type: "waypoint" | "leg", index: number }
   let defaultSpeed = parseFloat(speedSlider?.value || "150");
+  let showRouteLines = routeToggle ? routeToggle.checked : true;
+  let lastLoopTs = null;
+  let missileSetupMode = missileModeToggle ? missileModeToggle.checked : false;
+  let lastMissileConfigSent = null;
+
+  syncMissileUIFromState();
+
+  missileModeToggle?.addEventListener("change", (e) => {
+    missileSetupMode = Boolean(e.target.checked);
+    if (missileSetupMode) {
+      setSelection(null);
+      refreshSelectionUI();
+    }
+  });
+
+  missileSpeedSlider?.addEventListener("input", (e) => {
+    const value = parseFloat(e.target.value);
+    if (!Number.isFinite(value)) return;
+    updateMissileConfigFromUI({ speed: value });
+  });
+
+  missileAccelSlider?.addEventListener("input", (e) => {
+    const value = parseFloat(e.target.value);
+    if (!Number.isFinite(value)) return;
+    updateMissileConfigFromUI({ accel: value });
+  });
+
+  missileAgroSlider?.addEventListener("input", (e) => {
+    const value = parseFloat(e.target.value);
+    if (!Number.isFinite(value)) return;
+    updateMissileConfigFromUI({ agroRadius: value });
+  });
+
+  launchMissileBtn?.addEventListener("click", () => {
+    ws?.send(JSON.stringify({ type: "launch_missile" }));
+  });
+
+  clearMissileWaypointsBtn?.addEventListener("click", () => {
+    if (state.missileWaypoints.length === 0) return;
+    ws?.send(JSON.stringify({ type: "delete_missile_waypoint", index: 0 }));
+    state.missileWaypoints = [];
+  });
 
   function updateSpeedLabel(v) {
     speedValue.textContent = Number(v).toFixed(0);
@@ -124,6 +259,115 @@
     return Math.max(lo, Math.min(hi, v));
   }
 
+  function missileAllowedAccelForSpeed(speed) {
+    const span = MISSILE_MAX_SPEED - MISSILE_MIN_SPEED;
+    let sNorm = 0;
+    if (span > 0) {
+      sNorm = clamp((speed - MISSILE_MIN_SPEED) / span, 0, 1);
+    }
+    const curve = 1 - sNorm * sNorm * sNorm;
+    const accel = MISSILE_MIN_ACCEL + (MISSILE_MAX_ACCEL - MISSILE_MIN_ACCEL) * curve;
+    return clamp(accel, MISSILE_MIN_ACCEL, MISSILE_MAX_ACCEL);
+  }
+
+  function missileLifetimeFor(speed, accel) {
+    const allowed = missileAllowedAccelForSpeed(speed);
+    const accelNorm = allowed > 0 ? clamp(accel / allowed, 0, 1) : 0;
+    const span = MISSILE_MAX_SPEED - MISSILE_MIN_SPEED;
+    const speedNorm = span > 0 ? clamp((speed - MISSILE_MIN_SPEED) / span, 0, 1) : 0;
+    const base = 60 + (1 - speedNorm) * 40 + accelNorm * 20;
+    return clamp(base, 10, MISSILE_MAX_LIFETIME);
+  }
+
+  function sanitizeMissileConfigJS(cfg, fallback = state.missileConfig) {
+    const base = fallback || {};
+    const out = { ...cfg };
+    const speedSource = Number.isFinite(out.speed) ? out.speed : base.speed ?? MISSILE_MIN_SPEED;
+    out.speed = clamp(speedSource, MISSILE_MIN_SPEED, MISSILE_MAX_SPEED);
+    const allowed = missileAllowedAccelForSpeed(out.speed);
+    const accelSource = Number.isFinite(out.accel) ? out.accel : base.accel ?? MISSILE_MIN_ACCEL;
+    out.accel = clamp(accelSource, MISSILE_MIN_ACCEL, allowed);
+    const agroSource = Number.isFinite(out.agroRadius) ? out.agroRadius : base.agroRadius ?? 0;
+    out.agroRadius = Math.max(0, agroSource);
+    out.accelLimit = allowed;
+    out.lifetime = missileLifetimeFor(out.speed, out.accel);
+    return out;
+  }
+
+  function applyMissileUI(cfg) {
+    if (missileSpeedSlider) {
+      missileSpeedSlider.min = String(MISSILE_MIN_SPEED);
+      missileSpeedSlider.max = String(MISSILE_MAX_SPEED);
+      missileSpeedSlider.value = cfg.speed.toFixed(0);
+    }
+    if (missileSpeedValue) {
+      missileSpeedValue.textContent = cfg.speed.toFixed(0);
+    }
+    if (missileAccelSlider) {
+      missileAccelSlider.min = String(MISSILE_MIN_ACCEL);
+      missileAccelSlider.max = cfg.accelLimit.toFixed(0);
+      missileAccelSlider.value = cfg.accel.toFixed(0);
+    }
+    if (missileAccelValue) {
+      missileAccelValue.textContent = cfg.accel.toFixed(0);
+    }
+    if (missileAgroSlider) {
+      const maxAgro = Math.max(5000, Math.ceil((cfg.agroRadius + 500) / 500) * 500);
+      missileAgroSlider.max = String(maxAgro);
+      missileAgroSlider.value = cfg.agroRadius.toFixed(0);
+    }
+    if (missileAgroValue) {
+      missileAgroValue.textContent = cfg.agroRadius.toFixed(0);
+    }
+    if (missileLifetimeValue) {
+      missileLifetimeValue.textContent = cfg.lifetime.toFixed(1);
+    }
+  }
+
+  function syncMissileUIFromState() {
+    const cfg = state.missileConfig;
+    applyMissileUI(cfg);
+  }
+
+  function sendMissileConfig(cfg) {
+    lastMissileConfigSent = {
+      speed: cfg.speed,
+      accel: cfg.accel,
+      agroRadius: cfg.agroRadius,
+    };
+    ws?.send(
+      JSON.stringify({
+        type: "configure_missile",
+        missile_speed: cfg.speed,
+        missile_accel: cfg.accel,
+        missile_agro: cfg.agroRadius,
+      })
+    );
+  }
+
+  function updateMissileConfigFromUI(overrides = {}) {
+    const current = state.missileConfig;
+    const cfg = sanitizeMissileConfigJS({
+      speed: overrides.speed ?? current.speed,
+      accel: overrides.accel ?? current.accel,
+      agroRadius: overrides.agroRadius ?? current.agroRadius,
+    }, current);
+    state.missileConfig = cfg;
+    applyMissileUI(cfg);
+    const last = lastMissileConfigSent;
+    const needsSend =
+      !last ||
+      Math.abs(last.speed - cfg.speed) > 0.25 ||
+      Math.abs(last.accel - cfg.accel) > 0.25 ||
+      Math.abs((last.agroRadius ?? 0) - cfg.agroRadius) > 5;
+    if (needsSend) {
+      sendMissileConfig(cfg);
+    }
+    if (missileLifetimeValue) {
+      missileLifetimeValue.textContent = cfg.lifetime.toFixed(1);
+    }
+  }
+
   function computeRoutePoints() {
     if (!state.me) return null;
     const wps = Array.isArray(state.me.waypoints) ? state.me.waypoints : [];
@@ -133,6 +377,68 @@
     }
     const canvasPoints = worldPoints.map((p) => worldToCanvas(p));
     return { waypoints: wps, worldPoints, canvasPoints };
+  }
+
+  function computeMissileRoutePoints() {
+    if (!state.me) return null;
+    const wps = Array.isArray(state.missileWaypoints) ? state.missileWaypoints : [];
+    const worldPoints = [{ x: state.me.x, y: state.me.y }];
+    for (const wp of wps) {
+      worldPoints.push({ x: wp.x, y: wp.y });
+    }
+    const canvasPoints = worldPoints.map((p) => worldToCanvas(p));
+    return { waypoints: wps, worldPoints, canvasPoints };
+  }
+
+  function updateLegDashOffsets(dtSeconds) {
+    if (!showRouteLines || !state.me) {
+      legDashOffsets.clear();
+      return;
+    }
+    const route = computeRoutePoints();
+    if (!route || route.waypoints.length === 0) {
+      legDashOffsets.clear();
+      return;
+    }
+    const { waypoints, worldPoints, canvasPoints } = route;
+    const cycle = 64;
+    for (let i = 0; i < waypoints.length; i++) {
+      const wp = waypoints[i];
+      const speed = typeof wp.speed === "number" ? wp.speed : defaultSpeed;
+      const aWorld = worldPoints[i];
+      const bWorld = worldPoints[i + 1];
+      const worldDist = Math.hypot(bWorld.x - aWorld.x, bWorld.y - aWorld.y);
+      const aCanvas = canvasPoints[i];
+      const bCanvas = canvasPoints[i + 1];
+      const canvasDist = Math.hypot(bCanvas.x - aCanvas.x, bCanvas.y - aCanvas.y);
+
+      if (!Number.isFinite(speed) || speed <= 1e-3 || !Number.isFinite(worldDist) || worldDist <= 1e-3 || canvasDist <= 1e-3) {
+        legDashOffsets.set(i, 0);
+        continue;
+      }
+
+      if (!Number.isFinite(dtSeconds) || dtSeconds <= 0) {
+        if (!legDashOffsets.has(i)) {
+          legDashOffsets.set(i, 0);
+        }
+        continue;
+      }
+
+      const scale = canvasDist / worldDist;
+      const dashSpeed = speed * scale;
+      let next = (legDashOffsets.get(i) ?? 0) - dashSpeed * dtSeconds;
+      if (!Number.isFinite(next)) {
+        next = 0;
+      } else {
+        next = ((next % cycle) + cycle) % cycle;
+      }
+      legDashOffsets.set(i, next);
+    }
+    for (const key of Array.from(legDashOffsets.keys())) {
+      if (key >= waypoints.length) {
+        legDashOffsets.delete(key);
+      }
+    }
   }
 
   function pointSegmentDistance(p, a, b) {
@@ -151,6 +457,10 @@
 
   function refreshSelectionUI() {
     if (!selectionPanel) return;
+    if (missileSetupMode) {
+      selectionPanel.style.display = "none";
+      return;
+    }
     const wps = state.me && Array.isArray(state.me.waypoints) ? state.me.waypoints : [];
     if (!selection || !state.me || selection.index < 0 || selection.index >= wps.length) {
       selection = null;
@@ -176,6 +486,9 @@
   }
 
   function hitTestRoute(canvasPoint) {
+    if (missileSetupMode) {
+      return null;
+    }
     const route = computeRoutePoints();
     if (!route || route.waypoints.length === 0) {
       return null;
@@ -189,6 +502,9 @@
       if (Math.hypot(dx, dy) <= waypointHitRadius) {
         return { type: "waypoint", index: i };
       }
+    }
+    if (!showRouteLines) {
+      return null;
     }
     const legHitDistance = 10;
     for (let i = 0; i < route.waypoints.length; i++) {
@@ -236,20 +552,24 @@
     const route = computeRoutePoints();
     if (!route || route.waypoints.length === 0) return;
     const { canvasPoints } = route;
+    const legCount = canvasPoints.length - 1;
 
-    ctx.save();
-    ctx.setLineDash([8, 8]);
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = "#38bdf866";
-    ctx.beginPath();
-    ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y);
-    for (let i = 1; i < canvasPoints.length; i++) {
-      ctx.lineTo(canvasPoints[i].x, canvasPoints[i].y);
+    if (showRouteLines && legCount > 0) {
+      ctx.save();
+      ctx.setLineDash([8, 8]);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "#38bdf866";
+      for (let i = 0; i < legCount; i++) {
+        ctx.beginPath();
+        ctx.moveTo(canvasPoints[i].x, canvasPoints[i].y);
+        ctx.lineTo(canvasPoints[i + 1].x, canvasPoints[i + 1].y);
+        ctx.lineDashOffset = legDashOffsets.get(i) ?? 0;
+        ctx.stroke();
+      }
+      ctx.restore();
     }
-    ctx.stroke();
-    ctx.restore();
 
-    if (canvasPoints.length > 1) {
+    if (showRouteLines && legCount > 0) {
       ctx.save();
       ctx.setLineDash([6, 6]);
       ctx.lineWidth = 3;
@@ -257,11 +577,12 @@
       ctx.beginPath();
       ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y);
       ctx.lineTo(canvasPoints[1].x, canvasPoints[1].y);
+      ctx.lineDashOffset = legDashOffsets.get(0) ?? 0;
       ctx.stroke();
       ctx.restore();
     }
 
-    if (selection && canvasPoints.length > selection.index + 1) {
+    if (showRouteLines && selection && selection.index < legCount) {
       ctx.save();
       ctx.setLineDash([4, 4]);
       ctx.lineWidth = 3.5;
@@ -269,6 +590,7 @@
       ctx.beginPath();
       ctx.moveTo(canvasPoints[selection.index].x, canvasPoints[selection.index].y);
       ctx.lineTo(canvasPoints[selection.index + 1].x, canvasPoints[selection.index + 1].y);
+      ctx.lineDashOffset = legDashOffsets.get(selection.index) ?? 0;
       ctx.stroke();
       ctx.restore();
     }
@@ -290,6 +612,74 @@
     }
   }
 
+  function drawMissileRoute() {
+    if (!state.me) return;
+    if (!missileSetupMode) return;
+    const route = computeMissileRoutePoints();
+    if (!route || route.waypoints.length === 0) return;
+    const { canvasPoints } = route;
+    ctx.save();
+    ctx.setLineDash([10, 6]);
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = "#f87171aa";
+    ctx.beginPath();
+    ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y);
+    for (let i = 1; i < canvasPoints.length; i++) {
+      ctx.lineTo(canvasPoints[i].x, canvasPoints[i].y);
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    for (let i = 1; i < canvasPoints.length; i++) {
+      const pt = canvasPoints[i];
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = "#f87171";
+      ctx.globalAlpha = 0.9;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "#7f1d1d";
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  function drawMissiles() {
+    if (!state.missiles || state.missiles.length === 0) return;
+    const scaleX = cv.width / world.w;
+    const scaleY = cv.height / world.h;
+    const radiusScale = (scaleX + scaleY) / 2;
+    for (const miss of state.missiles) {
+      const p = worldToCanvas({ x: miss.x, y: miss.y });
+      const selfOwned = Boolean(miss.self);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, selfOwned ? 6 : 5, 0, Math.PI * 2);
+      ctx.fillStyle = selfOwned ? "#f87171" : "#fca5a5";
+      ctx.globalAlpha = selfOwned ? 0.95 : 0.8;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "#111827";
+      ctx.stroke();
+      ctx.restore();
+
+      if (selfOwned && miss.agro_radius > 0) {
+        ctx.save();
+        ctx.beginPath();
+        const rCanvas = miss.agro_radius * radiusScale;
+        ctx.setLineDash([14, 10]);
+        ctx.strokeStyle = "rgba(248,113,113,0.35)";
+        ctx.lineWidth = 1.2;
+        ctx.arc(p.x, p.y, rCanvas, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  }
+
   function drawGrid() {
     ctx.save();
     ctx.strokeStyle = "#234";
@@ -308,10 +698,25 @@
     ctx.restore();
   }
 
-  function loop() {
+  function loop(ts) {
+    if (!Number.isFinite(ts)) {
+      ts = lastLoopTs ?? 0;
+    }
+    let dtSeconds = 0;
+    if (lastLoopTs !== null) {
+      dtSeconds = (ts - lastLoopTs) / 1000;
+      if (!Number.isFinite(dtSeconds) || dtSeconds < 0) {
+        dtSeconds = 0;
+      }
+    }
+    lastLoopTs = ts;
+    updateLegDashOffsets(dtSeconds);
+
     ctx.clearRect(0,0,cv.width,cv.height);
     drawGrid();
     drawRoute();
+    drawMissileRoute();
+    drawMissiles();
 
     Tspan.textContent = state.now.toFixed(2);
 

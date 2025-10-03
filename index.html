@@ -18,7 +18,7 @@
     <div><b>Light Speed Duel – PoC</b></div>
     <div>Room: <code id="room-name"></code></div>
     <div>World t: <span id="t">0.00</span> s</div>
-    <div>c: <span id="c">–</span> | map: <span id="wh">–</span></div>
+    <div>c: <span id="c">–</span> | map: <span id="wh">–</span> | HP: <span id="ship-hp">3</span></div>
     <div style="margin-top:6px">
       Name: <input id="name" placeholder="Your callsign" size="10" />
       <button id="join">Join</button>
@@ -28,9 +28,35 @@
       <input id="speed-slider" type="range" min="20" max="250" value="150" step="5" />
       <span id="speed-value">150</span> u/s
     </div>
+    <div style="margin-top:6px">
+      <label><input id="toggle-route" type="checkbox" checked /> Show route</label>
+    </div>
     <div id="selection-panel" style="margin-top:6px; display:none">
       <div id="selection-label"></div>
       <button id="delete-waypoint">Delete from this waypoint onward</button>
+    </div>
+    <div id="missile-panel" style="margin-top:10px; padding-top:6px; border-top:1px solid #1f2937">
+      <div><label><input id="toggle-missile-mode" type="checkbox" /> Setup missile</label></div>
+      <div style="margin-top:6px">
+        <label for="missile-speed">Missile speed:</label>
+        <input id="missile-speed" type="range" min="40" max="250" value="180" step="5" />
+        <span id="missile-speed-value">180</span> u/s
+      </div>
+      <div style="margin-top:6px">
+        <label for="missile-accel">Missile accel:</label>
+        <input id="missile-accel" type="range" min="20" max="200" value="120" step="5" />
+        <span id="missile-accel-value">120</span> u/s²
+      </div>
+      <div style="margin-top:6px">
+        <label for="missile-agro">Agro radius:</label>
+        <input id="missile-agro" type="range" min="0" max="2000" value="800" step="50" />
+        <span id="missile-agro-value">800</span> u
+      </div>
+      <div style="margin-top:6px">Missile lifetime: <span id="missile-lifetime">0</span> s</div>
+      <div style="margin-top:6px">
+        <button id="launch-missile">Launch Missile</button>
+        <button id="clear-missile-waypoints" style="margin-left:4px">Clear Missile Waypoints</button>
+      </div>
     </div>
     <div style="margin-top:6px">
       Click on space to set or edit waypoints. Adjust the slider to set travel speed for new or selected legs.
