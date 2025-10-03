@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Light Speed Duel – PoC</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html,body { margin:0; background:#0b0f12; color:#d8dee9; font: 14px/1.4 system-ui, sans-serif; }
+    #hud { position:fixed; top:8px; left:8px; background:#1117; padding:8px 10px; border-radius:8px; }
+    #wrap { display:flex; align-items:center; justify-content:center; height:100vh; }
+    canvas { background: radial-gradient(ellipse at center, #0e1620 0%, #0b0f12 70%); box-shadow: 0 0 32px #000 inset; border:1px solid #1f2937; }
+    input,button { background:#1f2937; color:#e5e7eb; border:1px solid #374151; padding:4px 8px; border-radius:6px; }
+    button { cursor:pointer; }
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <div><b>Light Speed Duel – PoC</b></div>
+    <div>Room: <code id="room-name"></code></div>
+    <div>World t: <span id="t">0.00</span> s</div>
+    <div>c: <span id="c">–</span> | map: <span id="wh">–</span></div>
+    <div style="margin-top:6px">
+      Name: <input id="name" placeholder="Your callsign" size="10" />
+      <button id="join">Join</button>
+    </div>
+    <div style="margin-top:6px">
+      Click on space to set your waypoint. Your ship moves there at constant speed.
+      You see opponents at their <i>retarded</i> position (light-time delayed).
+    </div>
+  </div>
+  <div id="wrap">
+    <canvas id="cv" width="1200" height="675"></canvas>
+  </div>
+  <script src="client.js"></script>
+</body>
+</html>
