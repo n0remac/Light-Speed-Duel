@@ -22,12 +22,20 @@ const (
 
 type Vec2 struct{ X, Y float64 }
 
-func (a Vec2) Add(b Vec2) Vec2       { return Vec2{a.X + b.X, a.Y + b.Y} }
-func (a Vec2) Sub(b Vec2) Vec2       { return Vec2{a.X - b.X, a.Y - b.Y} }
-func (a Vec2) Dot(b Vec2) float64    { return a.X*b.X + a.Y*b.Y }
-func (a Vec2) Len() float64          { return math.Hypot(a.X, a.Y) }
-func (a Vec2) Scale(s float64) Vec2  { return Vec2{a.X * s, a.Y * s} }
-func clamp(v, lo, hi float64) float64 { if v < lo { return lo }; if v > hi { return hi }; return v }
+func (a Vec2) Add(b Vec2) Vec2      { return Vec2{a.X + b.X, a.Y + b.Y} }
+func (a Vec2) Sub(b Vec2) Vec2      { return Vec2{a.X - b.X, a.Y - b.Y} }
+func (a Vec2) Dot(b Vec2) float64   { return a.X*b.X + a.Y*b.Y }
+func (a Vec2) Len() float64         { return math.Hypot(a.X, a.Y) }
+func (a Vec2) Scale(s float64) Vec2 { return Vec2{a.X * s, a.Y * s} }
+func clamp(v, lo, hi float64) float64 {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
 
 type Snapshot struct {
 	T   float64
@@ -96,25 +104,30 @@ func (h *History) getAt(t float64) (Snapshot, bool) {
 	alpha := (t - a.T) / (b.T - a.T)
 	lerp := func(a, b float64) float64 { return a + alpha*(b-a) }
 	return Snapshot{
-		T: t,
+		T:   t,
 		Pos: Vec2{X: lerp(a.Pos.X, b.Pos.X), Y: lerp(a.Pos.Y, b.Pos.Y)},
 		Vel: Vec2{X: lerp(a.Vel.X, b.Vel.X), Y: lerp(a.Vel.Y, b.Vel.Y)},
 	}, true
 }
 
+type ShipWaypoint struct {
+	Pos   Vec2
+	Speed float64
+}
+
 type Ship struct {
-	ID       string
-	Owner    string // playerID
-	Pos      Vec2
-	Vel      Vec2
-	Waypoint Vec2
-	History  *History
+	ID        string
+	Owner     string // playerID
+	Pos       Vec2
+	Vel       Vec2
+	Waypoints []ShipWaypoint
+	History   *History
 }
 
 type Player struct {
-	ID       string
-	Name     string
-	ShipID   string
+	ID     string
+	Name   string
+	ShipID string
 	// net bits (conn, tick) live in net.go to keep sim pure
 }
 
@@ -161,27 +174,52 @@ func (r *Room) tick() {
 	defer r.mu.Unlock()
 	r.Now += dt
 
-	// Integrate motion toward waypoint
+	// Integrate motion toward waypoints
 	for _, s := range r.Ships {
-		dir := s.Waypoint.Sub(s.Pos)
-		if d := dir.Len(); d > 1e-6 {
-			des := dir.Scale(1.0 / d).Scale(shipMaxSpeed)
-			s.Vel = des
-			step := s.Vel.Scale(dt)
-			if step.Len() >= d {
-				s.Pos = s.Waypoint
-				s.Vel = Vec2{}
-			} else {
+		if len(s.Waypoints) > 0 {
+			for len(s.Waypoints) > 0 {
+				target := s.Waypoints[0]
+				dir := target.Pos.Sub(s.Pos)
+				dist := dir.Len()
+				if dist <= 1e-3 {
+					s.Pos = target.Pos
+					s.Vel = Vec2{}
+					s.Waypoints = s.Waypoints[1:]
+					continue
+				}
+				speed := clamp(target.Speed, 0, shipMaxSpeed)
+				if speed <= 1e-3 {
+					s.Vel = Vec2{}
+					break
+				}
+				vel := dir.Scale(1.0 / dist).Scale(speed)
+				step := vel.Scale(dt)
+				if step.Len() >= dist {
+					s.Pos = target.Pos
+					s.Vel = Vec2{}
+					s.Waypoints = s.Waypoints[1:]
+					continue
+				}
 				s.Pos = s.Pos.Add(step)
+				s.Vel = vel
+				break
 			}
 		} else {
 			s.Vel = Vec2{}
 		}
 		// Bounds
-		if s.Pos.X < 0 { s.Pos.X = 0 }
-		if s.Pos.Y < 0 { s.Pos.Y = 0 }
-		if s.Pos.X > worldW { s.Pos.X = worldW }
-		if s.Pos.Y > worldH { s.Pos.Y = worldH }
+		if s.Pos.X < 0 {
+			s.Pos.X = 0
+		}
+		if s.Pos.Y < 0 {
+			s.Pos.Y = 0
+		}
+		if s.Pos.X > worldW {
+			s.Pos.X = worldW
+		}
+		if s.Pos.Y > worldH {
+			s.Pos.Y = worldH
+		}
 
 		s.History.push(Snapshot{T: r.Now, Pos: s.Pos, Vel: s.Vel})
 	}

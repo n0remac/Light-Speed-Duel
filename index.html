@@ -24,7 +24,16 @@
       <button id="join">Join</button>
     </div>
     <div style="margin-top:6px">
-      Click on space to set your waypoint. Your ship moves there at constant speed.
+      <label for="speed-slider">Waypoint speed:</label>
+      <input id="speed-slider" type="range" min="20" max="250" value="150" step="5" />
+      <span id="speed-value">150</span> u/s
+    </div>
+    <div id="selection-panel" style="margin-top:6px; display:none">
+      <div id="selection-label"></div>
+      <button id="delete-waypoint">Delete from this waypoint onward</button>
+    </div>
+    <div style="margin-top:6px">
+      Click on space to set or edit waypoints. Adjust the slider to set travel speed for new or selected legs.
       You see opponents at their <i>retarded</i> position (light-time delayed).
     </div>
   </div>
