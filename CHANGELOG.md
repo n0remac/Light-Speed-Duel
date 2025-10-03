@@ -8,6 +8,7 @@ All noteworthy changes to **Light Speed Duel** will be documented in this file.
 ## [0.2.1] - 2024-10-02
 ### Added
 - Multiple missile routes can be made. Missiles can be launched on one of these routes.
+- Time delay based cooldown on missile firing. The faster you are the longer the cooldown.
 
 ### Changed
 - Made a new file structure with packages for game and server code.

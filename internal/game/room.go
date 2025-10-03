@@ -20,6 +20,7 @@ type Player struct {
 	MissileConfig        MissileConfig
 	MissileRoutes        []*MissileRouteDef
 	ActiveMissileRouteID string
+	MissileReadyAt       float64
 }
 
 type Room struct {

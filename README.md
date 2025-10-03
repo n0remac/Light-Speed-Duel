@@ -4,7 +4,6 @@
 
 The result is a prediction-heavy cat-and-mouse game where speed, timing, and foresight matter as much as accuracy.
 
----
 
 ## Current Features
 
@@ -16,7 +15,6 @@ The result is a prediction-heavy cat-and-mouse game where speed, timing, and for
   * **Opponent ships** also at their delayed positions — interception relies on prediction.
 * Launch configurable missiles that inherit the same light-time rules, pursue enemies that wander into their aggro radius, and detonate after three successful hits.
 
----
 
 ## Controls & HUD
 
@@ -37,7 +35,6 @@ The result is a prediction-heavy cat-and-mouse game where speed, timing, and for
   * World time, map size, and current light speed constant `c`.
   * Live missiles (your own and opponents) render as red dots; positions are delayed per observer.
 
----
 
 ## Running the Game
 
@@ -57,11 +54,8 @@ The result is a prediction-heavy cat-and-mouse game where speed, timing, and for
    * Each tab spawns a ship in the same room.
    * Click to set waypoints and try to intercept your opponent!
 
----
 
 ## Tech Stack
 
 * **Go** — simulation loop and WebSocket server (authoritative state, per-player delayed views).
 * **JavaScript/Canvas** — browser client for rendering and input.
-
----

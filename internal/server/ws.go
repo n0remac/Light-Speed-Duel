@@ -46,6 +46,7 @@ type stateMsg struct {
 	MissileWaypoints   []waypointDTO     `json:"missile_waypoints"`
 	MissileRoutes      []missileRouteDTO `json:"missile_routes"`
 	ActiveMissileRoute string            `json:"active_missile_route"`
+	NextMissileReady   float64           `json:"next_missile_ready"`
 }
 
 type roomMeta struct {
@@ -260,8 +261,16 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 						room.Mu.Unlock()
 						continue
 					}
+					now := room.Now
+					if p.MissileReadyAt > 0 && now < p.MissileReadyAt {
+						room.Mu.Unlock()
+						continue
+					}
 					if tr := room.World.Transform(p.Ship); tr != nil {
-						room.LaunchMissile(playerID, cfg, waypoints, tr.Pos, tr.Vel)
+						speed := tr.Vel.Len()
+						if id := room.LaunchMissile(playerID, cfg, waypoints, tr.Pos, tr.Vel); id != 0 {
+							p.MissileReadyAt = now + MissileCooldownForSpeed(speed)
+						}
 					}
 				}
 				room.Mu.Unlock()
@@ -290,6 +299,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 				var meGhost ghost
 				var ghosts []ghost
 				var missiles []missileDTO
+				var nextMissileReady float64
 
 				var meEntity EntityID
 				var meTransform *Transform
@@ -302,6 +312,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 					missileCfg.AgroRadius = cfg.AgroRadius
 					missileCfg.Lifetime = cfg.Lifetime
 					activeRouteID = p.ActiveMissileRouteID
+					nextMissileReady = p.MissileReadyAt
 
 					if route := p.ActiveMissileRoute(); route != nil {
 						if len(route.Waypoints) > 0 {
@@ -439,6 +450,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 					MissileWaypoints:   missileWaypoints,
 					MissileRoutes:      missileRoutesDTO,
 					ActiveMissileRoute: activeRouteID,
+					NextMissileReady:   nextMissileReady,
 				}
 				_ = conn.WriteJSON(msg)
 			}

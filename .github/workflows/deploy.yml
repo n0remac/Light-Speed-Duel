@@ -1,0 +1,68 @@
+name: Deploy LightSpeedDuel (Go)
+
+on:
+  push:
+    branches: [ "main" ]
+
+env:
+  REMOTE_HOST: ${{ secrets.DO_HOST }}
+  REMOTE_USER: ${{ secrets.DO_USER }}
+  REMOTE_PATH: ${{ secrets.DO_PATH }}
+  SERVICE_NAME: ${{ secrets.SERVICE_NAME }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+          cache: true
+
+      - name: Build (linux/amd64)
+        run: |
+          mkdir -p build
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
+            go build -trimpath -ldflags "-s -w" -o build/lightspeedduel ./cmd/LightSpeedDuel 2>/dev/null || \
+            go build -trimpath -ldflags "-s -w" -o build/lightspeedduel .
+          file build/lightspeedduel
+          ls -lah build
+
+      - name: Prepare SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${REMOTE_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Upload release and switch "current"
+        run: |
+          TS=$(date +%Y%m%d%H%M%S)
+          REL="${REMOTE_PATH}/releases/${TS}"
+          BIN="lightspeedduel"
+
+          # Ensure directory structure exists
+          ssh -i ~/.ssh/id_ed25519 ${REMOTE_USER}@${REMOTE_HOST} "mkdir -p ${REMOTE_PATH}/releases ${REMOTE_PATH}/shared"
+
+          # Create release dir
+          ssh -i ~/.ssh/id_ed25519 ${REMOTE_USER}@${REMOTE_HOST} "mkdir -p ${REL}"
+
+          # Upload the binary
+          rsync -az -e "ssh -i ~/.ssh/id_ed25519" build/${BIN} ${REMOTE_USER}@${REMOTE_HOST}:${REL}/
+
+          # Symlink current -> new release atomically
+          ssh -i ~/.ssh/id_ed25519 ${REMOTE_USER}@${REMOTE_HOST} "ln -sfn ${REL} ${REMOTE_PATH}/current && echo Deployed ${TS}"
+
+      - name: Restart service
+        run: |
+          ssh -i ~/.ssh/id_ed25519 ${REMOTE_USER}@${REMOTE_HOST} "sudo systemctl restart ${SERVICE_NAME} && sudo systemctl status ${SERVICE_NAME} --no-pager -l | sed -n '1,60p'"
+
+      - name: Health check
+        run: |
+          # Adjust if you front it with a reverse proxy
+          curl -fsS http://${{ env.REMOTE_HOST }}:8080/ >/dev/null && echo "Health check OK"

@@ -21,4 +21,6 @@ const (
 	MissileLifetimeAgroPenalty  = 40.0
 	MissileLifetimeAgroRef      = 2000.0
 	MissileHitRadius            = 50.0
+	MissileBaseCooldown         = 2.0
+	MissileCooldownScale        = 8.0
 )

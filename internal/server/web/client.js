@@ -54,6 +54,8 @@
       const msg = JSON.parse(ev.data);
       if (msg.type === "state") {
         state.now = msg.now;
+        state.nowSyncedAt = monotonicNow();
+        state.nextMissileReadyAt = Number.isFinite(msg.next_missile_ready) ? msg.next_missile_ready : 0;
         state.me = msg.me || null;
         if (state.me) {
           state.me.waypoints = Array.isArray(msg.me.waypoints) ? msg.me.waypoints : [];
@@ -226,11 +228,15 @@
 
   const state = {
     now: 0,
+    nowSyncedAt: (typeof performance !== "undefined" && typeof performance.now === "function")
+      ? performance.now()
+      : Date.now(),
     me: null,
     ghosts: [],
     missiles: [],
     missileRoutes: [],
     activeMissileRouteId: null,
+    nextMissileReadyAt: 0,
     missileConfig: {
       speed: 180,
       agroRadius: 800,
@@ -331,6 +337,9 @@
   });
 
   launchMissileBtn?.addEventListener("click", () => {
+    if (launchMissileBtn.disabled) {
+      return;
+    }
     const route = getActiveMissileRoute();
     if (!route || !Array.isArray(route.waypoints) || route.waypoints.length === 0) {
       return;
@@ -440,20 +449,66 @@
       const count = activeRoute && Array.isArray(activeRoute.waypoints) ? activeRoute.waypoints.length : 0;
       clearMissileWaypointsBtn.disabled = !activeRoute || count === 0;
     }
-    if (launchMissileBtn) {
-      const count = activeRoute && Array.isArray(activeRoute.waypoints) ? activeRoute.waypoints.length : 0;
-      launchMissileBtn.disabled = !activeRoute || count === 0;
-      if (activeRoute && activeRoute.name) {
-        launchMissileBtn.textContent = `Launch Missile (${activeRoute.name})`;
-      } else {
-        launchMissileBtn.textContent = "Launch Missile";
-      }
-    }
+    updateMissileLaunchButtonState();
   }
 
   function setActiveMissileRouteLocal(id) {
     state.activeMissileRouteId = id;
     renderMissileRouteControls();
+  }
+
+  function monotonicNow() {
+    if (typeof performance !== "undefined" && typeof performance.now === "function") {
+      return performance.now();
+    }
+    return Date.now();
+  }
+
+  function getApproxServerNow() {
+    if (!Number.isFinite(state.now)) {
+      return 0;
+    }
+    const syncedAt = Number.isFinite(state.nowSyncedAt) ? state.nowSyncedAt : null;
+    if (!syncedAt) {
+      return state.now;
+    }
+    const elapsedMs = monotonicNow() - syncedAt;
+    if (!Number.isFinite(elapsedMs) || elapsedMs < 0) {
+      return state.now;
+    }
+    return state.now + elapsedMs / 1000;
+  }
+
+  function getMissileCooldownRemaining() {
+    const target = Number.isFinite(state.nextMissileReadyAt) ? state.nextMissileReadyAt : 0;
+    const remaining = target - getApproxServerNow();
+    return remaining > 0 ? remaining : 0;
+  }
+
+  function updateMissileLaunchButtonState() {
+    if (!launchMissileBtn) return;
+    const route = getActiveMissileRoute();
+    const count = route && Array.isArray(route.waypoints) ? route.waypoints.length : 0;
+    const remaining = getMissileCooldownRemaining();
+    const coolingDown = remaining > 0.05;
+    const shouldDisable = !route || count === 0 || coolingDown;
+    launchMissileBtn.disabled = shouldDisable;
+
+    if (!route) {
+      launchMissileBtn.textContent = "Launch Missile";
+      return;
+    }
+
+    if (coolingDown) {
+      launchMissileBtn.textContent = `Launch in ${remaining.toFixed(1)}s`;
+      return;
+    }
+
+    if (route.name) {
+      launchMissileBtn.textContent = `Launch Missile (${route.name})`;
+    } else {
+      launchMissileBtn.textContent = "Launch Missile";
+    }
   }
 
   function missileLifetimeFor(speed, agroRadius, limits = missileLimits) {
@@ -905,7 +960,9 @@
     drawMissileRoute();
     drawMissiles();
 
-    Tspan.textContent = state.now.toFixed(2);
+    updateMissileLaunchButtonState();
+
+    Tspan.textContent = getApproxServerNow().toFixed(2);
 
     // Opponents (retarded snapshots)
     for (const g of state.ghosts) {

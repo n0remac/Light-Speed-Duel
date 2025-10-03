@@ -37,6 +37,23 @@ func Clamp(v, lo, hi float64) float64 {
 	return v
 }
 
+func MissileCooldownForSpeed(speed float64) float64 {
+	if MissileBaseCooldown <= 0 {
+		return 0
+	}
+	if C <= 0 {
+		return MissileBaseCooldown
+	}
+	beta := speed / C
+	if beta < 0 {
+		beta = 0
+	}
+	if beta > 1 {
+		beta = 1
+	}
+	return MissileBaseCooldown * (1 + MissileCooldownScale*beta*beta)
+}
+
 func newHistory(seconds float64, hz float64) *History {
 	n := int(seconds*hz) + 4
 	return &History{buf: make([]Snapshot, n), limit: n}
