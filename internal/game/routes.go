@@ -1,4 +1,4 @@
-package main
+package game
 
 func (r *Room) appendShipWaypoint(shipID EntityID, wp ShipWaypoint) {
 	if route := r.World.ShipRoute(shipID); route != nil {
