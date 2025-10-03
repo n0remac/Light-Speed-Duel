@@ -80,7 +80,7 @@
             agroMin: Number.isFinite(msg.missile_config.agro_min) ? msg.missile_config.agro_min : MISSILE_MIN_AGRO,
           };
           state.missileLimits = missileLimits;
-          const cfg = sanitizeMissileConfigJS(
+          const cfg = SanitizeMissileConfigJS(
             {
               speed: msg.missile_config.speed,
               agroRadius: msg.missile_config.agro_radius,
@@ -469,7 +469,7 @@
     return clamp(base - reduction, MISSILE_MIN_LIFETIME, MISSILE_MAX_LIFETIME);
   }
 
-  function sanitizeMissileConfigJS(cfg, fallback = state.missileConfig, limits = missileLimits) {
+  function SanitizeMissileConfigJS(cfg, fallback = state.missileConfig, limits = missileLimits) {
     const base = fallback || {};
     const range = limits || {};
     const minSpeed = Number.isFinite(range.speedMin) ? range.speedMin : MISSILE_MIN_SPEED;
@@ -533,7 +533,7 @@
 
   function updateMissileConfigFromUI(overrides = {}) {
     const current = state.missileConfig;
-    const cfg = sanitizeMissileConfigJS(
+    const cfg = SanitizeMissileConfigJS(
       {
         speed: overrides.speed ?? current.speed,
         agroRadius: overrides.agroRadius ?? current.agroRadius,

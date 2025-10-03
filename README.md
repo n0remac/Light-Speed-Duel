@@ -65,11 +65,3 @@ The result is a prediction-heavy cat-and-mouse game where speed, timing, and for
 * **JavaScript/Canvas** — browser client for rendering and input.
 
 ---
-
-## Contributing
-
-Pull requests are welcome. The project is still an early prototype, so please open an issue before tackling larger changes so we can coordinate on direction.
-
----
-
-Would you like me to also include a short **diagram** of the planned file organization (so contributors know where to add new features), or keep README minimal for now?

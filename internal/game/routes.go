@@ -1,20 +1,20 @@
 package game
 
-func (r *Room) appendShipWaypoint(shipID EntityID, wp ShipWaypoint) {
+func (r *Room) AppendShipWaypoint(shipID EntityID, wp ShipWaypoint) {
 	if route := r.World.ShipRoute(shipID); route != nil {
 		route.Waypoints = append(route.Waypoints, wp)
 	}
 }
 
-func (r *Room) updateShipWaypoint(shipID EntityID, index int, speed float64) {
+func (r *Room) UpdateShipWaypoint(shipID EntityID, index int, speed float64) {
 	if route := r.World.ShipRoute(shipID); route != nil {
 		if index >= 0 && index < len(route.Waypoints) {
-			route.Waypoints[index].Speed = clamp(speed, 0, shipMaxSpeed)
+			route.Waypoints[index].Speed = Clamp(speed, 0, ShipMaxSpeed)
 		}
 	}
 }
 
-func (r *Room) deleteShipWaypointsFrom(shipID EntityID, index int) {
+func (r *Room) DeleteShipWaypointsFrom(shipID EntityID, index int) {
 	if route := r.World.ShipRoute(shipID); route != nil {
 		if index >= 0 && index < len(route.Waypoints) {
 			route.Waypoints = route.Waypoints[:index]

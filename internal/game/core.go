@@ -27,7 +27,7 @@ func (a Vec2) Dot(b Vec2) float64   { return a.X*b.X + a.Y*b.Y }
 func (a Vec2) Len() float64         { return math.Hypot(a.X, a.Y) }
 func (a Vec2) Scale(s float64) Vec2 { return Vec2{a.X * s, a.Y * s} }
 
-func clamp(v, lo, hi float64) float64 {
+func Clamp(v, lo, hi float64) float64 {
 	if v < lo {
 		return lo
 	}
@@ -52,7 +52,7 @@ func (h *History) push(s Snapshot) {
 	h.mu.Unlock()
 }
 
-func (h *History) getAt(t float64) (Snapshot, bool) {
+func (h *History) GetAt(t float64) (Snapshot, bool) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	if h.size == 0 {

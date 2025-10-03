@@ -59,23 +59,23 @@ type MissileConfig struct {
 }
 
 const (
-	compTransform    ComponentKey = "transform"
+	CompTransform    ComponentKey = "transform"
 	compMovement     ComponentKey = "movement"
-	compShip         ComponentKey = "ship"
+	CompShip         ComponentKey = "ship"
 	compShipRoute    ComponentKey = "ship_route"
-	compMissile      ComponentKey = "missile"
+	CompMissile      ComponentKey = "missile"
 	compMissileRoute ComponentKey = "missile_route"
-	compOwner        ComponentKey = "owner"
-	compHistory      ComponentKey = "history"
+	CompOwner        ComponentKey = "owner"
+	CompHistory      ComponentKey = "history"
 )
 
-func sanitizeMissileConfig(cfg MissileConfig) MissileConfig {
-	speed := clamp(cfg.Speed, missileMinSpeed, missileMaxSpeed)
+func SanitizeMissileConfig(cfg MissileConfig) MissileConfig {
+	speed := Clamp(cfg.Speed, MissileMinSpeed, MissileMaxSpeed)
 	agro := cfg.AgroRadius
-	if agro < missileMinAgroRadius {
-		agro = missileMinAgroRadius
+	if agro < MissileMinAgroRadius {
+		agro = MissileMinAgroRadius
 	}
-	lifetime := missileLifetimeFor(speed, agro)
+	lifetime := MissileLifetimeFor(speed, agro)
 	return MissileConfig{
 		Speed:      speed,
 		AgroRadius: agro,
@@ -83,23 +83,23 @@ func sanitizeMissileConfig(cfg MissileConfig) MissileConfig {
 	}
 }
 
-func missileLifetimeFor(speed, agro float64) float64 {
+func MissileLifetimeFor(speed, agro float64) float64 {
 	var speedNorm float64
-	if span := missileMaxSpeed - missileMinSpeed; span > 0 {
-		speedNorm = clamp((speed-missileMinSpeed)/span, 0, 1)
+	if span := MissileMaxSpeed - MissileMinSpeed; span > 0 {
+		speedNorm = Clamp((speed-MissileMinSpeed)/span, 0, 1)
 	}
-	effectiveAgro := agro - missileMinAgroRadius
+	effectiveAgro := agro - MissileMinAgroRadius
 	if effectiveAgro < 0 {
 		effectiveAgro = 0
 	}
-	agroNorm := clamp(effectiveAgro/missileLifetimeAgroRef, 0, 1)
-	reduction := speedNorm*missileLifetimeSpeedPenalty + agroNorm*missileLifetimeAgroPenalty
-	lifetime := missileMaxLifetime - reduction
-	return clamp(lifetime, missileMinLifetime, missileMaxLifetime)
+	agroNorm := Clamp(effectiveAgro/MissileLifetimeAgroRef, 0, 1)
+	reduction := speedNorm*MissileLifetimeSpeedPenalty + agroNorm*MissileLifetimeAgroPenalty
+	lifetime := MissileMaxLifetime - reduction
+	return Clamp(lifetime, MissileMinLifetime, MissileMaxLifetime)
 }
 
 func (w *World) Transform(id EntityID) *Transform {
-	if v, ok := w.GetComponent(id, compTransform); ok {
+	if v, ok := w.GetComponent(id, CompTransform); ok {
 		if t, ok := v.(*Transform); ok {
 			return t
 		}
@@ -117,7 +117,7 @@ func (w *World) Movement(id EntityID) *Movement {
 }
 
 func (w *World) ShipData(id EntityID) *ShipComponent {
-	if v, ok := w.GetComponent(id, compShip); ok {
+	if v, ok := w.GetComponent(id, CompShip); ok {
 		if t, ok := v.(*ShipComponent); ok {
 			return t
 		}
@@ -135,7 +135,7 @@ func (w *World) ShipRoute(id EntityID) *ShipRoute {
 }
 
 func (w *World) MissileData(id EntityID) *MissileComponent {
-	if v, ok := w.GetComponent(id, compMissile); ok {
+	if v, ok := w.GetComponent(id, CompMissile); ok {
 		if t, ok := v.(*MissileComponent); ok {
 			return t
 		}
@@ -153,7 +153,7 @@ func (w *World) MissileRoute(id EntityID) *MissileRoute {
 }
 
 func (w *World) Owner(id EntityID) *OwnerComponent {
-	if v, ok := w.GetComponent(id, compOwner); ok {
+	if v, ok := w.GetComponent(id, CompOwner); ok {
 		if t, ok := v.(*OwnerComponent); ok {
 			return t
 		}
@@ -162,7 +162,7 @@ func (w *World) Owner(id EntityID) *OwnerComponent {
 }
 
 func (w *World) HistoryComponent(id EntityID) *HistoryComponent {
-	if v, ok := w.GetComponent(id, compHistory); ok {
+	if v, ok := w.GetComponent(id, CompHistory); ok {
 		if t, ok := v.(*HistoryComponent); ok {
 			return t
 		}

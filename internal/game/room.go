@@ -27,7 +27,7 @@ type Room struct {
 	Now     float64
 	World   *World
 	Players map[string]*Player
-	mu      sync.Mutex
+	Mu      sync.Mutex
 }
 
 func newRoom(id string) *Room {
@@ -39,84 +39,84 @@ func newRoom(id string) *Room {
 }
 
 type Hub struct {
-	rooms map[string]*Room
-	mu    sync.Mutex
+	Rooms map[string]*Room
+	Mu    sync.Mutex
 }
 
-func newHub() *Hub { return &Hub{rooms: map[string]*Room{}} }
+func NewHub() *Hub { return &Hub{Rooms: map[string]*Room{}} }
 
-func (h *Hub) getRoom(id string) *Room {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	r, ok := h.rooms[id]
+func (h *Hub) GetRoom(id string) *Room {
+	h.Mu.Lock()
+	defer h.Mu.Unlock()
+	r, ok := h.Rooms[id]
 	if !ok {
 		r = newRoom(id)
-		h.rooms[id] = r
+		h.Rooms[id] = r
 	}
 	return r
 }
 
-func (r *Room) tick() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.Now += dt
+func (r *Room) Tick() {
+	r.Mu.Lock()
+	defer r.Mu.Unlock()
+	r.Now += Dt
 
-	updateShips(r, dt)
-	updateMissiles(r, dt)
+	updateShips(r, Dt)
+	updateMissiles(r, Dt)
 }
 
-func (r *Room) spawnShip(owner string, startPos Vec2) EntityID {
+func (r *Room) SpawnShip(owner string, startPos Vec2) EntityID {
 	id := r.World.NewEntity()
-	r.World.SetComponent(id, compTransform, &Transform{Pos: startPos})
-	r.World.SetComponent(id, compMovement, &Movement{MaxSpeed: shipMaxSpeed})
-	r.World.SetComponent(id, compShip, &ShipComponent{HP: shipMaxHP})
+	r.World.SetComponent(id, CompTransform, &Transform{Pos: startPos})
+	r.World.SetComponent(id, compMovement, &Movement{MaxSpeed: ShipMaxSpeed})
+	r.World.SetComponent(id, CompShip, &ShipComponent{HP: ShipMaxHP})
 	r.World.SetComponent(id, compShipRoute, &ShipRoute{})
-	r.World.SetComponent(id, compOwner, &OwnerComponent{PlayerID: owner})
-	history := newHistory(historyKeepS, simHz)
+	r.World.SetComponent(id, CompOwner, &OwnerComponent{PlayerID: owner})
+	history := newHistory(HistoryKeepS, SimHz)
 	history.push(Snapshot{T: r.Now, Pos: startPos})
-	r.World.SetComponent(id, compHistory, &HistoryComponent{History: history})
+	r.World.SetComponent(id, CompHistory, &HistoryComponent{History: history})
 	return id
 }
 
-func (r *Room) launchMissile(owner string, cfg MissileConfig, waypoints []Vec2, startPos Vec2, startVel Vec2) EntityID {
+func (r *Room) LaunchMissile(owner string, cfg MissileConfig, waypoints []Vec2, startPos Vec2, startVel Vec2) EntityID {
 	if len(waypoints) == 0 {
 		return 0
 	}
 	id := r.World.NewEntity()
-	r.World.SetComponent(id, compTransform, &Transform{Pos: startPos, Vel: startVel})
+	r.World.SetComponent(id, CompTransform, &Transform{Pos: startPos, Vel: startVel})
 	r.World.SetComponent(id, compMovement, &Movement{MaxSpeed: cfg.Speed})
 	missile := &MissileComponent{
 		AgroRadius: cfg.AgroRadius,
 		LaunchTime: r.Now,
 		Lifetime:   cfg.Lifetime,
 	}
-	r.World.SetComponent(id, compMissile, missile)
+	r.World.SetComponent(id, CompMissile, missile)
 	copied := append([]Vec2(nil), waypoints...)
 	r.World.SetComponent(id, compMissileRoute, &MissileRoute{Waypoints: copied})
-	r.World.SetComponent(id, compOwner, &OwnerComponent{PlayerID: owner})
-	history := newHistory(historyKeepS, simHz)
+	r.World.SetComponent(id, CompOwner, &OwnerComponent{PlayerID: owner})
+	history := newHistory(HistoryKeepS, SimHz)
 	history.push(Snapshot{T: r.Now, Pos: startPos, Vel: startVel})
-	r.World.SetComponent(id, compHistory, &HistoryComponent{History: history})
+	r.World.SetComponent(id, CompHistory, &HistoryComponent{History: history})
 	return id
 }
 
-func (r *Room) respawnShip(id EntityID) {
+func (r *Room) reSpawnShip(id EntityID) {
 	if tr := r.World.Transform(id); tr != nil {
-		tr.Pos = Vec2{X: worldW * 0.5, Y: worldH * 0.5}
+		tr.Pos = Vec2{X: WorldW * 0.5, Y: WorldH * 0.5}
 		tr.Vel = Vec2{}
 	}
 	if route := r.World.ShipRoute(id); route != nil {
 		route.Waypoints = nil
 	}
 	if ship := r.World.ShipData(id); ship != nil {
-		ship.HP = shipMaxHP
+		ship.HP = ShipMaxHP
 	}
 	if hist := r.World.HistoryComponent(id); hist != nil {
-		hist.History.push(Snapshot{T: r.Now, Pos: Vec2{X: worldW * 0.5, Y: worldH * 0.5}})
+		hist.History.push(Snapshot{T: r.Now, Pos: Vec2{X: WorldW * 0.5, Y: WorldH * 0.5}})
 	}
 }
 
-func randID(prefix string) string {
+func RandId(prefix string) string {
 	const letters = "abcdefghijklmnopqrstuvwxyz0123456789"
 	b := make([]byte, 6)
 	for i := range b {
@@ -134,7 +134,7 @@ func (p *Player) missileRouteIndex(id string) int {
 	return -1
 }
 
-func (p *Player) missileRouteByID(id string) *MissileRouteDef {
+func (p *Player) MissileRouteByID(id string) *MissileRouteDef {
 	if id == "" {
 		return nil
 	}
@@ -144,8 +144,8 @@ func (p *Player) missileRouteByID(id string) *MissileRouteDef {
 	return nil
 }
 
-func (p *Player) activeMissileRoute() *MissileRouteDef {
-	if route := p.missileRouteByID(p.ActiveMissileRouteID); route != nil {
+func (p *Player) ActiveMissileRoute() *MissileRouteDef {
+	if route := p.MissileRouteByID(p.ActiveMissileRouteID); route != nil {
 		return route
 	}
 	if len(p.MissileRoutes) > 0 {
@@ -154,19 +154,19 @@ func (p *Player) activeMissileRoute() *MissileRouteDef {
 	return nil
 }
 
-func (p *Player) ensureMissileRoutes() {
+func (p *Player) EnsureMissileRoutes() {
 	if len(p.MissileRoutes) == 0 {
-		route := &MissileRouteDef{ID: randID("mr"), Name: "Route 1"}
+		route := &MissileRouteDef{ID: RandId("mr"), Name: "Route 1"}
 		p.MissileRoutes = []*MissileRouteDef{route}
 		p.ActiveMissileRouteID = route.ID
 	}
-	if p.ActiveMissileRouteID == "" || p.missileRouteByID(p.ActiveMissileRouteID) == nil {
+	if p.ActiveMissileRouteID == "" || p.MissileRouteByID(p.ActiveMissileRouteID) == nil {
 		p.ActiveMissileRouteID = p.MissileRoutes[0].ID
 	}
 }
 
 func (p *Player) generateRouteName() string {
-	p.ensureMissileRoutes()
+	p.EnsureMissileRoutes()
 	n := len(p.MissileRoutes) + 1
 	for {
 		candidate := fmt.Sprintf("Route %d", n)
@@ -184,32 +184,32 @@ func (p *Player) generateRouteName() string {
 	}
 }
 
-func (p *Player) addMissileRoute(name string) *MissileRouteDef {
-	p.ensureMissileRoutes()
+func (p *Player) AddMissileRoute(name string) *MissileRouteDef {
+	p.EnsureMissileRoutes()
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" {
 		trimmed = p.generateRouteName()
 	}
-	route := &MissileRouteDef{ID: randID("mr"), Name: trimmed}
+	route := &MissileRouteDef{ID: RandId("mr"), Name: trimmed}
 	p.MissileRoutes = append(p.MissileRoutes, route)
 	p.ActiveMissileRouteID = route.ID
 	return route
 }
 
-func (p *Player) renameMissileRoute(id, name string) bool {
+func (p *Player) RenameMissileRoute(id, name string) bool {
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" {
 		return false
 	}
-	if route := p.missileRouteByID(id); route != nil {
+	if route := p.MissileRouteByID(id); route != nil {
 		route.Name = trimmed
 		return true
 	}
 	return false
 }
 
-func (p *Player) deleteMissileRoute(id string) bool {
-	p.ensureMissileRoutes()
+func (p *Player) DeleteMissileRoute(id string) bool {
+	p.EnsureMissileRoutes()
 	idx := p.missileRouteIndex(id)
 	if idx == -1 {
 		return false
@@ -225,32 +225,32 @@ func (p *Player) deleteMissileRoute(id string) bool {
 	return true
 }
 
-func (p *Player) clearMissileRoute(id string) bool {
-	if route := p.missileRouteByID(id); route != nil {
+func (p *Player) ClearMissileRoute(id string) bool {
+	if route := p.MissileRouteByID(id); route != nil {
 		route.Waypoints = nil
 		return true
 	}
 	return false
 }
 
-func (p *Player) setActiveMissileRoute(id string) bool {
-	if route := p.missileRouteByID(id); route != nil {
+func (p *Player) SetActiveMissileRoute(id string) bool {
+	if route := p.MissileRouteByID(id); route != nil {
 		p.ActiveMissileRouteID = route.ID
 		return true
 	}
 	return false
 }
 
-func (p *Player) addWaypointToRoute(id string, wp Vec2) bool {
-	if route := p.missileRouteByID(id); route != nil {
+func (p *Player) AddWaypointToRoute(id string, wp Vec2) bool {
+	if route := p.MissileRouteByID(id); route != nil {
 		route.Waypoints = append(route.Waypoints, wp)
 		return true
 	}
 	return false
 }
 
-func (p *Player) deleteWaypointFromRoute(id string, index int) bool {
-	if route := p.missileRouteByID(id); route != nil {
+func (p *Player) DeleteWaypointFromRoute(id string, index int) bool {
+	if route := p.MissileRouteByID(id); route != nil {
 		if index >= 0 && index < len(route.Waypoints) {
 			route.Waypoints = append(route.Waypoints[:index], route.Waypoints[index+1:]...)
 			return true

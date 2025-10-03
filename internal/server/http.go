@@ -4,14 +4,16 @@ import (
 	_ "embed"
 	"log"
 	"net/http"
+
+	. "LightSpeedDuel/internal/game"
 )
 
 /* ------------------------------ Embeds ------------------------------ */
 
-//go:embed index.html
+//go:embed web/index.html
 var htmlIndex []byte
 
-//go:embed client.js
+//go:embed web/client.js
 var jsClient []byte
 
 /* ------------------------------- HTTP ------------------------------- */

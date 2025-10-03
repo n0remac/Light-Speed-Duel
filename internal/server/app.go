@@ -3,21 +3,23 @@ package server
 import (
 	"log"
 	"time"
+
+	. "LightSpeedDuel/internal/game"
 )
 
-func main() {
-	hub := newHub()
+func StartApp() {
+	hub := NewHub()
 
 	// Global sim ticker
 	go func() {
-		t := time.NewTicker(time.Duration(1000.0/simHz) * time.Millisecond)
+		t := time.NewTicker(time.Duration(1000.0/SimHz) * time.Millisecond)
 		defer t.Stop()
 		for range t.C {
-			hub.mu.Lock()
-			for _, r := range hub.rooms {
-				r.tick()
+			hub.Mu.Lock()
+			for _, r := range hub.Rooms {
+				r.Tick()
 			}
-			hub.mu.Unlock()
+			hub.Mu.Unlock()
 		}
 	}()
 

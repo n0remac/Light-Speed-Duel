@@ -3,9 +3,17 @@
 All noteworthy changes to **Light Speed Duel** will be documented in this file.
 
 ## [Unreleased]
-- Pending ideas: time dilation mechanics, advanced formation planning, richer combat feedback.
+- Pending ideas: time dilation mechanics.
 
-## [0.2.0] - 2024-XX-XX
+## [0.2.1] - 2024-10-02
+### Added
+- Multiple missile routes can be made. Missiles can be launched on one of these routes.
+
+### Changed
+- Made a new file structure with packages for game and server code.
+
+
+## [0.2.0] - 2024-10-02
 ### Added
 - Missile systems with configurable speed, acceleration, agro radius, and lifetimes.
 - Missile pursuit AI that respects light-time delays for all observers.
@@ -19,7 +27,7 @@ All noteworthy changes to **Light Speed Duel** will be documented in this file.
 ### Fixed
 - Percieved missile positions now always use retarded-time snapshots, even for the firing player.
 
-## [0.1.0] - 2024-XX-XX
+## [0.1.0] - 2024-10-02
 ### Added
 - Initial prototype with ship navigation, retarded-opponent rendering, and WebSocket sync.
 

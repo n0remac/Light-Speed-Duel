@@ -2,7 +2,7 @@ package game
 
 func updateShips(r *Room, dt float64) {
 	world := r.World
-	world.ForEach([]ComponentKey{compTransform, compMovement, compShip}, func(id EntityID) {
+	world.ForEach([]ComponentKey{CompTransform, compMovement, CompShip}, func(id EntityID) {
 		tr := world.Transform(id)
 		mov := world.Movement(id)
 		ship := world.ShipData(id)
@@ -15,8 +15,8 @@ func updateShips(r *Room, dt float64) {
 			target := route.Waypoints[0]
 			dir := target.Pos.Sub(tr.Pos)
 			dist := dir.Len()
-			speedLimit := clamp(target.Speed, 0, mov.MaxSpeed)
-			if dist <= shipStopEps || speedLimit <= 1e-3 || dist <= speedLimit*dt {
+			speedLimit := Clamp(target.Speed, 0, mov.MaxSpeed)
+			if dist <= ShipStopEps || speedLimit <= 1e-3 || dist <= speedLimit*dt {
 				tr.Pos = target.Pos
 				tr.Vel = Vec2{}
 				route.Waypoints = route.Waypoints[1:]
@@ -35,11 +35,11 @@ func updateShips(r *Room, dt float64) {
 		if tr.Pos.Y < 0 {
 			tr.Pos.Y = 0
 		}
-		if tr.Pos.X > worldW {
-			tr.Pos.X = worldW
+		if tr.Pos.X > WorldW {
+			tr.Pos.X = WorldW
 		}
-		if tr.Pos.Y > worldH {
-			tr.Pos.Y = worldH
+		if tr.Pos.Y > WorldH {
+			tr.Pos.Y = WorldH
 		}
 
 		if hist := world.HistoryComponent(id); hist != nil {
@@ -52,7 +52,7 @@ func updateMissiles(r *Room, dt float64) {
 	world := r.World
 	var toRemove []EntityID
 
-	world.ForEach([]ComponentKey{compTransform, compMovement, compMissile}, func(id EntityID) {
+	world.ForEach([]ComponentKey{CompTransform, compMovement, CompMissile}, func(id EntityID) {
 		tr := world.Transform(id)
 		mov := world.Movement(id)
 		missile := world.MissileData(id)
@@ -99,7 +99,7 @@ func updateMissiles(r *Room, dt float64) {
 		}
 
 		if !chasing {
-			world.ForEach([]ComponentKey{compTransform, compShip, compOwner}, func(shipID EntityID) {
+			world.ForEach([]ComponentKey{CompTransform, CompShip, CompOwner}, func(shipID EntityID) {
 				if chasing {
 					return
 				}
@@ -127,7 +127,7 @@ func updateMissiles(r *Room, dt float64) {
 			toTarget := targetTransform.Pos.Sub(tr.Pos)
 			dist := toTarget.Len()
 			speed := mov.MaxSpeed
-			if dist <= shipStopEps || speed <= 1e-3 || dist <= speed*dt {
+			if dist <= ShipStopEps || speed <= 1e-3 || dist <= speed*dt {
 				tr.Pos = targetTransform.Pos
 				tr.Vel = Vec2{}
 			} else {
@@ -140,7 +140,7 @@ func updateMissiles(r *Room, dt float64) {
 			toWp := wp.Sub(tr.Pos)
 			dist := toWp.Len()
 			speed := mov.MaxSpeed
-			if dist <= shipStopEps || speed <= 1e-3 || dist <= speed*dt {
+			if dist <= ShipStopEps || speed <= 1e-3 || dist <= speed*dt {
 				tr.Pos = wp
 				tr.Vel = Vec2{}
 				missile.WaypointIdx++
@@ -157,11 +157,11 @@ func updateMissiles(r *Room, dt float64) {
 		if tr.Pos.Y < 0 {
 			tr.Pos.Y = 0
 		}
-		if tr.Pos.X > worldW {
-			tr.Pos.X = worldW
+		if tr.Pos.X > WorldW {
+			tr.Pos.X = WorldW
 		}
-		if tr.Pos.Y > worldH {
-			tr.Pos.Y = worldH
+		if tr.Pos.Y > WorldH {
+			tr.Pos.Y = WorldH
 		}
 
 		if !chasing && route != nil && missile.WaypointIdx >= len(route.Waypoints) {
@@ -169,7 +169,7 @@ func updateMissiles(r *Room, dt float64) {
 		}
 
 		hitShip := EntityID(0)
-		world.ForEach([]ComponentKey{compTransform, compShip, compOwner}, func(shipID EntityID) {
+		world.ForEach([]ComponentKey{CompTransform, CompShip, CompOwner}, func(shipID EntityID) {
 			if hitShip != 0 {
 				return
 			}
@@ -181,7 +181,7 @@ func updateMissiles(r *Room, dt float64) {
 			if shipTransform == nil {
 				return
 			}
-			if shipTransform.Pos.Sub(tr.Pos).Len() <= missileHitRadius {
+			if shipTransform.Pos.Sub(tr.Pos).Len() <= MissileHitRadius {
 				hitShip = shipID
 			}
 		})
@@ -190,7 +190,7 @@ func updateMissiles(r *Room, dt float64) {
 			if shipData := world.ShipData(hitShip); shipData != nil {
 				shipData.HP--
 				if shipData.HP <= 0 {
-					r.respawnShip(hitShip)
+					r.reSpawnShip(hitShip)
 				}
 			}
 			toRemove = append(toRemove, id)
