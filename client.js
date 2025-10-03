@@ -18,8 +18,6 @@
   const missileModeToggle = document.getElementById("toggle-missile-mode");
   const missileSpeedSlider = document.getElementById("missile-speed");
   const missileSpeedValue = document.getElementById("missile-speed-value");
-  const missileAccelSlider = document.getElementById("missile-accel");
-  const missileAccelValue = document.getElementById("missile-accel-value");
   const missileAgroSlider = document.getElementById("missile-agro");
   const missileAgroValue = document.getElementById("missile-agro-value");
   const missileLifetimeValue = document.getElementById("missile-lifetime");
@@ -28,9 +26,18 @@
 
   const MISSILE_MIN_SPEED = 40;
   const MISSILE_MAX_SPEED = 250;
-  const MISSILE_MIN_ACCEL = 20;
-  const MISSILE_MAX_ACCEL = 240;
+  const MISSILE_MIN_AGRO = 100;
   const MISSILE_MAX_LIFETIME = 120;
+  const MISSILE_MIN_LIFETIME = 20;
+  const MISSILE_LIFETIME_SPEED_PENALTY = 80;
+  const MISSILE_LIFETIME_AGRO_PENALTY = 40;
+  const MISSILE_LIFETIME_AGRO_REF = 2000;
+
+  let missileLimits = {
+    speedMin: MISSILE_MIN_SPEED,
+    speedMax: MISSILE_MAX_SPEED,
+    agroMin: MISSILE_MIN_AGRO,
+  };
 
   let ws;
   function connect() {
@@ -49,14 +56,20 @@
         state.missiles = Array.isArray(msg.missiles) ? msg.missiles : [];
         state.missileWaypoints = Array.isArray(msg.missile_waypoints) ? msg.missile_waypoints : [];
         if (msg.missile_config) {
-          const cfg = sanitizeMissileConfigJS({
-            speed: msg.missile_config.speed,
-            accel: msg.missile_config.accel,
-            agroRadius: msg.missile_config.agro_radius,
-          });
-          if (Number.isFinite(msg.missile_config.accel_limit)) {
-            cfg.accelLimit = msg.missile_config.accel_limit;
-          }
+          missileLimits = {
+            speedMin: Number.isFinite(msg.missile_config.speed_min) ? msg.missile_config.speed_min : MISSILE_MIN_SPEED,
+            speedMax: Number.isFinite(msg.missile_config.speed_max) ? msg.missile_config.speed_max : MISSILE_MAX_SPEED,
+            agroMin: Number.isFinite(msg.missile_config.agro_min) ? msg.missile_config.agro_min : MISSILE_MIN_AGRO,
+          };
+          state.missileLimits = missileLimits;
+          const cfg = sanitizeMissileConfigJS(
+            {
+              speed: msg.missile_config.speed,
+              agroRadius: msg.missile_config.agro_radius,
+            },
+            state.missileConfig,
+            missileLimits
+          );
           if (Number.isFinite(msg.missile_config.lifetime)) {
             cfg.lifetime = msg.missile_config.lifetime;
           }
@@ -185,11 +198,10 @@
     missileWaypoints: [],
     missileConfig: {
       speed: 180,
-      accel: 120,
       agroRadius: 800,
-      lifetime: missileLifetimeFor(180, 120),
-      accelLimit: missileAllowedAccelForSpeed(180),
+      lifetime: missileLifetimeFor(180, 800, missileLimits),
     },
+    missileLimits,
   };
 
   const legDashOffsets = new Map();
@@ -215,12 +227,6 @@
     const value = parseFloat(e.target.value);
     if (!Number.isFinite(value)) return;
     updateMissileConfigFromUI({ speed: value });
-  });
-
-  missileAccelSlider?.addEventListener("input", (e) => {
-    const value = parseFloat(e.target.value);
-    if (!Number.isFinite(value)) return;
-    updateMissileConfigFromUI({ accel: value });
   });
 
   missileAgroSlider?.addEventListener("input", (e) => {
@@ -259,60 +265,49 @@
     return Math.max(lo, Math.min(hi, v));
   }
 
-  function missileAllowedAccelForSpeed(speed) {
-    const span = MISSILE_MAX_SPEED - MISSILE_MIN_SPEED;
-    let sNorm = 0;
-    if (span > 0) {
-      sNorm = clamp((speed - MISSILE_MIN_SPEED) / span, 0, 1);
-    }
-    const curve = 1 - sNorm * sNorm * sNorm;
-    const accel = MISSILE_MIN_ACCEL + (MISSILE_MAX_ACCEL - MISSILE_MIN_ACCEL) * curve;
-    return clamp(accel, MISSILE_MIN_ACCEL, MISSILE_MAX_ACCEL);
+  function missileLifetimeFor(speed, agroRadius, limits = missileLimits) {
+    const minSpeed = Number.isFinite(limits.speedMin) ? limits.speedMin : MISSILE_MIN_SPEED;
+    const maxSpeed = Number.isFinite(limits.speedMax) ? limits.speedMax : MISSILE_MAX_SPEED;
+    const minAgro = Number.isFinite(limits.agroMin) ? limits.agroMin : MISSILE_MIN_AGRO;
+    const span = maxSpeed - minSpeed;
+    const speedNorm = span > 0 ? clamp((speed - minSpeed) / span, 0, 1) : 0;
+    const adjustedAgro = Math.max(0, agroRadius - minAgro);
+    const agroNorm = clamp(adjustedAgro / MISSILE_LIFETIME_AGRO_REF, 0, 1);
+    const reduction = speedNorm * MISSILE_LIFETIME_SPEED_PENALTY + agroNorm * MISSILE_LIFETIME_AGRO_PENALTY;
+    const base = MISSILE_MAX_LIFETIME;
+    return clamp(base - reduction, MISSILE_MIN_LIFETIME, MISSILE_MAX_LIFETIME);
   }
 
-  function missileLifetimeFor(speed, accel) {
-    const allowed = missileAllowedAccelForSpeed(speed);
-    const accelNorm = allowed > 0 ? clamp(accel / allowed, 0, 1) : 0;
-    const span = MISSILE_MAX_SPEED - MISSILE_MIN_SPEED;
-    const speedNorm = span > 0 ? clamp((speed - MISSILE_MIN_SPEED) / span, 0, 1) : 0;
-    const base = 60 + (1 - speedNorm) * 40 + accelNorm * 20;
-    return clamp(base, 10, MISSILE_MAX_LIFETIME);
-  }
-
-  function sanitizeMissileConfigJS(cfg, fallback = state.missileConfig) {
+  function sanitizeMissileConfigJS(cfg, fallback = state.missileConfig, limits = missileLimits) {
     const base = fallback || {};
-    const out = { ...cfg };
-    const speedSource = Number.isFinite(out.speed) ? out.speed : base.speed ?? MISSILE_MIN_SPEED;
-    out.speed = clamp(speedSource, MISSILE_MIN_SPEED, MISSILE_MAX_SPEED);
-    const allowed = missileAllowedAccelForSpeed(out.speed);
-    const accelSource = Number.isFinite(out.accel) ? out.accel : base.accel ?? MISSILE_MIN_ACCEL;
-    out.accel = clamp(accelSource, MISSILE_MIN_ACCEL, allowed);
-    const agroSource = Number.isFinite(out.agroRadius) ? out.agroRadius : base.agroRadius ?? 0;
-    out.agroRadius = Math.max(0, agroSource);
-    out.accelLimit = allowed;
-    out.lifetime = missileLifetimeFor(out.speed, out.accel);
+    const range = limits || {};
+    const minSpeed = Number.isFinite(range.speedMin) ? range.speedMin : MISSILE_MIN_SPEED;
+    const maxSpeed = Number.isFinite(range.speedMax) ? range.speedMax : MISSILE_MAX_SPEED;
+    const out = { ...base, ...cfg };
+    const speedSource = Number.isFinite(out.speed) ? out.speed : base.speed ?? minSpeed;
+    out.speed = clamp(speedSource, minSpeed, maxSpeed);
+    const minAgro = Number.isFinite(range.agroMin) ? range.agroMin : MISSILE_MIN_AGRO;
+    const agroSource = Number.isFinite(out.agroRadius) ? out.agroRadius : base.agroRadius ?? minAgro;
+    out.agroRadius = Math.max(minAgro, agroSource);
+    out.lifetime = missileLifetimeFor(out.speed, out.agroRadius, range);
     return out;
   }
 
   function applyMissileUI(cfg) {
     if (missileSpeedSlider) {
-      missileSpeedSlider.min = String(MISSILE_MIN_SPEED);
-      missileSpeedSlider.max = String(MISSILE_MAX_SPEED);
+      const minSpeed = state.missileLimits?.speedMin ?? MISSILE_MIN_SPEED;
+      const maxSpeed = state.missileLimits?.speedMax ?? MISSILE_MAX_SPEED;
+      missileSpeedSlider.min = String(minSpeed);
+      missileSpeedSlider.max = String(maxSpeed);
       missileSpeedSlider.value = cfg.speed.toFixed(0);
     }
     if (missileSpeedValue) {
       missileSpeedValue.textContent = cfg.speed.toFixed(0);
     }
-    if (missileAccelSlider) {
-      missileAccelSlider.min = String(MISSILE_MIN_ACCEL);
-      missileAccelSlider.max = cfg.accelLimit.toFixed(0);
-      missileAccelSlider.value = cfg.accel.toFixed(0);
-    }
-    if (missileAccelValue) {
-      missileAccelValue.textContent = cfg.accel.toFixed(0);
-    }
     if (missileAgroSlider) {
+      const minAgro = state.missileLimits?.agroMin ?? MISSILE_MIN_AGRO;
       const maxAgro = Math.max(5000, Math.ceil((cfg.agroRadius + 500) / 500) * 500);
+      missileAgroSlider.min = String(minAgro);
       missileAgroSlider.max = String(maxAgro);
       missileAgroSlider.value = cfg.agroRadius.toFixed(0);
     }
@@ -332,14 +327,12 @@
   function sendMissileConfig(cfg) {
     lastMissileConfigSent = {
       speed: cfg.speed,
-      accel: cfg.accel,
       agroRadius: cfg.agroRadius,
     };
     ws?.send(
       JSON.stringify({
         type: "configure_missile",
         missile_speed: cfg.speed,
-        missile_accel: cfg.accel,
         missile_agro: cfg.agroRadius,
       })
     );
@@ -349,7 +342,6 @@
     const current = state.missileConfig;
     const cfg = sanitizeMissileConfigJS({
       speed: overrides.speed ?? current.speed,
-      accel: overrides.accel ?? current.accel,
       agroRadius: overrides.agroRadius ?? current.agroRadius,
     }, current);
     state.missileConfig = cfg;
@@ -358,7 +350,6 @@
     const needsSend =
       !last ||
       Math.abs(last.speed - cfg.speed) > 0.25 ||
-      Math.abs(last.accel - cfg.accel) > 0.25 ||
       Math.abs((last.agroRadius ?? 0) - cfg.agroRadius) > 5;
     if (needsSend) {
       sendMissileConfig(cfg);

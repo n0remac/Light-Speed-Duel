@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -10,8 +11,6 @@ import (
 
 	"github.com/gorilla/websocket"
 )
-
-/* ----------------------------- Networking ---------------------------- */
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
@@ -29,12 +28,11 @@ type wsMsg struct {
 	Index int     `json:"index,omitempty"`
 	// missile config
 	MissileSpeed float64 `json:"missile_speed,omitempty"`
-	MissileAccel float64 `json:"missile_accel,omitempty"`
 	MissileAgro  float64 `json:"missile_agro,omitempty"`
 }
 
 type stateMsg struct {
-	Type             string           `json:"type"` // "state"
+	Type             string           `json:"type"`
 	Now              float64          `json:"now"`
 	Me               ghost            `json:"me"`
 	Ghosts           []ghost          `json:"ghosts"`
@@ -56,8 +54,8 @@ type ghost struct {
 	Y         float64       `json:"y"`
 	VX        float64       `json:"vx"`
 	VY        float64       `json:"vy"`
-	T         float64       `json:"t"`    // snapshot time represented
-	Self      bool          `json:"self"` // true for your own ship
+	T         float64       `json:"t"`
+	Self      bool          `json:"self"`
 	Waypoints []waypointDTO `json:"waypoints,omitempty"`
 	HP        int           `json:"hp"`
 }
@@ -82,9 +80,7 @@ type missileConfigDTO struct {
 	Speed      float64 `json:"speed"`
 	SpeedMin   float64 `json:"speed_min"`
 	SpeedMax   float64 `json:"speed_max"`
-	Accel      float64 `json:"accel"`
-	AccelMin   float64 `json:"accel_min"`
-	AccelLimit float64 `json:"accel_limit"`
+	AgroMin    float64 `json:"agro_min"`
 	AgroRadius float64 `json:"agro_radius"`
 	Lifetime   float64 `json:"lifetime"`
 }
@@ -119,7 +115,6 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 	playerID := randID("p")
 	player := &Player{ID: playerID, Name: "Anon"}
 
-	// Attach player and create ship
 	room.mu.Lock()
 	if len(room.Players) >= roomMaxPlayers {
 		room.mu.Unlock()
@@ -127,38 +122,27 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 		conn.Close()
 		return
 	}
+
 	defaultMissileSpeed := shipMaxSpeed * 0.75
-	allowedAccel := missileAllowedAccelForSpeed(defaultMissileSpeed)
 	player.MissileConfig = sanitizeMissileConfig(MissileConfig{
 		Speed:      defaultMissileSpeed,
-		Accel:      allowedAccel * 0.7,
 		AgroRadius: 800,
 	})
-	player.MissileWaypoints = nil
-	room.Players[playerID] = player
 
-	shipID := randID("s")
-	player.ShipID = shipID
+	existing := len(room.Players)
 	startPos := Vec2{
-		X: (worldW * 0.25) + float64(len(room.Ships))*200.0,
-		Y: (worldH * 0.5) + float64(len(room.Ships))*-200.0,
+		X: (worldW * 0.25) + float64(existing)*200.0,
+		Y: (worldH * 0.5) + float64(existing)*-200.0,
 	}
-	room.Ships[shipID] = &Ship{
-		ID:        shipID,
-		Owner:     playerID,
-		Pos:       startPos,
-		Vel:       Vec2{},
-		Waypoints: nil,
-		History:   newHistory(historyKeepS, simHz),
-		HP:        shipMaxHP,
-	}
-	room.Ships[shipID].History.push(Snapshot{T: room.Now, Pos: startPos})
+
+	shipEntity := room.spawnShip(playerID, startPos)
+	player.Ship = shipEntity
+	room.Players[playerID] = player
 	room.mu.Unlock()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Reader
 	go func() {
 		defer cancel()
 		for {
@@ -183,28 +167,24 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 				room.mu.Unlock()
 			case "add_waypoint":
 				room.mu.Lock()
-				if s := room.Ships[player.ShipID]; s != nil {
+				if p := room.Players[playerID]; p != nil {
 					wp := ShipWaypoint{
 						Pos:   Vec2{X: clamp(m.X, 0, worldW), Y: clamp(m.Y, 0, worldH)},
 						Speed: clamp(m.Speed, 0, shipMaxSpeed),
 					}
-					s.Waypoints = append(s.Waypoints, wp)
+					room.appendShipWaypoint(p.Ship, wp)
 				}
 				room.mu.Unlock()
 			case "update_waypoint":
 				room.mu.Lock()
-				if s := room.Ships[player.ShipID]; s != nil {
-					if m.Index >= 0 && m.Index < len(s.Waypoints) {
-						s.Waypoints[m.Index].Speed = clamp(m.Speed, 0, shipMaxSpeed)
-					}
+				if p := room.Players[playerID]; p != nil {
+					room.updateShipWaypoint(p.Ship, m.Index, m.Speed)
 				}
 				room.mu.Unlock()
 			case "delete_waypoint":
 				room.mu.Lock()
-				if s := room.Ships[player.ShipID]; s != nil {
-					if m.Index >= 0 && m.Index < len(s.Waypoints) {
-						s.Waypoints = s.Waypoints[:m.Index]
-					}
+				if p := room.Players[playerID]; p != nil {
+					room.deleteShipWaypointsFrom(p.Ship, m.Index)
 				}
 				room.mu.Unlock()
 			case "configure_missile":
@@ -213,9 +193,6 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 					cfg := p.MissileConfig
 					if m.MissileSpeed > 0 {
 						cfg.Speed = m.MissileSpeed
-					}
-					if m.MissileAccel > 0 {
-						cfg.Accel = m.MissileAccel
 					}
 					if m.MissileAgro >= 0 {
 						cfg.AgroRadius = m.MissileAgro
@@ -226,8 +203,8 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 			case "add_missile_waypoint":
 				room.mu.Lock()
 				if p := room.Players[playerID]; p != nil {
-					wp := MissileWaypoint{Pos: Vec2{X: clamp(m.X, 0, worldW), Y: clamp(m.Y, 0, worldH)}}
-					p.MissileWaypoints = append(p.MissileWaypoints, wp)
+					point := Vec2{X: clamp(m.X, 0, worldW), Y: clamp(m.Y, 0, worldH)}
+					p.MissileWaypoints = append(p.MissileWaypoints, point)
 				}
 				room.mu.Unlock()
 			case "delete_missile_waypoint":
@@ -241,25 +218,11 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 			case "launch_missile":
 				room.mu.Lock()
 				if p := room.Players[playerID]; p != nil {
-					if ship := room.Ships[player.ShipID]; ship != nil {
-						cfg := sanitizeMissileConfig(p.MissileConfig)
-						missileID := randID("m")
-						waypoints := make([]MissileWaypoint, len(p.MissileWaypoints))
-						copy(waypoints, p.MissileWaypoints)
-						miss := &Missile{
-							ID:          missileID,
-							Owner:       playerID,
-							Pos:         ship.Pos,
-							Vel:         ship.Vel,
-							Waypoints:   waypoints,
-							WaypointIdx: 0,
-							ReturnIdx:   0,
-							Config:      cfg,
-							LaunchTime:  room.Now,
-							History:     newHistory(historyKeepS, simHz),
-						}
-						miss.History.push(Snapshot{T: room.Now, Pos: miss.Pos, Vel: miss.Vel})
-						room.Missiles[missileID] = miss
+					cfg := sanitizeMissileConfig(p.MissileConfig)
+					p.MissileConfig = cfg
+					waypoints := append([]Vec2(nil), p.MissileWaypoints...)
+					if tr := room.World.Transform(p.Ship); tr != nil {
+						room.launchMissile(playerID, cfg, waypoints, tr.Pos, tr.Vel)
 					}
 				}
 				room.mu.Unlock()
@@ -267,7 +230,6 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// Writer (per-client state with retarded opponents)
 	go func() {
 		for {
 			select {
@@ -276,86 +238,138 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 			case <-lc.sendTick.C:
 				room.mu.Lock()
 				now := room.Now
-				me := room.Ships[player.ShipID]
-				var meGhost ghost
-				if me != nil {
-					meGhost = ghost{ID: me.ID, X: me.Pos.X, Y: me.Pos.Y, VX: me.Vel.X, VY: me.Vel.Y, T: now, Self: true, HP: me.HP}
-					if len(me.Waypoints) > 0 {
-						meGhost.Waypoints = make([]waypointDTO, len(me.Waypoints))
-						for i, wp := range me.Waypoints {
-							meGhost.Waypoints[i] = waypointDTO{X: wp.Pos.X, Y: wp.Pos.Y, Speed: wp.Speed}
-						}
-					}
-				}
-				var ghosts []ghost
-				for _, s := range room.Ships {
-					if s.Owner == playerID || me == nil {
-						continue
-					}
-					D := me.Pos.Sub(s.Pos).Len()
-					tRet := now - (D / c)
-					if snap, ok := s.History.getAt(tRet); ok {
-						ghosts = append(ghosts, ghost{
-							ID: s.ID, X: snap.Pos.X, Y: snap.Pos.Y, VX: snap.Vel.X, VY: snap.Vel.Y, T: tRet, Self: false, HP: s.HP,
-						})
-					}
-				}
+				p := room.Players[playerID]
 
 				missileCfg := missileConfigDTO{
-					SpeedMin:   missileMinSpeed,
-					SpeedMax:   missileMaxSpeed,
-					AccelMin:   missileMinAccel,
-					AccelLimit: missileMinAccel,
+					SpeedMin: missileMinSpeed,
+					SpeedMax: missileMaxSpeed,
+					AgroMin:  missileMinAgroRadius,
 				}
 				var missileWaypoints []waypointDTO
+				var meGhost ghost
+				var ghosts []ghost
 				var missiles []missileDTO
-				if p := room.Players[playerID]; p != nil {
+
+				var meEntity EntityID
+				var meTransform *Transform
+
+				if p != nil {
 					cfg := sanitizeMissileConfig(p.MissileConfig)
 					p.MissileConfig = cfg
 					missileCfg.Speed = cfg.Speed
-					missileCfg.Accel = cfg.Accel
 					missileCfg.AgroRadius = cfg.AgroRadius
 					missileCfg.Lifetime = cfg.Lifetime
-					missileCfg.AccelLimit = missileAllowedAccelForSpeed(cfg.Speed)
+
 					if len(p.MissileWaypoints) > 0 {
 						missileWaypoints = make([]waypointDTO, len(p.MissileWaypoints))
 						for i, wp := range p.MissileWaypoints {
-							missileWaypoints[i] = waypointDTO{X: wp.Pos.X, Y: wp.Pos.Y}
+							missileWaypoints[i] = waypointDTO{X: wp.X, Y: wp.Y}
+						}
+					}
+
+					meEntity = p.Ship
+					if tr := room.World.Transform(meEntity); tr != nil {
+						meTransform = tr
+						shipData := room.World.ShipData(meEntity)
+						history := room.World.HistoryComponent(meEntity)
+						route := room.World.ShipRoute(meEntity)
+						meGhost = ghost{
+							ID:   fmt.Sprintf("ship-%s", p.ID),
+							X:    tr.Pos.X,
+							Y:    tr.Pos.Y,
+							VX:   tr.Vel.X,
+							VY:   tr.Vel.Y,
+							T:    now,
+							Self: true,
+						}
+						if shipData != nil {
+							meGhost.HP = shipData.HP
+						}
+						if route != nil && len(route.Waypoints) > 0 {
+							meGhost.Waypoints = make([]waypointDTO, len(route.Waypoints))
+							for i, wp := range route.Waypoints {
+								meGhost.Waypoints[i] = waypointDTO{X: wp.Pos.X, Y: wp.Pos.Y, Speed: wp.Speed}
+							}
+						}
+						if history != nil {
+							meGhost.T = now
 						}
 					}
 				}
-				if missileCfg.Speed == 0 {
+
+				if missileCfg.Speed <= 0 {
 					missileCfg.Speed = missileMinSpeed
-					missileCfg.Accel = missileMinAccel
-					missileCfg.AgroRadius = 0
-					missileCfg.Lifetime = missileLifetimeFor(missileMinSpeed, missileMinAccel)
-					missileCfg.AccelLimit = missileAllowedAccelForSpeed(missileMinSpeed)
+				}
+				if missileCfg.AgroRadius < missileMinAgroRadius {
+					missileCfg.AgroRadius = missileMinAgroRadius
+				}
+				missileCfg.Lifetime = missileLifetimeFor(missileCfg.Speed, missileCfg.AgroRadius)
+
+				if meTransform != nil {
+					mePos := meTransform.Pos
+					room.World.ForEach([]ComponentKey{compTransform, compShip, compOwner, compHistory}, func(e EntityID) {
+						if e == meEntity {
+							return
+						}
+						owner := room.World.Owner(e)
+						tr := room.World.Transform(e)
+						hist := room.World.HistoryComponent(e)
+						shipData := room.World.ShipData(e)
+						if owner == nil || tr == nil || hist == nil || shipData == nil {
+							return
+						}
+						d := mePos.Sub(tr.Pos).Len()
+						tRet := now - (d / c)
+						if snap, ok := hist.History.getAt(tRet); ok {
+							ghosts = append(ghosts, ghost{
+								ID:   fmt.Sprintf("ship-%s", owner.PlayerID),
+								X:    snap.Pos.X,
+								Y:    snap.Pos.Y,
+								VX:   snap.Vel.X,
+								VY:   snap.Vel.Y,
+								T:    tRet,
+								HP:   shipData.HP,
+								Self: false,
+							})
+						}
+					})
+
+					room.World.ForEach([]ComponentKey{compTransform, compMissile, compOwner, compHistory}, func(e EntityID) {
+						owner := room.World.Owner(e)
+						tr := room.World.Transform(e)
+						hist := room.World.HistoryComponent(e)
+						missile := room.World.MissileData(e)
+						if owner == nil || tr == nil || hist == nil || missile == nil {
+							return
+						}
+						d := mePos.Sub(tr.Pos).Len()
+						tRet := now - (d / c)
+						if snap, ok := hist.History.getAt(tRet); ok {
+							targetID := ""
+							if missile.Target != 0 {
+								if targetOwner := room.World.Owner(missile.Target); targetOwner != nil {
+									targetID = fmt.Sprintf("ship-%s", targetOwner.PlayerID)
+								}
+							}
+							missiles = append(missiles, missileDTO{
+								ID:         fmt.Sprintf("miss-%d", e),
+								Owner:      owner.PlayerID,
+								Self:       owner.PlayerID == playerID,
+								X:          snap.Pos.X,
+								Y:          snap.Pos.Y,
+								VX:         snap.Vel.X,
+								VY:         snap.Vel.Y,
+								T:          tRet,
+								AgroRadius: missile.AgroRadius,
+								Lifetime:   missile.Lifetime,
+								LaunchTime: missile.LaunchTime,
+								ExpiresAt:  missile.LaunchTime + missile.Lifetime,
+								TargetID:   targetID,
+							})
+						}
+					})
 				}
 
-				for _, miss := range room.Missiles {
-					if me == nil {
-						continue
-					}
-					D := me.Pos.Sub(miss.Pos).Len()
-					tRet := now - (D / c)
-					if snap, ok := miss.History.getAt(tRet); ok {
-						missiles = append(missiles, missileDTO{
-							ID:         miss.ID,
-							Owner:      miss.Owner,
-							Self:       miss.Owner == playerID,
-							X:          snap.Pos.X,
-							Y:          snap.Pos.Y,
-							VX:         snap.Vel.X,
-							VY:         snap.Vel.Y,
-							T:          tRet,
-							AgroRadius: miss.Config.AgroRadius,
-							Lifetime:   miss.Config.Lifetime,
-							LaunchTime: miss.LaunchTime,
-							ExpiresAt:  miss.LaunchTime + miss.Config.Lifetime,
-							TargetID:   miss.TargetShip,
-						})
-					}
-				}
 				room.mu.Unlock()
 
 				msg := stateMsg{
@@ -373,21 +387,26 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// Cleanup
 	<-ctx.Done()
 	lc.sendTick.Stop()
 	conn.Close()
+
 	room.mu.Lock()
+	if p := room.Players[playerID]; p != nil {
+		toRemove := []EntityID{}
+		if p.Ship != 0 {
+			toRemove = append(toRemove, p.Ship)
+		}
+		room.World.ForEach([]ComponentKey{compOwner}, func(e EntityID) {
+			owner := room.World.Owner(e)
+			if owner != nil && owner.PlayerID == playerID {
+				toRemove = append(toRemove, e)
+			}
+		})
+		for _, e := range toRemove {
+			room.World.RemoveEntity(e)
+		}
+	}
 	delete(room.Players, playerID)
-	for id, s := range room.Ships {
-		if s.Owner == playerID {
-			delete(room.Ships, id)
-		}
-	}
-	for id, miss := range room.Missiles {
-		if miss.Owner == playerID {
-			delete(room.Missiles, id)
-		}
-	}
 	room.mu.Unlock()
 }
