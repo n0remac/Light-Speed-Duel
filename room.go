@@ -1,16 +1,159 @@
 package main
 
 import (
+	"fmt"
 	"math/rand"
+	"strings"
 	"sync"
 )
 
+type MissileRouteDef struct {
+	ID        string
+	Name      string
+	Waypoints []Vec2
+}
+
 type Player struct {
-	ID               string
-	Name             string
-	Ship             EntityID
-	MissileConfig    MissileConfig
-	MissileWaypoints []Vec2
+	ID                   string
+	Name                 string
+	Ship                 EntityID
+	MissileConfig        MissileConfig
+	MissileRoutes        []*MissileRouteDef
+	ActiveMissileRouteID string
+}
+
+func (p *Player) missileRouteIndex(id string) int {
+	for i, route := range p.MissileRoutes {
+		if route.ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
+func (p *Player) missileRouteByID(id string) *MissileRouteDef {
+	if id == "" {
+		return nil
+	}
+	if idx := p.missileRouteIndex(id); idx >= 0 {
+		return p.MissileRoutes[idx]
+	}
+	return nil
+}
+
+func (p *Player) activeMissileRoute() *MissileRouteDef {
+	if route := p.missileRouteByID(p.ActiveMissileRouteID); route != nil {
+		return route
+	}
+	if len(p.MissileRoutes) > 0 {
+		return p.MissileRoutes[0]
+	}
+	return nil
+}
+
+func (p *Player) ensureMissileRoutes() {
+	if len(p.MissileRoutes) == 0 {
+		route := &MissileRouteDef{ID: randID("mr"), Name: "Route 1"}
+		p.MissileRoutes = []*MissileRouteDef{route}
+		p.ActiveMissileRouteID = route.ID
+	}
+	if p.ActiveMissileRouteID == "" || p.missileRouteByID(p.ActiveMissileRouteID) == nil {
+		p.ActiveMissileRouteID = p.MissileRoutes[0].ID
+	}
+}
+
+func (p *Player) generateRouteName() string {
+	p.ensureMissileRoutes()
+	n := len(p.MissileRoutes) + 1
+	for {
+		candidate := fmt.Sprintf("Route %d", n)
+		exists := false
+		for _, route := range p.MissileRoutes {
+			if strings.EqualFold(route.Name, candidate) {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			return candidate
+		}
+		n++
+	}
+}
+
+func (p *Player) addMissileRoute(name string) *MissileRouteDef {
+	p.ensureMissileRoutes()
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		trimmed = p.generateRouteName()
+	}
+	route := &MissileRouteDef{ID: randID("mr"), Name: trimmed}
+	p.MissileRoutes = append(p.MissileRoutes, route)
+	p.ActiveMissileRouteID = route.ID
+	return route
+}
+
+func (p *Player) renameMissileRoute(id, name string) bool {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return false
+	}
+	if route := p.missileRouteByID(id); route != nil {
+		route.Name = trimmed
+		return true
+	}
+	return false
+}
+
+func (p *Player) deleteMissileRoute(id string) bool {
+	p.ensureMissileRoutes()
+	idx := p.missileRouteIndex(id)
+	if idx == -1 {
+		return false
+	}
+	if len(p.MissileRoutes) <= 1 {
+		p.MissileRoutes[idx].Waypoints = nil
+		return true
+	}
+	p.MissileRoutes = append(p.MissileRoutes[:idx], p.MissileRoutes[idx+1:]...)
+	if p.ActiveMissileRouteID == id {
+		p.ActiveMissileRouteID = p.MissileRoutes[0].ID
+	}
+	return true
+}
+
+func (p *Player) clearMissileRoute(id string) bool {
+	if route := p.missileRouteByID(id); route != nil {
+		route.Waypoints = nil
+		return true
+	}
+	return false
+}
+
+func (p *Player) setActiveMissileRoute(id string) bool {
+	if route := p.missileRouteByID(id); route != nil {
+		p.ActiveMissileRouteID = route.ID
+		return true
+	}
+	return false
+}
+
+func (p *Player) addWaypointToRoute(id string, wp Vec2) bool {
+	if route := p.missileRouteByID(id); route != nil {
+		route.Waypoints = append(route.Waypoints, wp)
+		return true
+	}
+	return false
+}
+
+func (p *Player) deleteWaypointFromRoute(id string, index int) bool {
+	if route := p.missileRouteByID(id); route != nil {
+		if index >= 0 && index < len(route.Waypoints) {
+			route.Waypoints = append(route.Waypoints[:index], route.Waypoints[index+1:]...)
+			return true
+		}
+	}
+	return false
 }
 
 type Room struct {
@@ -70,6 +213,9 @@ func (r *Room) spawnShip(owner string, startPos Vec2) EntityID {
 }
 
 func (r *Room) launchMissile(owner string, cfg MissileConfig, waypoints []Vec2, startPos Vec2, startVel Vec2) EntityID {
+	if len(waypoints) == 0 {
+		return 0
+	}
 	id := r.World.NewEntity()
 	r.World.SetComponent(id, compTransform, &Transform{Pos: startPos, Vel: startVel})
 	r.World.SetComponent(id, compMovement, &Movement{MaxSpeed: cfg.Speed})

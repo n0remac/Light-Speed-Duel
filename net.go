@@ -29,17 +29,21 @@ type wsMsg struct {
 	// missile config
 	MissileSpeed float64 `json:"missile_speed,omitempty"`
 	MissileAgro  float64 `json:"missile_agro,omitempty"`
+	RouteID      string  `json:"route_id,omitempty"`
+	RouteName    string  `json:"route_name,omitempty"`
 }
 
 type stateMsg struct {
-	Type             string           `json:"type"`
-	Now              float64          `json:"now"`
-	Me               ghost            `json:"me"`
-	Ghosts           []ghost          `json:"ghosts"`
-	Meta             roomMeta         `json:"meta"`
-	Missiles         []missileDTO     `json:"missiles"`
-	MissileConfig    missileConfigDTO `json:"missile_config"`
-	MissileWaypoints []waypointDTO    `json:"missile_waypoints"`
+	Type               string            `json:"type"`
+	Now                float64           `json:"now"`
+	Me                 ghost             `json:"me"`
+	Ghosts             []ghost           `json:"ghosts"`
+	Meta               roomMeta          `json:"meta"`
+	Missiles           []missileDTO      `json:"missiles"`
+	MissileConfig      missileConfigDTO  `json:"missile_config"`
+	MissileWaypoints   []waypointDTO     `json:"missile_waypoints"`
+	MissileRoutes      []missileRouteDTO `json:"missile_routes"`
+	ActiveMissileRoute string            `json:"active_missile_route"`
 }
 
 type roomMeta struct {
@@ -85,6 +89,12 @@ type missileConfigDTO struct {
 	Lifetime   float64 `json:"lifetime"`
 }
 
+type missileRouteDTO struct {
+	ID        string        `json:"id"`
+	Name      string        `json:"name"`
+	Waypoints []waypointDTO `json:"waypoints"`
+}
+
 type waypointDTO struct {
 	X     float64 `json:"x"`
 	Y     float64 `json:"y"`
@@ -128,6 +138,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 		Speed:      defaultMissileSpeed,
 		AgroRadius: 800,
 	})
+	player.ensureMissileRoutes()
 
 	existing := len(room.Players)
 	startPos := Vec2{
@@ -203,16 +214,67 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 			case "add_missile_waypoint":
 				room.mu.Lock()
 				if p := room.Players[playerID]; p != nil {
+					p.ensureMissileRoutes()
+					routeID := m.RouteID
+					if routeID == "" {
+						routeID = p.ActiveMissileRouteID
+					}
 					point := Vec2{X: clamp(m.X, 0, worldW), Y: clamp(m.Y, 0, worldH)}
-					p.MissileWaypoints = append(p.MissileWaypoints, point)
+					p.addWaypointToRoute(routeID, point)
 				}
 				room.mu.Unlock()
 			case "delete_missile_waypoint":
 				room.mu.Lock()
 				if p := room.Players[playerID]; p != nil {
-					if m.Index >= 0 && m.Index < len(p.MissileWaypoints) {
-						p.MissileWaypoints = p.MissileWaypoints[:m.Index]
+					p.ensureMissileRoutes()
+					routeID := m.RouteID
+					if routeID == "" {
+						routeID = p.ActiveMissileRouteID
 					}
+					if route := p.missileRouteByID(routeID); route != nil {
+						index := m.Index
+						if index < 0 || index >= len(route.Waypoints) {
+							index = len(route.Waypoints) - 1
+						}
+						if index >= 0 {
+							p.deleteWaypointFromRoute(routeID, index)
+						}
+					}
+				}
+				room.mu.Unlock()
+			case "clear_missile_route":
+				room.mu.Lock()
+				if p := room.Players[playerID]; p != nil {
+					p.ensureMissileRoutes()
+					routeID := m.RouteID
+					if routeID == "" {
+						routeID = p.ActiveMissileRouteID
+					}
+					p.clearMissileRoute(routeID)
+				}
+				room.mu.Unlock()
+			case "add_missile_route":
+				room.mu.Lock()
+				if p := room.Players[playerID]; p != nil {
+					p.addMissileRoute(m.RouteName)
+				}
+				room.mu.Unlock()
+			case "rename_missile_route":
+				room.mu.Lock()
+				if p := room.Players[playerID]; p != nil {
+					p.renameMissileRoute(m.RouteID, m.RouteName)
+				}
+				room.mu.Unlock()
+			case "delete_missile_route":
+				room.mu.Lock()
+				if p := room.Players[playerID]; p != nil {
+					p.deleteMissileRoute(m.RouteID)
+				}
+				room.mu.Unlock()
+			case "set_active_missile_route":
+				room.mu.Lock()
+				if p := room.Players[playerID]; p != nil {
+					p.setActiveMissileRoute(m.RouteID)
 				}
 				room.mu.Unlock()
 			case "launch_missile":
@@ -220,7 +282,19 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 				if p := room.Players[playerID]; p != nil {
 					cfg := sanitizeMissileConfig(p.MissileConfig)
 					p.MissileConfig = cfg
-					waypoints := append([]Vec2(nil), p.MissileWaypoints...)
+					p.ensureMissileRoutes()
+					routeID := m.RouteID
+					if routeID == "" {
+						routeID = p.ActiveMissileRouteID
+					}
+					var waypoints []Vec2
+					if route := p.missileRouteByID(routeID); route != nil {
+						waypoints = append([]Vec2(nil), route.Waypoints...)
+					}
+					if len(waypoints) == 0 {
+						room.mu.Unlock()
+						continue
+					}
 					if tr := room.World.Transform(p.Ship); tr != nil {
 						room.launchMissile(playerID, cfg, waypoints, tr.Pos, tr.Vel)
 					}
@@ -246,6 +320,8 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 					AgroMin:  missileMinAgroRadius,
 				}
 				var missileWaypoints []waypointDTO
+				var missileRoutesDTO []missileRouteDTO
+				var activeRouteID string
 				var meGhost ghost
 				var ghosts []ghost
 				var missiles []missileDTO
@@ -256,15 +332,30 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 				if p != nil {
 					cfg := sanitizeMissileConfig(p.MissileConfig)
 					p.MissileConfig = cfg
+					p.ensureMissileRoutes()
 					missileCfg.Speed = cfg.Speed
 					missileCfg.AgroRadius = cfg.AgroRadius
 					missileCfg.Lifetime = cfg.Lifetime
+					activeRouteID = p.ActiveMissileRouteID
 
-					if len(p.MissileWaypoints) > 0 {
-						missileWaypoints = make([]waypointDTO, len(p.MissileWaypoints))
-						for i, wp := range p.MissileWaypoints {
-							missileWaypoints[i] = waypointDTO{X: wp.X, Y: wp.Y}
+					if route := p.activeMissileRoute(); route != nil {
+						if len(route.Waypoints) > 0 {
+							missileWaypoints = make([]waypointDTO, len(route.Waypoints))
+							for i, wp := range route.Waypoints {
+								missileWaypoints[i] = waypointDTO{X: wp.X, Y: wp.Y}
+							}
 						}
+					}
+
+					for _, route := range p.MissileRoutes {
+						dto := missileRouteDTO{ID: route.ID, Name: route.Name}
+						if len(route.Waypoints) > 0 {
+							dto.Waypoints = make([]waypointDTO, len(route.Waypoints))
+							for i, wp := range route.Waypoints {
+								dto.Waypoints[i] = waypointDTO{X: wp.X, Y: wp.Y}
+							}
+						}
+						missileRoutesDTO = append(missileRoutesDTO, dto)
 					}
 
 					meEntity = p.Ship
@@ -373,14 +464,16 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 				room.mu.Unlock()
 
 				msg := stateMsg{
-					Type:             "state",
-					Now:              now,
-					Me:               meGhost,
-					Ghosts:           ghosts,
-					Meta:             roomMeta{C: c, W: worldW, H: worldH},
-					Missiles:         missiles,
-					MissileConfig:    missileCfg,
-					MissileWaypoints: missileWaypoints,
+					Type:               "state",
+					Now:                now,
+					Me:                 meGhost,
+					Ghosts:             ghosts,
+					Meta:               roomMeta{C: c, W: worldW, H: worldH},
+					Missiles:           missiles,
+					MissileConfig:      missileCfg,
+					MissileWaypoints:   missileWaypoints,
+					MissileRoutes:      missileRoutesDTO,
+					ActiveMissileRoute: activeRouteID,
 				}
 				_ = conn.WriteJSON(msg)
 			}

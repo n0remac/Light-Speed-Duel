@@ -5,61 +5,143 @@
   <title>Light Speed Duel – PoC</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    html,body { margin:0; background:#0b0f12; color:#d8dee9; font: 14px/1.4 system-ui, sans-serif; }
-    #hud { position:fixed; top:8px; left:8px; background:#1117; padding:8px 10px; border-radius:8px; }
-    #wrap { display:flex; align-items:center; justify-content:center; height:100vh; }
-    canvas { background: radial-gradient(ellipse at center, #0e1620 0%, #0b0f12 70%); box-shadow: 0 0 32px #000 inset; border:1px solid #1f2937; }
-    input,button { background:#1f2937; color:#e5e7eb; border:1px solid #374151; padding:4px 8px; border-radius:6px; }
+    html,body {
+      margin:0;
+      background:#0b0f12;
+      color:#d8dee9;
+      font: 14px/1.4 system-ui, sans-serif;
+      min-height:100vh;
+      display:flex;
+      flex-direction:column;
+    }
+    #app {
+      display:flex;
+      flex-direction:column;
+      flex:1;
+    }
+    #canvas-wrap {
+      flex:1;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:12px;
+    }
+    canvas {
+      width:100%;
+      max-width:1200px;
+      aspect-ratio: 16 / 9;
+      background: radial-gradient(ellipse at center, #0e1620 0%, #0b0f12 70%);
+      box-shadow: 0 0 32px #000 inset;
+      border:1px solid #1f2937;
+      border-radius:8px;
+    }
+    #control-section {
+      display:grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap:12px;
+      padding:12px;
+      background:#0b0f12;
+    }
+    .panel {
+      background:#1117;
+      border:1px solid #1f2937;
+      border-radius:8px;
+      padding:12px;
+    }
+    .panel h2 {
+      margin:0 0 8px;
+      font-size:16px;
+      font-weight:600;
+    }
+    input,button,select {
+      background:#1f2937;
+      color:#e5e7eb;
+      border:1px solid #374151;
+      padding:4px 8px;
+      border-radius:6px;
+    }
     button { cursor:pointer; }
+    .field { margin-top:6px; }
+    .field:first-of-type { margin-top:0; }
+    .inline { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
   </style>
 </head>
 <body>
-  <div id="hud">
-    <div><b>Light Speed Duel – PoC</b></div>
-    <div>Room: <code id="room-name"></code></div>
-    <div>World t: <span id="t">0.00</span> s</div>
-    <div>c: <span id="c">–</span> | map: <span id="wh">–</span> | HP: <span id="ship-hp">3</span></div>
-    <div style="margin-top:6px">
-      Name: <input id="name" placeholder="Your callsign" size="10" />
-      <button id="join">Join</button>
+  <div id="app">
+    <div id="canvas-wrap">
+      <canvas id="cv" width="1200" height="675"></canvas>
     </div>
-    <div style="margin-top:6px">
-      <label for="speed-slider">Waypoint speed:</label>
-      <input id="speed-slider" type="range" min="20" max="250" value="150" step="5" />
-      <span id="speed-value">150</span> u/s
-    </div>
-    <div style="margin-top:6px">
-      <label><input id="toggle-route" type="checkbox" checked /> Show route</label>
-    </div>
-    <div id="selection-panel" style="margin-top:6px; display:none">
-      <div id="selection-label"></div>
-      <button id="delete-waypoint">Delete from this waypoint onward</button>
-    </div>
-    <div id="missile-panel" style="margin-top:10px; padding-top:6px; border-top:1px solid #1f2937">
-      <div><label><input id="toggle-missile-mode" type="checkbox" /> Setup missile</label></div>
-      <div style="margin-top:6px">
-        <label for="missile-speed">Missile speed:</label>
-        <input id="missile-speed" type="range" min="40" max="250" value="180" step="5" />
-        <span id="missile-speed-value">180</span> u/s
+    <div id="control-section">
+      <div class="panel" id="ship-panel">
+        <h2>Ship Controls</h2>
+        <div class="field"><strong>Light Speed Duel – PoC</strong></div>
+        <div class="field">Room: <code id="room-name"></code></div>
+        <div class="field">World t: <span id="t">0.00</span> s</div>
+        <div class="field">c: <span id="c">–</span> | map: <span id="wh">–</span> | HP: <span id="ship-hp">3</span></div>
+        <div class="field inline">
+          <label for="name">Name:</label>
+          <input id="name" placeholder="Your callsign" size="10" />
+          <button id="join">Join</button>
+        </div>
+        <div class="field">
+          <label for="speed-slider">Waypoint speed:</label>
+          <div class="inline">
+            <input id="speed-slider" type="range" min="20" max="250" value="150" step="5" />
+            <span id="speed-value">150</span> u/s
+          </div>
+        </div>
+        <div class="field">
+          <label class="inline"><input id="toggle-route" type="checkbox" checked /> Show route</label>
+        </div>
+        <div id="selection-panel" class="field" style="display:none">
+          <div id="selection-label"></div>
+          <button id="delete-waypoint">Delete from this waypoint onward</button>
+        </div>
+        <div class="field" style="margin-top:12px">
+          Click on space to set or edit waypoints. Adjust the slider to set travel speed for new or selected legs.
+          You see opponents at their <i>retarded</i> position (light-time delayed).
+        </div>
       </div>
-      <div style="margin-top:6px">
-        <label for="missile-agro">Agro radius:</label>
-        <input id="missile-agro" type="range" min="100" max="2000" value="800" step="50" />
-        <span id="missile-agro-value">800</span> u
-      </div>
-      <div style="margin-top:6px">Missile lifetime: <span id="missile-lifetime">0</span> s</div>
-      <div style="margin-top:6px">
-        <button id="launch-missile">Launch Missile</button>
-        <button id="clear-missile-waypoints" style="margin-left:4px">Clear Missile Waypoints</button>
+      <div class="panel" id="missile-panel">
+        <h2>Missile Controls</h2>
+        <div class="field">
+          <label class="inline"><input id="toggle-missile-mode" type="checkbox" /> Setup missile</label>
+        </div>
+        <div class="field">
+          <label for="missile-speed">Missile speed:</label>
+          <div class="inline">
+            <input id="missile-speed" type="range" min="40" max="250" value="180" step="5" />
+            <span id="missile-speed-value">180</span> u/s
+          </div>
+        </div>
+        <div class="field">
+          <label for="missile-agro">Agro radius:</label>
+          <div class="inline">
+            <input id="missile-agro" type="range" min="100" max="2000" value="800" step="50" />
+            <span id="missile-agro-value">800</span> u
+          </div>
+        </div>
+        <div class="field">Missile lifetime: <span id="missile-lifetime">0</span> s</div>
+        <div class="field">
+          <label for="missile-route-select">Missile route:</label>
+          <select id="missile-route-select"></select>
+        </div>
+        <div class="field inline">
+          <button id="add-missile-route">Add Route</button>
+          <button id="rename-missile-route">Rename</button>
+          <button id="delete-missile-route">Delete</button>
+        </div>
+        <div class="field" id="missile-route-summary">
+          Editing route: <span id="missile-route-name">Route 1</span> (<span id="missile-route-count">0</span> pts)
+        </div>
+        <div class="field inline">
+          <button id="clear-missile-waypoints">Clear Route Waypoints</button>
+        </div>
+        <div class="field inline">
+          <button id="launch-missile">Launch Missile</button>
+        </div>
       </div>
     </div>
-    <div style="margin-top:6px">
-      Click on space to set or edit waypoints. Adjust the slider to set travel speed for new or selected legs.
-      You see opponents at their <i>retarded</i> position (light-time delayed).
-    </div>
-  </div>
-  <div id="wrap">
-    <canvas id="cv" width="1200" height="675"></canvas>
   </div>
   <script src="client.js"></script>
 </body>
