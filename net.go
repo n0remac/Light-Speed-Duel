@@ -23,8 +23,10 @@ type wsMsg struct {
 	Name string `json:"name,omitempty"`
 	Room string `json:"room,omitempty"`
 	// waypoint
-	X float64 `json:"x,omitempty"`
-	Y float64 `json:"y,omitempty"`
+	X     float64 `json:"x,omitempty"`
+	Y     float64 `json:"y,omitempty"`
+	Speed float64 `json:"speed,omitempty"`
+	Index int     `json:"index,omitempty"`
 }
 
 type stateMsg struct {
@@ -42,13 +44,20 @@ type roomMeta struct {
 }
 
 type ghost struct {
-	ID   string  `json:"id"`
-	X    float64 `json:"x"`
-	Y    float64 `json:"y"`
-	VX   float64 `json:"vx"`
-	VY   float64 `json:"vy"`
-	T    float64 `json:"t"`    // snapshot time represented
-	Self bool    `json:"self"` // true for your own ship
+	ID        string        `json:"id"`
+	X         float64       `json:"x"`
+	Y         float64       `json:"y"`
+	VX        float64       `json:"vx"`
+	VY        float64       `json:"vy"`
+	T         float64       `json:"t"`    // snapshot time represented
+	Self      bool          `json:"self"` // true for your own ship
+	Waypoints []waypointDTO `json:"waypoints,omitempty"`
+}
+
+type waypointDTO struct {
+	X     float64 `json:"x"`
+	Y     float64 `json:"y"`
+	Speed float64 `json:"speed"`
 }
 
 type liveConn struct {
@@ -92,12 +101,12 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 		Y: (worldH * 0.5) + float64(len(room.Ships))*-200.0,
 	}
 	room.Ships[shipID] = &Ship{
-		ID:       shipID,
-		Owner:    playerID,
-		Pos:      startPos,
-		Vel:      Vec2{},
-		Waypoint: startPos,
-		History:  newHistory(historyKeepS, simHz),
+		ID:        shipID,
+		Owner:     playerID,
+		Pos:       startPos,
+		Vel:       Vec2{},
+		Waypoints: nil,
+		History:   newHistory(historyKeepS, simHz),
 	}
 	room.Ships[shipID].History.push(Snapshot{T: room.Now, Pos: startPos})
 	room.mu.Unlock()
@@ -128,10 +137,30 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 					p.Name = name
 				}
 				room.mu.Unlock()
-			case "waypoint":
+			case "add_waypoint":
 				room.mu.Lock()
 				if s := room.Ships[player.ShipID]; s != nil {
-					s.Waypoint = Vec2{X: clamp(m.X, 0, worldW), Y: clamp(m.Y, 0, worldH)}
+					wp := ShipWaypoint{
+						Pos:   Vec2{X: clamp(m.X, 0, worldW), Y: clamp(m.Y, 0, worldH)},
+						Speed: clamp(m.Speed, 0, shipMaxSpeed),
+					}
+					s.Waypoints = append(s.Waypoints, wp)
+				}
+				room.mu.Unlock()
+			case "update_waypoint":
+				room.mu.Lock()
+				if s := room.Ships[player.ShipID]; s != nil {
+					if m.Index >= 0 && m.Index < len(s.Waypoints) {
+						s.Waypoints[m.Index].Speed = clamp(m.Speed, 0, shipMaxSpeed)
+					}
+				}
+				room.mu.Unlock()
+			case "delete_waypoint":
+				room.mu.Lock()
+				if s := room.Ships[player.ShipID]; s != nil {
+					if m.Index >= 0 && m.Index < len(s.Waypoints) {
+						s.Waypoints = s.Waypoints[:m.Index]
+					}
 				}
 				room.mu.Unlock()
 			}
@@ -151,10 +180,16 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 				var meGhost ghost
 				if me != nil {
 					meGhost = ghost{ID: me.ID, X: me.Pos.X, Y: me.Pos.Y, VX: me.Vel.X, VY: me.Vel.Y, T: now, Self: true}
+					if len(me.Waypoints) > 0 {
+						meGhost.Waypoints = make([]waypointDTO, len(me.Waypoints))
+						for i, wp := range me.Waypoints {
+							meGhost.Waypoints[i] = waypointDTO{X: wp.Pos.X, Y: wp.Pos.Y, Speed: wp.Speed}
+						}
+					}
 				}
 				var ghosts []ghost
 				for _, s := range room.Ships {
-					if s.Owner == playerID {
+					if s.Owner == playerID || me == nil {
 						continue
 					}
 					D := me.Pos.Sub(s.Pos).Len()
