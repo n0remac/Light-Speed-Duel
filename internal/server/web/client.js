@@ -9,27 +9,51 @@
   const Cspan = document.getElementById("c");
   const WHspan = document.getElementById("wh");
   const HPspan = document.getElementById("ship-hp");
-  const speedSlider = document.getElementById("speed-slider");
-  const speedValue = document.getElementById("speed-value");
-  const selectionPanel = document.getElementById("selection-panel");
-  const selectionLabel = document.getElementById("selection-label");
-  const deleteWaypointBtn = document.getElementById("delete-waypoint");
-  const spawnBotBtn = document.getElementById("spawn-bot");
-  const routeToggle = document.getElementById("toggle-route");
-  const missileModeToggle = document.getElementById("toggle-missile-mode");
-  const missileSpeedSlider = document.getElementById("missile-speed");
+  const shipModeBtn = document.getElementById("ship-mode-toggle");
+  const shipControlsCard = document.getElementById("ship-controls");
+  const shipClearBtn = document.getElementById("ship-clear");
+  const shipSetBtn = document.getElementById("ship-set");
+  const shipSelectBtn = document.getElementById("ship-select");
+  const shipToggleRouteBtn = document.getElementById("ship-toggle-route");
+  const shipSelectionContainer = document.getElementById("ship-selection");
+  const shipSelectionLabel = document.getElementById("ship-selection-label");
+  const shipDeleteBtn = document.getElementById("ship-delete");
+  const shipSpeedCard = document.getElementById("ship-speed-card");
+  const shipSpeedSlider = document.getElementById("ship-speed-slider");
+  const shipSpeedValue = document.getElementById("ship-speed-value");
+
+  const missileModeBtn = document.getElementById("missile-mode-toggle");
+  const missileControlsCard = document.getElementById("missile-controls");
+  const missileAddRouteBtn = document.getElementById("missile-add-route");
+  const missileLaunchBtn = document.getElementById("missile-launch");
+  const missileSetBtn = document.getElementById("missile-set");
+  const missileSelectBtn = document.getElementById("missile-select");
+  const missileDeleteBtn = document.getElementById("missile-delete");
+  const missileSpeedCard = document.getElementById("missile-speed-card");
+  const missileSpeedSlider = document.getElementById("missile-speed-slider");
   const missileSpeedValue = document.getElementById("missile-speed-value");
-  const missileAgroSlider = document.getElementById("missile-agro");
+
+  const missileAgroCard = document.getElementById("missile-agro-card");
+  const missileAgroSlider = document.getElementById("missile-agro-slider");
   const missileAgroValue = document.getElementById("missile-agro-value");
-  const missileLifetimeValue = document.getElementById("missile-lifetime");
-  const missileRouteSelect = document.getElementById("missile-route-select");
-  const addMissileRouteBtn = document.getElementById("add-missile-route");
+
+  const spawnBotBtn = document.getElementById("spawn-bot");
+  const shipShowRouteBtn = shipToggleRouteBtn;
+
+  const routePrevBtn = document.getElementById("route-prev");
+  const routeNextBtn = document.getElementById("route-next");
+  const routeMenuToggle = document.getElementById("route-menu-toggle");
+  const routeMenu = document.getElementById("route-menu");
   const renameMissileRouteBtn = document.getElementById("rename-missile-route");
   const deleteMissileRouteBtn = document.getElementById("delete-missile-route");
+  const clearMissileWaypointsBtn = document.getElementById("clear-missile-waypoints");
   const missileRouteNameLabel = document.getElementById("missile-route-name");
   const missileRouteCountLabel = document.getElementById("missile-route-count");
-  const launchMissileBtn = document.getElementById("launch-missile");
-  const clearMissileWaypointsBtn = document.getElementById("clear-missile-waypoints");
+
+  const helpToggle = document.getElementById("help-toggle");
+  const helpOverlay = document.getElementById("help-overlay");
+  const helpCloseBtn = document.getElementById("help-close");
+  const helpText = document.getElementById("help-text");
 
   const MISSILE_MIN_SPEED = 40;
   const MISSILE_MAX_SPEED = 250;
@@ -45,6 +69,42 @@
     speedMax: MISSILE_MAX_SPEED,
     agroMin: MISSILE_MIN_AGRO,
   };
+
+  const uiState = {
+    primaryMode: "ship",
+    shipSubMode: "set",
+    missileSubMode: "set",
+    showShipRoute: true,
+    helpVisible: false,
+  };
+
+  const HELP_TEXT = [
+    "Primary Modes",
+    "  1 – Toggle ship navigation mode",
+    "  2 – Toggle missile coordination mode",
+    "",
+    "Ship Navigation",
+    "  T – Switch between set/select",
+    "  C – Clear all waypoints",
+    "  R – Toggle show route",
+    "  [ / ] – Adjust waypoint speed",
+    "  Shift+[ / ] – Coarse speed adjust",
+    "  Tab / Shift+Tab – Cycle waypoints",
+    "  Delete – Delete from selected waypoint",
+    "",
+    "Missile Coordination",
+    "  N – Add new missile route",
+    "  L – Launch missiles",
+    "  E – Switch between set/select",
+    "  , / . – Adjust agro radius",
+    "  ; / ' – Adjust missile speed",
+    "  Shift+slider keys – Coarse adjust",
+    "  Delete – Delete selected missile waypoint",
+    "",
+    "General",
+    "  ? – Toggle this overlay",
+    "  Esc – Cancel selection or close overlay",
+  ].join("\n");
 
   let ws;
   function connect() {
@@ -106,7 +166,7 @@
             HPspan.textContent = "–";
           }
         }
-        refreshSelectionUI();
+        refreshShipSelectionUI();
       }
     };
   }
@@ -130,103 +190,28 @@
     return { x: p.x * sx, y: p.y * sy };
   }
 
-  // Input: click to set waypoint
-  cv.addEventListener("click", (e) => {
+  // Input: pointer interactions for ship/missile planning
+  cv.addEventListener("pointerdown", (e) => {
+    if (helpOverlay?.classList.contains("visible")) {
+      return;
+    }
     const rect = cv.getBoundingClientRect();
     const scaleX = rect.width !== 0 ? cv.width / rect.width : 1;
     const scaleY = rect.height !== 0 ? cv.height / rect.height : 1;
     const x = (e.clientX - rect.left) * scaleX;
     const y = (e.clientY - rect.top) * scaleY;
     const canvasPoint = { x, y };
-    if (missileSetupMode) {
-      const route = getActiveMissileRoute();
-      if (!route) {
-        return;
-      }
-      const wpWorld = canvasToWorld(canvasPoint);
-      ws?.send(
-        JSON.stringify({
-          type: "add_missile_waypoint",
-          route_id: route.id,
-          x: wpWorld.x,
-          y: wpWorld.y,
-        })
-      );
-      route.waypoints = route.waypoints ? [...route.waypoints, { x: wpWorld.x, y: wpWorld.y }] : [{ x: wpWorld.x, y: wpWorld.y }];
-      renderMissileRouteControls();
-      return;
-    }
-    const hit = hitTestRoute(canvasPoint);
-    if (hit) {
-      if (
-        hit.type === "leg" &&
-        selection &&
-        selection.type === "leg" &&
-        selection.index === hit.index
-      ) {
-        setSelection(null);
-      } else {
-        setSelection(hit);
-      }
-      return;
-    }
-    const wp = canvasToWorld(canvasPoint);
-    ws?.send(JSON.stringify({ type: "add_waypoint", x: wp.x, y: wp.y, speed: defaultSpeed }));
-    if (state.me) {
-      const wps = Array.isArray(state.me.waypoints) ? state.me.waypoints.slice() : [];
-      wps.push({ x: wp.x, y: wp.y, speed: defaultSpeed });
-      state.me.waypoints = wps;
-      if (wps.length > 0) {
-        setSelection({ type: "leg", index: wps.length - 1 });
-        return;
-      }
-    }
-    setSelection(null);
-  });
+    const worldPoint = canvasToWorld(canvasPoint);
 
-  speedSlider?.addEventListener("input", (e) => {
-    const value = parseFloat(e.target.value);
-    updateSpeedLabel(value);
-    defaultSpeed = value;
-    if (selection && state.me && Array.isArray(state.me.waypoints) && state.me.waypoints[selection.index]) {
-      ws?.send(JSON.stringify({ type: "update_waypoint", index: selection.index, speed: value }));
-      state.me.waypoints[selection.index].speed = value;
-      refreshSelectionUI();
-    }
-  });
-
-  deleteWaypointBtn?.addEventListener("click", () => {
-    if (missileSetupMode) {
-      const route = getActiveMissileRoute();
-      if (!route || !Array.isArray(route.waypoints) || route.waypoints.length === 0) {
-        return;
+    if (isMissileModeActive()) {
+      handleMissilePointer(canvasPoint, worldPoint);
+    } else {
+      if (!isShipModeActive()) {
+        setPrimaryMode("ship");
       }
-      const index = route.waypoints.length - 1;
-      ws?.send(
-        JSON.stringify({
-          type: "delete_missile_waypoint",
-          route_id: route.id,
-          index,
-        })
-      );
-      route.waypoints = route.waypoints.slice(0, index);
-      renderMissileRouteControls();
-      return;
+      handleShipPointer(canvasPoint, worldPoint);
     }
-    if (!selection) return;
-    ws?.send(JSON.stringify({ type: "delete_waypoint", index: selection.index }));
-    if (state.me && Array.isArray(state.me.waypoints)) {
-      state.me.waypoints = state.me.waypoints.slice(0, selection.index);
-    }
-    setSelection(null);
-  });
-
-  routeToggle?.addEventListener("change", (e) => {
-    const checked = Boolean(e.target.checked);
-    showRouteLines = checked;
-    if (!checked) {
-      setSelection(null);
-    }
+    e.preventDefault();
   });
 
   spawnBotBtn?.addEventListener("click", () => {
@@ -259,21 +244,84 @@
   const legDashOffsets = new Map();
 
   let selection = null; // { type: "waypoint" | "leg", index: number }
-  let defaultSpeed = parseFloat(speedSlider?.value || "150");
-  let showRouteLines = routeToggle ? routeToggle.checked : true;
+  let missileSelection = null; // { type: "waypoint", index: number }
+  let defaultSpeed = parseFloat(shipSpeedSlider?.value || "150");
   let lastLoopTs = null;
-  let missileSetupMode = missileModeToggle ? missileModeToggle.checked : false;
   let lastMissileConfigSent = null;
 
   syncMissileUIFromState();
+  updateModeUI();
+  refreshShipSelectionUI();
+  refreshMissileSelectionUI();
+  updateHelpOverlay();
 
-  missileModeToggle?.addEventListener("change", (e) => {
-    missileSetupMode = Boolean(e.target.checked);
-    if (missileSetupMode) {
-      setSelection(null);
-      refreshSelectionUI();
+  shipModeBtn?.addEventListener("click", () => {
+    togglePrimaryMode("ship");
+  });
+
+  missileModeBtn?.addEventListener("click", () => {
+    togglePrimaryMode("missile");
+  });
+
+  shipClearBtn?.addEventListener("click", () => {
+    clearShipRoute();
+  });
+
+  shipSetBtn?.addEventListener("click", () => {
+    setPrimaryMode("ship");
+    setShipSubMode("set");
+  });
+
+  shipSelectBtn?.addEventListener("click", () => {
+    setPrimaryMode("ship");
+    setShipSubMode("select");
+  });
+
+  shipShowRouteBtn?.addEventListener("click", () => {
+    uiState.showShipRoute = !uiState.showShipRoute;
+    updateModeUI();
+  });
+
+  shipSpeedSlider?.addEventListener("input", (e) => {
+    const value = parseFloat(e.target.value);
+    if (!Number.isFinite(value)) return;
+    updateSpeedLabel(value);
+    defaultSpeed = value;
+    if (selection && state.me && Array.isArray(state.me.waypoints) && state.me.waypoints[selection.index]) {
+      ws?.send(JSON.stringify({ type: "update_waypoint", index: selection.index, speed: value }));
+      state.me.waypoints[selection.index].speed = value;
+      refreshShipSelectionUI();
     }
-    renderMissileRouteControls();
+  });
+
+  shipDeleteBtn?.addEventListener("click", () => {
+    deleteSelectedShipWaypoint();
+  });
+
+  missileAddRouteBtn?.addEventListener("click", () => {
+    ws?.send(
+      JSON.stringify({
+        type: "add_missile_route",
+      })
+    );
+  });
+
+  missileLaunchBtn?.addEventListener("click", () => {
+    launchActiveMissileRoute();
+  });
+
+  missileSetBtn?.addEventListener("click", () => {
+    setPrimaryMode("missile");
+    setMissileSubMode("set");
+  });
+
+  missileSelectBtn?.addEventListener("click", () => {
+    setPrimaryMode("missile");
+    setMissileSubMode("select");
+  });
+
+  missileDeleteBtn?.addEventListener("click", () => {
+    deleteSelectedMissileWaypoint();
   });
 
   missileSpeedSlider?.addEventListener("input", (e) => {
@@ -288,27 +336,22 @@
     updateMissileConfigFromUI({ agroRadius: value });
   });
 
-  missileRouteSelect?.addEventListener("change", (e) => {
-    const routeId = e.target.value;
-    if (!routeId) return;
-    setActiveMissileRouteLocal(routeId);
-    ws?.send(
-      JSON.stringify({
-        type: "set_active_missile_route",
-        route_id: routeId,
-      })
-    );
+  routePrevBtn?.addEventListener("click", () => cycleMissileRoute(-1));
+  routeNextBtn?.addEventListener("click", () => cycleMissileRoute(1));
+
+  routeMenuToggle?.addEventListener("click", () => {
+    routeMenu?.classList.toggle("visible");
   });
 
-  addMissileRouteBtn?.addEventListener("click", () => {
-    ws?.send(
-      JSON.stringify({
-        type: "add_missile_route",
-      })
-    );
+  document.addEventListener("click", (event) => {
+    if (!routeMenu || !routeMenu.classList.contains("visible")) return;
+    if (event.target === routeMenuToggle) return;
+    if (routeMenu.contains(event.target)) return;
+    routeMenu.classList.remove("visible");
   });
 
   renameMissileRouteBtn?.addEventListener("click", () => {
+    routeMenu?.classList.remove("visible");
     const route = getActiveMissileRoute();
     if (!route) return;
     const name = window.prompt("Rename route", route.name || "");
@@ -327,6 +370,7 @@
   });
 
   deleteMissileRouteBtn?.addEventListener("click", () => {
+    routeMenu?.classList.remove("visible");
     const route = getActiveMissileRoute();
     if (!route) return;
     if (!window.confirm(`Delete ${route.name}?`)) return;
@@ -338,7 +382,9 @@
       const remaining = state.missileRoutes;
       state.activeMissileRouteId = remaining.length > 0 ? remaining[0].id : null;
     }
+    missileSelection = null;
     renderMissileRouteControls();
+    refreshMissileSelectionUI();
     ws?.send(
       JSON.stringify({
         type: "delete_missile_route",
@@ -347,23 +393,8 @@
     );
   });
 
-  launchMissileBtn?.addEventListener("click", () => {
-    if (launchMissileBtn.disabled) {
-      return;
-    }
-    const route = getActiveMissileRoute();
-    if (!route || !Array.isArray(route.waypoints) || route.waypoints.length === 0) {
-      return;
-    }
-    ws?.send(
-      JSON.stringify({
-        type: "launch_missile",
-        route_id: route.id,
-      })
-    );
-  });
-
   clearMissileWaypointsBtn?.addEventListener("click", () => {
+    routeMenu?.classList.remove("visible");
     const route = getActiveMissileRoute();
     if (!route || !Array.isArray(route.waypoints) || route.waypoints.length === 0) {
       return;
@@ -375,24 +406,33 @@
       })
     );
     route.waypoints = [];
+    missileSelection = null;
     renderMissileRouteControls();
+    refreshMissileSelectionUI();
+  });
+
+  helpToggle?.addEventListener("click", () => {
+    setHelpVisible(true);
+  });
+
+  helpCloseBtn?.addEventListener("click", () => {
+    setHelpVisible(false);
   });
 
   function updateSpeedLabel(v) {
-    speedValue.textContent = Number(v).toFixed(0);
+    if (shipSpeedValue) {
+      shipSpeedValue.textContent = Number(v).toFixed(0);
+    }
   }
 
-  function setSliderValue(v) {
-    if (!speedSlider) return;
+  function setShipSliderValue(v) {
+    if (!shipSpeedSlider) return;
     const str = typeof v === "number" ? v : parseFloat(v) || 0;
-    speedSlider.value = String(str);
+    shipSpeedSlider.value = String(str);
     updateSpeedLabel(str);
   }
 
-  setSliderValue(defaultSpeed);
-  if (selectionPanel) {
-    selectionPanel.classList.add("hidden");
-  }
+  setShipSliderValue(defaultSpeed);
 
   function clamp(v, lo, hi) {
     return Math.max(lo, Math.min(hi, v));
@@ -417,39 +457,19 @@
   function renderMissileRouteControls() {
     const routes = Array.isArray(state.missileRoutes) ? state.missileRoutes : [];
     const activeRoute = getActiveMissileRoute();
-
-    if (missileRouteSelect) {
-      missileRouteSelect.innerHTML = "";
-      if (routes.length === 0) {
-        const option = document.createElement("option");
-        option.value = "";
-        option.textContent = "No routes";
-        missileRouteSelect.appendChild(option);
-        missileRouteSelect.disabled = true;
-      } else {
-        missileRouteSelect.disabled = false;
-      }
-      routes.forEach((route) => {
-        const option = document.createElement("option");
-        option.value = route.id;
-        option.textContent = route.name || route.id;
-        if (route.id === state.activeMissileRouteId) {
-          option.selected = true;
-        }
-        missileRouteSelect.appendChild(option);
-      });
-      if (routes.length > 0 && missileRouteSelect.value !== state.activeMissileRouteId) {
-        missileRouteSelect.value = state.activeMissileRouteId;
-      }
-    }
-
     if (missileRouteNameLabel) {
-      missileRouteNameLabel.textContent = activeRoute ? activeRoute.name : "–";
+      if (!activeRoute) {
+        missileRouteNameLabel.textContent = routes.length === 0 ? "No route" : "Route";
+      } else {
+        missileRouteNameLabel.textContent = activeRoute.name || "Route";
+      }
     }
+
     if (missileRouteCountLabel) {
       const count = activeRoute && Array.isArray(activeRoute.waypoints) ? activeRoute.waypoints.length : 0;
-      missileRouteCountLabel.textContent = String(count);
+      missileRouteCountLabel.textContent = `${count} pts`;
     }
+
     if (deleteMissileRouteBtn) {
       deleteMissileRouteBtn.disabled = routes.length <= 1;
     }
@@ -460,11 +480,20 @@
       const count = activeRoute && Array.isArray(activeRoute.waypoints) ? activeRoute.waypoints.length : 0;
       clearMissileWaypointsBtn.disabled = !activeRoute || count === 0;
     }
+    if (routePrevBtn) {
+      routePrevBtn.disabled = routes.length <= 1;
+    }
+    if (routeNextBtn) {
+      routeNextBtn.disabled = routes.length <= 1;
+    }
+
     updateMissileLaunchButtonState();
+    refreshMissileSelectionUI();
   }
 
   function setActiveMissileRouteLocal(id) {
     state.activeMissileRouteId = id;
+    missileSelection = null;
     renderMissileRouteControls();
   }
 
@@ -497,28 +526,28 @@
   }
 
   function updateMissileLaunchButtonState() {
-    if (!launchMissileBtn) return;
+    if (!missileLaunchBtn) return;
     const route = getActiveMissileRoute();
     const count = route && Array.isArray(route.waypoints) ? route.waypoints.length : 0;
     const remaining = getMissileCooldownRemaining();
     const coolingDown = remaining > 0.05;
     const shouldDisable = !route || count === 0 || coolingDown;
-    launchMissileBtn.disabled = shouldDisable;
+    missileLaunchBtn.disabled = shouldDisable;
 
     if (!route) {
-      launchMissileBtn.textContent = "Launch Missile";
+      missileLaunchBtn.textContent = "Launch missiles";
       return;
     }
 
     if (coolingDown) {
-      launchMissileBtn.textContent = `Launch in ${remaining.toFixed(1)}s`;
+      missileLaunchBtn.textContent = `Launch in ${remaining.toFixed(1)}s`;
       return;
     }
 
     if (route.name) {
-      launchMissileBtn.textContent = `Launch Missile (${route.name})`;
+      missileLaunchBtn.textContent = `Launch ${route.name}`;
     } else {
-      launchMissileBtn.textContent = "Launch Missile";
+      missileLaunchBtn.textContent = "Launch missiles";
     }
   }
 
@@ -571,16 +600,25 @@
     if (missileAgroValue) {
       missileAgroValue.textContent = cfg.agroRadius.toFixed(0);
     }
-    if (missileLifetimeValue) {
-      missileLifetimeValue.textContent = cfg.lifetime.toFixed(1);
-    }
+    // Lifetime is derived for gameplay, keep available in state for tooltips if needed.
   }
 
   function syncMissileUIFromState() {
     ensureActiveMissileRoute();
+    const activeRoute = getActiveMissileRoute();
+    const routeHasSelection =
+      activeRoute &&
+      Array.isArray(activeRoute.waypoints) &&
+      missileSelection &&
+      missileSelection.index >= 0 &&
+      missileSelection.index < activeRoute.waypoints.length;
+    if (!routeHasSelection) {
+      missileSelection = null;
+    }
     const cfg = state.missileConfig;
     applyMissileUI(cfg);
     renderMissileRouteControls();
+    refreshMissileSelectionUI();
   }
 
   function sendMissileConfig(cfg) {
@@ -644,7 +682,7 @@
   }
 
   function updateLegDashOffsets(dtSeconds) {
-    if (!showRouteLines || !state.me) {
+    if (!uiState.showShipRoute || !state.me) {
       legDashOffsets.clear();
       return;
     }
@@ -708,40 +746,63 @@
     return Math.hypot(dx, dy);
   }
 
-  function refreshSelectionUI() {
-    if (!selectionPanel) return;
-    if (missileSetupMode) {
-      selectionPanel.classList.add("hidden");
+  function refreshShipSelectionUI() {
+    if (!shipSelectionContainer || !shipSelectionLabel || !shipDeleteBtn) {
       return;
     }
     const wps = state.me && Array.isArray(state.me.waypoints) ? state.me.waypoints : [];
-    if (!selection || !state.me || selection.index < 0 || selection.index >= wps.length) {
-      selection = null;
-      selectionPanel.classList.add("hidden");
-      setSliderValue(defaultSpeed);
+    const hasValidSelection = Boolean(selection) && selection.index >= 0 && selection.index < wps.length;
+
+    if (!state.me || !isShipModeActive()) {
+      shipSelectionContainer.style.display = "none";
+      shipDeleteBtn.disabled = true;
       return;
     }
+
+    shipSelectionContainer.style.display = "flex";
+    if (!hasValidSelection) {
+      shipSelectionLabel.textContent = "No waypoint selected";
+      shipDeleteBtn.disabled = true;
+      setShipSliderValue(defaultSpeed);
+      return;
+    }
+
     const wp = wps[selection.index];
     const speed = wp && typeof wp.speed === "number" ? wp.speed : defaultSpeed;
-    if (Math.abs(parseFloat(speedSlider.value) - speed) > 0.25) {
-      setSliderValue(speed);
+    if (shipSpeedSlider && Math.abs(parseFloat(shipSpeedSlider.value) - speed) > 0.25) {
+      setShipSliderValue(speed);
     } else {
       updateSpeedLabel(speed);
     }
-    selectionPanel.classList.remove("hidden");
     const labelBase = selection.type === "leg" ? `Leg ${selection.index + 1}` : `Waypoint ${selection.index + 1}`;
-    selectionLabel.textContent = `${labelBase} – ${speed.toFixed(0)} u/s`;
+    shipSelectionLabel.textContent = `${labelBase} — ${speed.toFixed(0)} u/s`;
+    shipDeleteBtn.disabled = false;
+  }
+
+  function refreshMissileSelectionUI() {
+    if (!missileDeleteBtn) return;
+    const route = getActiveMissileRoute();
+    const count = route && Array.isArray(route.waypoints) ? route.waypoints.length : 0;
+    const hasSelection = Boolean(missileSelection) && missileSelection.index >= 0 && missileSelection.index < count;
+    missileDeleteBtn.disabled = !hasSelection;
+    if (missileSelection && hasSelection) {
+      missileDeleteBtn.textContent = `Del #${missileSelection.index + 1}`;
+    } else {
+      missileDeleteBtn.textContent = "Delete";
+    }
   }
 
   function setSelection(sel) {
     selection = sel;
-    refreshSelectionUI();
+    refreshShipSelectionUI();
+  }
+
+  function setMissileSelection(sel) {
+    missileSelection = sel;
+    refreshMissileSelectionUI();
   }
 
   function hitTestRoute(canvasPoint) {
-    if (missileSetupMode) {
-      return null;
-    }
     const route = computeRoutePoints();
     if (!route || route.waypoints.length === 0) {
       return null;
@@ -756,7 +817,7 @@
         return { type: "waypoint", index: i };
       }
     }
-    if (!showRouteLines) {
+    if (!uiState.showShipRoute) {
       return null;
     }
     const legHitDistance = 10;
@@ -768,6 +829,407 @@
     }
     return null;
   }
+
+  function hitTestMissileRoute(canvasPoint) {
+    const route = computeMissileRoutePoints();
+    if (!route || route.waypoints.length === 0) {
+      return null;
+    }
+    const { canvasPoints } = route;
+    const waypointHitRadius = 16;
+    for (let i = 1; i < canvasPoints.length; i++) {
+      const wpCanvas = canvasPoints[i];
+      const dx = canvasPoint.x - wpCanvas.x;
+      const dy = canvasPoint.y - wpCanvas.y;
+      if (Math.hypot(dx, dy) <= waypointHitRadius) {
+        return { type: "waypoint", index: i - 1 };
+      }
+    }
+    return null;
+  }
+
+  function handleShipPointer(canvasPoint, worldPoint) {
+    if (!state.me) return;
+    if (uiState.shipSubMode === "select") {
+      const hit = hitTestRoute(canvasPoint);
+      setSelection(hit || null);
+      return;
+    }
+
+    const wp = { x: worldPoint.x, y: worldPoint.y, speed: defaultSpeed };
+    ws?.send(JSON.stringify({ type: "add_waypoint", x: wp.x, y: wp.y, speed: defaultSpeed }));
+    const wps = Array.isArray(state.me.waypoints) ? state.me.waypoints.slice() : [];
+    wps.push(wp);
+    state.me.waypoints = wps;
+    if (wps.length > 0) {
+      setSelection({ type: "leg", index: wps.length - 1 });
+    }
+  }
+
+  function handleMissilePointer(canvasPoint, worldPoint) {
+    const route = getActiveMissileRoute();
+    if (!route) return;
+
+    if (uiState.missileSubMode === "select") {
+      const hit = hitTestMissileRoute(canvasPoint);
+      setMissileSelection(hit);
+      return;
+    }
+
+    const wp = { x: worldPoint.x, y: worldPoint.y };
+    ws?.send(
+      JSON.stringify({
+        type: "add_missile_waypoint",
+        route_id: route.id,
+        x: wp.x,
+        y: wp.y,
+      })
+    );
+    route.waypoints = route.waypoints ? [...route.waypoints, wp] : [wp];
+    renderMissileRouteControls();
+    setMissileSelection({ type: "waypoint", index: route.waypoints.length - 1 });
+  }
+
+  function clearShipRoute() {
+    const wps = state.me && Array.isArray(state.me.waypoints) ? state.me.waypoints : [];
+    if (!wps || wps.length === 0) {
+      return;
+    }
+    ws?.send(JSON.stringify({ type: "clear_waypoints" }));
+    state.me.waypoints = [];
+    setSelection(null);
+  }
+
+  function deleteSelectedShipWaypoint() {
+    if (!selection) return;
+    ws?.send(JSON.stringify({ type: "delete_waypoint", index: selection.index }));
+    if (state.me && Array.isArray(state.me.waypoints)) {
+      state.me.waypoints = state.me.waypoints.slice(0, selection.index);
+    }
+    setSelection(null);
+  }
+
+  function deleteSelectedMissileWaypoint() {
+    const route = getActiveMissileRoute();
+    if (!route || !missileSelection) return;
+    const index = missileSelection.index;
+    if (!Array.isArray(route.waypoints) || index < 0 || index >= route.waypoints.length) {
+      return;
+    }
+    ws?.send(
+      JSON.stringify({
+        type: "delete_missile_waypoint",
+        route_id: route.id,
+        index,
+      })
+    );
+    route.waypoints = [...route.waypoints.slice(0, index), ...route.waypoints.slice(index + 1)];
+    setMissileSelection(null);
+    renderMissileRouteControls();
+  }
+
+  function launchActiveMissileRoute() {
+    if (missileLaunchBtn?.disabled) {
+      return;
+    }
+    const route = getActiveMissileRoute();
+    if (!route || !Array.isArray(route.waypoints) || route.waypoints.length === 0) {
+      return;
+    }
+    ws?.send(
+      JSON.stringify({
+        type: "launch_missile",
+        route_id: route.id,
+      })
+    );
+  }
+
+  function cycleMissileRoute(direction) {
+    const routes = Array.isArray(state.missileRoutes) ? state.missileRoutes : [];
+    if (routes.length === 0) {
+      return;
+    }
+    const currentIndex = routes.findIndex((route) => route.id === state.activeMissileRouteId);
+    const baseIndex = currentIndex >= 0 ? currentIndex : 0;
+    const nextIndex = ((baseIndex + direction) % routes.length + routes.length) % routes.length;
+    const nextRoute = routes[nextIndex];
+    if (!nextRoute) return;
+    state.activeMissileRouteId = nextRoute.id;
+    setMissileSelection(null);
+    renderMissileRouteControls();
+    ws?.send(
+      JSON.stringify({
+        type: "set_active_missile_route",
+        route_id: nextRoute.id,
+      })
+    );
+  }
+
+  function cycleShipSelection(direction) {
+    const wps = state.me && Array.isArray(state.me.waypoints) ? state.me.waypoints : [];
+    if (!wps || wps.length === 0) {
+      setSelection(null);
+      return;
+    }
+    let index = selection ? selection.index : direction > 0 ? -1 : wps.length;
+    index += direction;
+    if (index < 0) index = wps.length - 1;
+    if (index >= wps.length) index = 0;
+    setSelection({ type: "leg", index });
+  }
+
+  function setPrimaryMode(mode) {
+    const normalized = mode === "ship" || mode === "missile" ? mode : "none";
+    if (uiState.primaryMode === normalized) {
+      return;
+    }
+    uiState.primaryMode = normalized;
+    if (normalized !== "ship") {
+      shipSelectionContainer && (shipSelectionContainer.style.display = "none");
+    }
+    if (normalized !== "missile") {
+      setMissileSelection(null);
+    }
+    updateModeUI();
+  }
+
+  function togglePrimaryMode(mode) {
+    if (uiState.primaryMode === mode) {
+      setPrimaryMode("none");
+    } else {
+      setPrimaryMode(mode);
+    }
+  }
+
+  function setShipSubMode(mode) {
+    if (mode !== "set" && mode !== "select") return;
+    if (uiState.shipSubMode === mode) return;
+    uiState.shipSubMode = mode;
+    if (mode === "set") {
+      // keep selection but hide panel if not in select mode
+    }
+    updateModeUI();
+  }
+
+  function setMissileSubMode(mode) {
+    if (mode !== "set" && mode !== "select") return;
+    if (uiState.missileSubMode === mode) return;
+    uiState.missileSubMode = mode;
+    if (mode === "set") {
+      setMissileSelection(null);
+    }
+    updateModeUI();
+  }
+
+  function isShipModeActive() {
+    return uiState.primaryMode === "ship";
+  }
+
+  function isMissileModeActive() {
+    return uiState.primaryMode === "missile";
+  }
+
+  function setCardVisible(el, visible) {
+    if (!el) return;
+    if (visible) {
+      el.classList.remove("hidden");
+    } else {
+      el.classList.add("hidden");
+    }
+  }
+
+  function setButtonState(btn, active) {
+    if (!btn) return;
+    if (active) {
+      btn.dataset.state = "active";
+      btn.setAttribute("aria-pressed", "true");
+    } else {
+      delete btn.dataset.state;
+      btn.setAttribute("aria-pressed", "false");
+    }
+  }
+
+  function setPrimaryToggleState(btn, active) {
+    if (!btn) return;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+  }
+
+  function updateModeUI() {
+    setPrimaryToggleState(shipModeBtn, isShipModeActive());
+    setPrimaryToggleState(missileModeBtn, isMissileModeActive());
+
+    setCardVisible(shipControlsCard, isShipModeActive());
+    setCardVisible(shipSpeedCard, isShipModeActive());
+    setCardVisible(missileControlsCard, isMissileModeActive());
+    setCardVisible(missileSpeedCard, isMissileModeActive());
+    setCardVisible(missileAgroCard, isMissileModeActive());
+
+    setButtonState(shipSetBtn, uiState.shipSubMode === "set");
+    setButtonState(shipSelectBtn, uiState.shipSubMode === "select");
+    setButtonState(shipShowRouteBtn, uiState.showShipRoute);
+    setButtonState(missileSetBtn, uiState.missileSubMode === "set");
+    setButtonState(missileSelectBtn, uiState.missileSubMode === "select");
+
+    refreshShipSelectionUI();
+    refreshMissileSelectionUI();
+  }
+
+  function setHelpVisible(flag) {
+    uiState.helpVisible = Boolean(flag);
+    updateHelpOverlay();
+  }
+
+  function updateHelpOverlay() {
+    if (!helpOverlay) return;
+    if (helpText) {
+      helpText.textContent = HELP_TEXT;
+    }
+    helpOverlay.classList.toggle("visible", uiState.helpVisible);
+  }
+
+  function adjustSliderValue(input, steps, coarse) {
+    if (!input) return null;
+    const step = Math.abs(parseFloat(input.step)) || 1;
+    const multiplier = coarse ? 4 : 1;
+    const min = Number.isFinite(parseFloat(input.min)) ? parseFloat(input.min) : -Infinity;
+    const max = Number.isFinite(parseFloat(input.max)) ? parseFloat(input.max) : Infinity;
+    const current = parseFloat(input.value) || 0;
+    let next = current + steps * step * multiplier;
+    if (Number.isFinite(min)) next = Math.max(min, next);
+    if (Number.isFinite(max)) next = Math.min(max, next);
+    if (Math.abs(next - current) < 1e-4) {
+      return null;
+    }
+    input.value = String(next);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    return next;
+  }
+
+  window.addEventListener("keydown", (event) => {
+    const target = document.activeElement;
+    const isEditable =
+      target &&
+      (target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable);
+
+    if (uiState.helpVisible && event.key !== "Escape") {
+      event.preventDefault();
+      return;
+    }
+
+    if (isEditable) {
+      if (event.key === "Escape") {
+        target.blur();
+        event.preventDefault();
+      }
+      return;
+    }
+
+    switch (event.code) {
+      case "Digit1":
+        togglePrimaryMode("ship");
+        event.preventDefault();
+        return;
+      case "Digit2":
+        togglePrimaryMode("missile");
+        event.preventDefault();
+        return;
+      case "KeyT":
+        setPrimaryMode("ship");
+        setShipSubMode(uiState.shipSubMode === "set" ? "select" : "set");
+        event.preventDefault();
+        return;
+      case "KeyC":
+        setPrimaryMode("ship");
+        clearShipRoute();
+        event.preventDefault();
+        return;
+      case "KeyR":
+        uiState.showShipRoute = !uiState.showShipRoute;
+        updateModeUI();
+        event.preventDefault();
+        return;
+      case "BracketLeft":
+        setPrimaryMode("ship");
+        adjustSliderValue(shipSpeedSlider, -1, event.shiftKey);
+        event.preventDefault();
+        return;
+      case "BracketRight":
+        setPrimaryMode("ship");
+        adjustSliderValue(shipSpeedSlider, 1, event.shiftKey);
+        event.preventDefault();
+        return;
+      case "Tab":
+        cycleShipSelection(event.shiftKey ? -1 : 1);
+        event.preventDefault();
+        return;
+      case "KeyN":
+        setPrimaryMode("missile");
+        missileAddRouteBtn?.click();
+        event.preventDefault();
+        return;
+      case "KeyL":
+        setPrimaryMode("missile");
+        launchActiveMissileRoute();
+        event.preventDefault();
+        return;
+      case "KeyE":
+        setPrimaryMode("missile");
+        setMissileSubMode(uiState.missileSubMode === "set" ? "select" : "set");
+        event.preventDefault();
+        return;
+      case "Comma":
+        setPrimaryMode("missile");
+        adjustSliderValue(missileAgroSlider, -1, event.shiftKey);
+        event.preventDefault();
+        return;
+      case "Period":
+        setPrimaryMode("missile");
+        adjustSliderValue(missileAgroSlider, 1, event.shiftKey);
+        event.preventDefault();
+        return;
+      case "Semicolon":
+        setPrimaryMode("missile");
+        adjustSliderValue(missileSpeedSlider, -1, event.shiftKey);
+        event.preventDefault();
+        return;
+      case "Quote":
+        setPrimaryMode("missile");
+        adjustSliderValue(missileSpeedSlider, 1, event.shiftKey);
+        event.preventDefault();
+        return;
+      case "Delete":
+      case "Backspace":
+        if (isMissileModeActive() && missileSelection) {
+          deleteSelectedMissileWaypoint();
+        } else if (selection) {
+          deleteSelectedShipWaypoint();
+        }
+        event.preventDefault();
+        return;
+      case "Escape":
+        if (uiState.helpVisible) {
+          setHelpVisible(false);
+        } else if (missileSelection) {
+          setMissileSelection(null);
+        } else if (selection) {
+          setSelection(null);
+        } else if (uiState.primaryMode !== "none") {
+          setPrimaryMode("none");
+        }
+        event.preventDefault();
+        return;
+      default:
+        break;
+    }
+
+    if (event.key === "?") {
+      setHelpVisible(!uiState.helpVisible);
+      event.preventDefault();
+    }
+  });
 
   function drawShip(x, y, vx, vy, color, filled) {
     const p = worldToCanvas({ x, y });
@@ -807,7 +1269,7 @@
     const { canvasPoints } = route;
     const legCount = canvasPoints.length - 1;
 
-    if (showRouteLines && legCount > 0) {
+    if (uiState.showShipRoute && legCount > 0) {
       ctx.save();
       ctx.setLineDash([8, 8]);
       ctx.lineWidth = 1.5;
@@ -822,7 +1284,7 @@
       ctx.restore();
     }
 
-    if (showRouteLines && legCount > 0) {
+    if (uiState.showShipRoute && legCount > 0) {
       ctx.save();
       ctx.setLineDash([6, 6]);
       ctx.lineWidth = 3;
@@ -835,7 +1297,7 @@
       ctx.restore();
     }
 
-    if (showRouteLines && selection && selection.index < legCount) {
+    if (uiState.showShipRoute && selection && selection.index < legCount) {
       ctx.save();
       ctx.setLineDash([4, 4]);
       ctx.lineWidth = 3.5;
@@ -867,7 +1329,7 @@
 
   function drawMissileRoute() {
     if (!state.me) return;
-    if (!missileSetupMode) return;
+    if (!isMissileModeActive()) return;
     const route = computeMissileRoutePoints();
     if (!route || route.waypoints.length === 0) return;
     const { canvasPoints } = route;
@@ -885,15 +1347,17 @@
 
     for (let i = 1; i < canvasPoints.length; i++) {
       const pt = canvasPoints[i];
+      const waypointIndex = i - 1;
+      const isSelected = missileSelection && missileSelection.index === waypointIndex;
       ctx.save();
       ctx.beginPath();
-      ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
-      ctx.fillStyle = "#f87171";
-      ctx.globalAlpha = 0.9;
+      ctx.arc(pt.x, pt.y, isSelected ? 7 : 5, 0, Math.PI * 2);
+      ctx.fillStyle = isSelected ? "#facc15" : "#f87171";
+      ctx.globalAlpha = isSelected ? 0.95 : 0.9;
       ctx.fill();
       ctx.globalAlpha = 1;
       ctx.lineWidth = 1.5;
-      ctx.strokeStyle = "#7f1d1d";
+      ctx.strokeStyle = isSelected ? "#854d0e" : "#7f1d1d";
       ctx.stroke();
       ctx.restore();
     }

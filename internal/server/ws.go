@@ -178,6 +178,12 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 					room.DeleteShipWaypointsFrom(p.Ship, m.Index)
 				}
 				room.Mu.Unlock()
+			case "clear_waypoints":
+				room.Mu.Lock()
+				if p := room.Players[playerID]; p != nil {
+					room.ClearShipWaypoints(p.Ship)
+				}
+				room.Mu.Unlock()
 			case "configure_missile":
 				room.Mu.Lock()
 				if p := room.Players[playerID]; p != nil {

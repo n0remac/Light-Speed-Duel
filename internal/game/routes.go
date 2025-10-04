@@ -21,3 +21,9 @@ func (r *Room) DeleteShipWaypointsFrom(shipID EntityID, index int) {
 		}
 	}
 }
+
+func (r *Room) ClearShipWaypoints(shipID EntityID) {
+	if route := r.World.ShipRoute(shipID); route != nil {
+		route.Waypoints = route.Waypoints[:0]
+	}
+}

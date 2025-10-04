@@ -21,22 +21,27 @@ The result is a prediction-heavy cat-and-mouse game where speed, timing, and for
 
 ## Controls & HUD
 
-* **Waypoint Mode** (default):
-  * Click the map to append ship waypoints.
-  * Re-click a leg to toggle its selection and adjust its target speed with the slider.
-  * `Delete from this waypoint onward` removes the selected leg and everything after it.
-* **Missile Setup Mode**:
-  * Toggle *Setup missile* to switch the canvas into missile waypoint placement.
-  * Configure missile stats with the sliders:
-    * **Speed** and **Acceleration** share a non-linear budget (faster missiles accelerate more slowly).
-    * **Agro radius** defines the pursuit trigger distance.
-    * Lifetime updates automatically based on the current configuration (max ~120 s).
-  * Click to lay out missile waypoints (drawn in red) and hit *Launch Missile* to spawn with the active config.
-  * Use *Clear Missile Waypoints* to reset the missile plan.
-* **HUD Call-outs**:
-  * Ship HP (three hits to destroy; respawns at map center).
-  * World time, map size, and current light speed constant `c`.
-  * Live missiles (your own and opponents) render as red dots; positions are delayed per observer.
+* **Primary modes**
+  * Bottom-left / `1` – Ship navigation. Lights up the left corner controls and bottom speed slider.
+  * Bottom-right / `2` – Missile coordination. Activates the right corner actions plus agro (left edge) and missile speed (bottom) sliders.
+  * Tap the corner badges on mobile or press the keys on desktop to toggle the active mode.
+* **Ship navigation**
+  * `Set` drops waypoints directly onto the map; `Select` lets you tap a leg/waypoint to inspect it.
+  * `Clear route` wipes the ship plan; `Show route` toggles route rendering for uncluttered views.
+  * The bottom slider changes the default waypoint speed and live-updates the selected leg on desktop.
+* **Missile coordination**
+  * `Set` places missile waypoints; `Select` lets you highlight one and delete it with the rail button or `Delete` key.
+  * `Add route` creates a new missile route, `Launch missiles` fires along the active route when the cooldown allows.
+  * Use the chevrons in the top HUD to cycle active routes; the popover (`⋯`) lets you rename, clear, or delete a route.
+* **Keyboard reference (desktop)**
+  * `1 / 2` toggle ship or missile mode · `T` flips ship set/select · `E` flips missile set/select.
+  * `C` clears ship route · `R` toggles route visibility · `[` `]` adjust ship speed (`Shift` for coarse).
+  * `N` adds missile route · `L` launches · `,` `.` adjust agro · `;` `'` adjust missile speed (`Shift` for coarse).
+  * `Tab` cycles ship waypoints · `Delete` removes the selected waypoint (ship or missile) · `?` opens the key map overlay.
+* **HUD Call-outs**
+  * Picture-frame border keeps all controls out of the playfield while showing room stats along the top.
+  * Corner stacks hold the ship/missile tools; slim sliders live in the bottom edge and along the left border.
+  * In-canvas visuals still render light-delayed ships, missiles, and agro rings for self-owned ordnance.
 
 
 ## Running the Game

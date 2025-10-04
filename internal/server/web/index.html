@@ -3,194 +3,574 @@
 
 <head>
   <meta charset="utf-8" />
-  <title>Light Speed Duel – PoC</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Light Speed Duel – Command Console</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <style>
+    :root {
+      --frame-edge: 96px;
+      --frame-border: rgba(15, 23, 42, 0.92);
+      --frame-line: rgba(59, 130, 246, 0.32);
+      --text-muted: rgba(148, 163, 184, 0.7);
+      --text-strong: #e5e7eb;
+      --btn-bg: rgba(23, 37, 84, 0.78);
+      --btn-border: rgba(96, 165, 250, 0.55);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
     html,
     body {
       margin: 0;
-      background: #0b0f12;
-      color: #d8dee9;
-      font: 14px/1.4 system-ui, sans-serif;
       min-height: 100vh;
-      display: flex;
-      flex-direction: column;
+      background: radial-gradient(ellipse at top, #0d1724 0%, #05070b 65%);
+      color: var(--text-strong);
+      font: 13px/1.35 "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
     }
 
-    #app {
-      display: flex;
-      flex-direction: column;
-      flex: 1;
-    }
-
-    #canvas-wrap {
-      flex: 1;
+    body {
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 12px;
+      padding: calc(env(safe-area-inset-top) + 0px) calc(env(safe-area-inset-right) + 0px) calc(env(safe-area-inset-bottom) + 0px) calc(env(safe-area-inset-left) + 0px);
     }
 
-    canvas {
-      width: 100%;
-      max-width: 1200px;
-      aspect-ratio: 16 / 9;
-      background: radial-gradient(ellipse at center, #0e1620 0%, #0b0f12 70%);
-      box-shadow: 0 0 32px #000 inset;
-      border: 1px solid #1f2937;
-      border-radius: 8px;
+    a {
+      color: inherit;
     }
 
-    #control-section {
+    #app {
+      position: relative;
+      width: min(1280px, 100vw);
+      height: min(720px, 100vh);
+      display: flex;
+      align-items: stretch;
+      justify-content: stretch;
+    }
+
+    #frame {
+      flex: 1;
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 12px;
-      padding: 12px;
-      background: #0b0f12;
+      grid-template-columns: var(--frame-edge) minmax(0, 1fr) var(--frame-edge);
+      grid-template-rows: var(--frame-edge) minmax(0, 1fr) var(--frame-edge);
+      background: var(--frame-border);
+      border-radius: 20px;
+      border: 1px solid var(--frame-line);
+      box-shadow: 0 0 40px rgba(15, 23, 42, 0.65);
+      overflow: hidden;
+      position: relative;
     }
 
-    .panel {
-      background: #1117;
-      border: 1px solid #1f2937;
-      border-radius: 8px;
-      padding: 12px;
-      min-height: 340px;
-    }
-
-    .panel h2 {
-      margin: 0 0 8px;
-      font-size: 16px;
-      font-weight: 600;
-    }
-
-    .selection-panel {
-      min-height: 70px;
-      padding: 10px;
-      background: #1f293733;
-      border: 1px dashed #374151;
-      border-radius: 6px;
-      transition: opacity 0.2s ease;
-    }
-
-    .selection-panel.hidden {
-      opacity: 0;
-      visibility: hidden;
+    #frame::after {
+      content: "";
+      position: absolute;
+      inset: calc(var(--frame-edge) - 1px);
+      border: 1px solid rgba(59, 130, 246, 0.28);
+      border-radius: 12px;
       pointer-events: none;
     }
 
-    input,
-    button,
-    select {
-      background: #1f2937;
-      color: #e5e7eb;
-      border: 1px solid #374151;
+    #cv {
+      grid-column: 2;
+      grid-row: 2;
+      width: 100%;
+      height: 100%;
+      border-radius: 16px;
+      background: radial-gradient(ellipse at center, rgba(14, 26, 39, 0.92) 0%, rgba(5, 7, 11, 0.96) 70%);
+      box-shadow: 0 0 40px rgba(5, 12, 24, 0.6) inset;
+      border: 1px solid rgba(30, 64, 175, 0.55);
+      position: relative;
+      z-index: 1;
+      touch-action: none;
+    }
+
+    .frame-edge {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px;
+      gap: 10px;
+      pointer-events: auto;
+      z-index: 2;
+      background: rgba(8, 11, 16, 0.4);
+    }
+
+    #frame-top {
+      grid-column: 1 / 4;
+      grid-row: 1;
+      justify-content: space-between;
+      padding: 12px 20px;
+      font-size: 12px;
+    }
+
+    #frame-left,
+    #frame-right {
+      flex-direction: column;
+      grid-row: 1 / 4;
+    }
+
+    #frame-left {
+      grid-column: 1;
+      align-items: stretch;
+      justify-content: center;
+      padding: 20px 12px;
+    }
+
+    #frame-right {
+      grid-column: 3;
+      align-items: stretch;
+      justify-content: center;
+      padding: 20px 12px;
+    }
+
+    #frame-bottom {
+      grid-column: 1 / 4;
+      grid-row: 3;
+      justify-content: space-between;
+      padding: 12px 18px;
+      gap: 12px;
+      align-items: center;
+    }
+
+    #status-group {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
       padding: 4px 8px;
-      border-radius: 6px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(94, 129, 172, 0.45);
+      letter-spacing: 0.02em;
+      color: var(--text-muted);
+      font-size: 11px;
+    }
+
+    #join-form {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #join-form input {
+      width: 100px;
+      padding: 5px 7px;
+      border-radius: 8px;
+      border: 1px solid rgba(94, 129, 172, 0.4);
+      background: rgba(23, 37, 84, 0.7);
+      color: var(--text-strong);
+      font-size: 12px;
     }
 
     button {
+      font: inherit;
+      color: inherit;
       cursor: pointer;
     }
 
-    .field {
-      margin-top: 6px;
+    .hidden {
+      display: none !important;
     }
 
-    .field:first-of-type {
-      margin-top: 0;
+    .ghost-btn,
+    #join-form button {
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--btn-border);
+      background: var(--btn-bg);
+      color: var(--text-strong);
+      transition: background 0.18s ease, transform 0.18s ease;
+      font-size: 12px;
     }
 
-    .inline {
+    .ghost-btn.small {
+      padding: 4px 8px;
+      font-size: 11px;
+    }
+
+    .ghost-btn:hover,
+    #join-form button:hover {
+      background: rgba(96, 165, 250, 0.25);
+    }
+
+    .ghost-btn:active,
+    #join-form button:active {
+      transform: translateY(1px);
+    }
+
+    .primary-toggle {
+      width: 62px;
+      height: 62px;
+      border-radius: 50%;
+      border: 2px solid rgba(74, 222, 128, 0.45);
+      background: rgba(22, 101, 52, 0.25);
+      color: #bbf7d0;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      font-weight: 600;
+      text-transform: uppercase;
+      transition: background 0.2s ease, border-color 0.2s ease;
+    }
+
+    .primary-toggle.active {
+      background: rgba(34, 197, 94, 0.35);
+      border-color: rgba(74, 222, 128, 0.8);
+      box-shadow: 0 0 12px rgba(74, 222, 128, 0.4);
+    }
+
+    .edge-stack {
       display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: stretch;
+      width: 100%;
+    }
+
+    #ship-selection {
+      display: none;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    #ship-selection span {
+      color: var(--text-strong);
+    }
+
+    .edge-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .edge-btn {
+      padding: 6px 9px;
+      border-radius: 10px;
+      border: 1px solid rgba(71, 85, 105, 0.65);
+      background: rgba(15, 23, 42, 0.78);
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-strong);
+    }
+
+    .edge-btn[data-state="active"] {
+      background: rgba(37, 99, 235, 0.32);
+      border-color: rgba(96, 165, 250, 0.8);
+      color: #bfdbfe;
+    }
+
+    .edge-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .slider-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .slider-card label {
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .slider-card span {
+      font-size: 11px;
+      color: var(--text-strong);
+    }
+
+    .slider-card input[type="range"] {
+      width: 140px;
+      accent-color: #38bdf8;
+    }
+
+    .slider-card.vertical {
+      transform: rotate(-90deg);
+      gap: 6px;
+    }
+
+    .slider-card.vertical label,
+    .slider-card.vertical span {
+      transform: rotate(90deg);
+    }
+
+    #bottom-center {
+      display: flex;
+      gap: 18px;
+      align-items: flex-end;
+    }
+
+    #route-switcher {
+      display: inline-flex;
       align-items: center;
       gap: 6px;
-      flex-wrap: wrap;
+    }
+
+    #route-switcher button {
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      background: rgba(15, 23, 42, 0.7);
+      font-size: 11px;
+      cursor: pointer;
+      color: var(--text-strong);
+    }
+
+    #route-menu {
+      position: absolute;
+      top: calc(var(--frame-edge) - 12px);
+      right: calc(var(--frame-edge) - 12px);
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      border-radius: 16px;
+      padding: 10px;
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+      pointer-events: auto;
+      z-index: 10;
+    }
+
+    #route-menu.visible {
+      display: flex;
+    }
+
+    #route-menu button {
+      padding: 6px 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      background: rgba(30, 41, 59, 0.72);
+      font-size: 11px;
+    }
+
+    #route-menu button.danger {
+      border-color: rgba(248, 113, 113, 0.6);
+      color: #fca5a5;
+      background: rgba(120, 30, 30, 0.35);
+    }
+
+    #missile-route-name {
+      font-weight: 600;
+      color: var(--text-strong);
+    }
+
+    #missile-route-count {
+      color: var(--text-muted);
+    }
+
+    #help-toggle {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      background: rgba(30, 41, 59, 0.65);
+      color: inherit;
+      font-size: 14px;
+    }
+
+    #help-overlay {
+      pointer-events: auto;
+      position: absolute;
+      inset: 0;
+      background: rgba(3, 6, 12, 0.92);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 32px;
+      text-align: left;
+      z-index: 20;
+    }
+
+    #help-overlay.visible {
+      display: flex;
+    }
+
+    #help-overlay h2 {
+      margin: 0 0 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.24em;
+      font-size: 14px;
+      color: rgba(148, 163, 184, 0.85);
+    }
+
+    #help-overlay pre {
+      margin: 0;
+      background: rgba(15, 23, 42, 0.88);
+      padding: 16px 20px;
+      border-radius: 18px;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 12px;
+      max-width: 620px;
+      width: 100%;
+      white-space: pre-wrap;
+      line-height: 1.5;
+      color: var(--text-strong);
+    }
+
+    #help-overlay button {
+      margin-top: 18px;
+      padding: 10px 16px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      background: rgba(59, 130, 246, 0.2);
+      color: #f8fafc;
+    }
+
+    @media (max-width: 960px) {
+      :root {
+        --frame-edge: 82px;
+      }
+      #status-group {
+        gap: 8px;
+      }
+      #bottom-center {
+        gap: 12px;
+      }
+      .slider-card input[type="range"] {
+        width: 120px;
+      }
+    }
+
+    @media (max-width: 720px) {
+      :root {
+        --frame-edge: 72px;
+      }
+      #app {
+        width: 100vw;
+        height: 100vh;
+      }
+      #status-group {
+        font-size: 11px;
+      }
+      .primary-toggle {
+        width: 54px;
+        height: 54px;
+      }
+      .slider-card input[type="range"] {
+        width: 110px;
+      }
     }
   </style>
 </head>
 
 <body>
   <div id="app">
-    <div id="canvas-wrap">
-      <canvas id="cv" width="1200" height="675"></canvas>
-    </div>
-    <div id="control-section">
-      <div class="panel" id="ship-panel">
-        <h2>Ship Controls</h2>
-        <div class="field"><strong>Light Speed Duel – PoC</strong></div>
-        <div class="field">Room: <code id="room-name"></code></div>
-        <div class="field">World t: <span id="t">0.00</span> s</div>
-        <div class="field">c: <span id="c">–</span> | map: <span id="wh">–</span> | HP: <span id="ship-hp">3</span>
+    <div id="frame">
+      <div id="frame-top" class="frame-edge">
+        <div id="status-group">
+          <span class="status-chip">Room <strong id="room-name"></strong></span>
+          <span class="status-chip">World <span id="wh">–</span></span>
+          <span class="status-chip">c=<span id="c">–</span></span>
+          <span class="status-chip">t=<span id="t">0.00</span>s</span>
+          <span class="status-chip">HP <span id="ship-hp">–</span></span>
+          <span class="status-chip">
+            <span id="route-switcher">
+              <button id="route-prev" title="Previous missile route">◀</button>
+              <span id="missile-route-name">Route</span>
+              <button id="route-next" title="Next missile route">▶</button>
+            </span>
+            <span id="missile-route-count">0 pts</span>
+          </span>
         </div>
-        <div class="field inline">
-          <label for="name">Name:</label>
-          <input id="name" placeholder="Your callsign" size="10" />
+        <div id="join-form">
+          <input id="name" placeholder="Callsign" maxlength="16" />
           <button id="join">Join</button>
-        </div>
-        <div class="field inline">
-          <button id="spawn-bot">Spawn AI Opponent</button>
-        </div>
-        <div class="field">
-          <label for="speed-slider">Waypoint speed:</label>
-          <div class="inline">
-            <input id="speed-slider" type="range" min="20" max="250" value="150" step="5" />
-            <span id="speed-value">150</span> u/s
-          </div>
-        </div>
-        <div class="field">
-          <label class="inline"><input id="toggle-route" type="checkbox" checked /> Show route</label>
-        </div>
-        <div id="selection-panel" class="field selection-panel hidden">
-          <div id="selection-label"></div>
-          <button id="delete-waypoint">Delete from this waypoint onward</button>
-        </div>
-        <div class="field" style="margin-top:12px">
-          Click on space to set or edit waypoints. Adjust the slider to set travel speed for new or selected legs.
-          You see opponents at their <i>retarded</i> position (light-time delayed).
+          <button id="spawn-bot" class="ghost-btn">Bot</button>
+          <button id="route-menu-toggle" class="ghost-btn small" title="Route options">⋯</button>
+          <button id="help-toggle" title="Show keyboard map">?</button>
         </div>
       </div>
-      <div class="panel" id="missile-panel">
-        <h2>Missile Controls</h2>
-        <div class="field">
-          <label class="inline"><input id="toggle-missile-mode" type="checkbox" /> Setup missile</label>
-        </div>
-        <div class="field">
-          <label for="missile-speed">Missile speed:</label>
-          <div class="inline">
-            <input id="missile-speed" type="range" min="40" max="250" value="180" step="5" />
-            <span id="missile-speed-value">180</span> u/s
+
+      <div id="frame-left" class="frame-edge">
+        <div id="ship-controls" class="edge-stack hidden">
+          <div class="edge-buttons">
+            <button id="ship-set" class="edge-btn" data-mode="set">Set</button>
+            <button id="ship-select" class="edge-btn" data-mode="select">Select</button>
+            <button id="ship-delete" class="edge-btn">Delete</button>
+            <button id="ship-clear" class="edge-btn">Clear</button>
+            <button id="ship-toggle-route" class="edge-btn">Route</button>
+          </div>
+          <div id="ship-selection" class="edge-stack">
+            <span id="ship-selection-label">No waypoint selected</span>
           </div>
         </div>
-        <div class="field">
-          <label for="missile-agro">Agro radius:</label>
-          <div class="inline">
-            <input id="missile-agro" type="range" min="100" max="2000" value="800" step="50" />
-            <span id="missile-agro-value">800</span> u
+        <div id="missile-agro-card" class="slider-card vertical hidden">
+          <label for="missile-agro-slider">Agro</label>
+          <input id="missile-agro-slider" type="range" min="100" max="2000" value="800" step="50" />
+          <span id="missile-agro-value">800</span>
+        </div>
+      </div>
+
+      <canvas id="cv" width="1200" height="675"></canvas>
+
+      <div id="frame-right" class="frame-edge">
+        <div id="missile-controls" class="edge-stack hidden">
+          <div class="edge-buttons">
+            <button id="missile-set" class="edge-btn" data-mode="set">Set</button>
+            <button id="missile-select" class="edge-btn" data-mode="select">Select</button>
+            <button id="missile-delete" class="edge-btn">Delete</button>
+          </div>
+          <div class="edge-buttons">
+            <button id="missile-add-route" class="edge-btn">New</button>
+            <button id="missile-launch" class="edge-btn">Launch</button>
           </div>
         </div>
-        <div class="field">Missile lifetime: <span id="missile-lifetime">0</span> s</div>
-        <div class="field">
-          <label for="missile-route-select">Missile route:</label>
-          <select id="missile-route-select"></select>
+      </div>
+
+      <div id="frame-bottom" class="frame-edge">
+        <button id="ship-mode-toggle" class="primary-toggle">Ship</button>
+
+        <div id="bottom-center">
+          <div id="ship-speed-card" class="slider-card hidden">
+            <label for="ship-speed-slider">Ship</label>
+            <input id="ship-speed-slider" type="range" min="20" max="250" value="150" step="5" />
+            <span id="ship-speed-value">150</span>
+          </div>
+          <div id="missile-speed-card" class="slider-card hidden">
+            <label for="missile-speed-slider">Missile</label>
+            <input id="missile-speed-slider" type="range" min="40" max="250" value="180" step="5" />
+            <span id="missile-speed-value">180</span>
+          </div>
         </div>
-        <div class="field inline">
-          <button id="add-missile-route">Add Route</button>
-          <button id="rename-missile-route">Rename</button>
-          <button id="delete-missile-route">Delete</button>
-        </div>
-        <div class="field" id="missile-route-summary">
-          Editing route: <span id="missile-route-name">Route 1</span> (<span id="missile-route-count">0</span> pts)
-        </div>
-        <div class="field inline">
-          <button id="clear-missile-waypoints">Clear Route Waypoints</button>
-        </div>
-        <div class="field inline">
-          <button id="launch-missile">Launch Missile</button>
+
+        <button id="missile-mode-toggle" class="primary-toggle">Miss</button>
+      </div>
+
+      <div id="route-menu">
+        <button id="rename-missile-route">Rename route</button>
+        <button id="clear-missile-waypoints">Clear waypoints</button>
+        <button id="delete-missile-route" class="danger">Delete route</button>
+      </div>
+
+      <div id="help-overlay">
+        <div>
+          <h2>Controls</h2>
+          <pre id="help-text"></pre>
+          <button id="help-close">Back to battle</button>
         </div>
       </div>
     </div>
+    <script src="client.js"></script>
   </div>
-  <script src="client.js"></script>
 </body>
 
 </html>

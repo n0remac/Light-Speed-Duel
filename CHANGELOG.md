@@ -3,6 +3,16 @@
 All noteworthy changes to **Light Speed Duel** will be documented in this file.
 
 ## [Unreleased]
+### Added
+- Contextual landscape UI for touch devices with edge sliders for ship speed and missile controls.
+- Keyboard help overlay (`?`) and full keybind coverage for ship and missile actions.
+- In-cockpit commands to clear all ship waypoints and delete specific missile waypoints directly from the board.
+
+### Changed
+- Replaced the legacy control panels with a picture-frame HUD that tucks ship/missile controls into the border.
+- Consolidated missile route management into the HUD with quick cycle buttons and a streamlined options popover.
+
+### Planned
 - Pending ideas: time dilation mechanics.
 
 ## [0.2.1] - 2024-10-02
@@ -31,4 +41,3 @@ All noteworthy changes to **Light Speed Duel** will be documented in this file.
 ## [0.1.0] - 2024-10-02
 ### Added
 - Initial prototype with ship navigation, retarded-opponent rendering, and WebSocket sync.
-
