@@ -92,7 +92,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 	player := &Player{ID: playerID, Name: "Anon"}
 
 	room.Mu.Lock()
-	if len(room.Players) >= RoomMaxPlayers {
+	if room.HumanPlayerCountLocked() >= RoomMaxPlayers {
 		room.Mu.Unlock()
 		_ = conn.WriteJSON(map[string]any{"type": "full", "message": "room full"})
 		conn.Close()
@@ -106,10 +106,10 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 	})
 	player.EnsureMissileRoutes()
 
-	existing := len(room.Players)
+	existingHumans := room.HumanPlayerCountLocked()
 	startPos := Vec2{
-		X: (WorldW * 0.25) + float64(existing)*200.0,
-		Y: (WorldH * 0.5) + float64(existing)*-200.0,
+		X: (WorldW * 0.25) + float64(existingHumans)*200.0,
+		Y: (WorldH * 0.5) + float64(existingHumans)*-200.0,
 	}
 
 	shipEntity := room.SpawnShip(playerID, startPos)
@@ -140,6 +140,20 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 				room.Mu.Lock()
 				if p := room.Players[playerID]; p != nil {
 					p.Name = name
+				}
+				room.Mu.Unlock()
+			case "spawn_bot":
+				room.Mu.Lock()
+				if p := room.Players[playerID]; p != nil {
+					spawnPos := Vec2{X: WorldW * 0.75, Y: WorldH * 0.5}
+					if tr := room.World.Transform(p.Ship); tr != nil {
+						spawnPos = Vec2{
+							X: Clamp(WorldW-tr.Pos.X, 0, WorldW),
+							Y: Clamp(WorldH-tr.Pos.Y, 0, WorldH),
+						}
+					}
+					room.RemoveAllBotsLocked()
+					room.AddBotLocked("Sentinel AI", NewDefensiveBehavior(), spawnPos)
 				}
 				room.Mu.Unlock()
 			case "add_waypoint":
@@ -411,6 +425,9 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 						}
 						d := mePos.Sub(tr.Pos).Len()
 						tRet := now - (d / C)
+						if tRet < missile.LaunchTime {
+							return
+						}
 						if snap, ok := hist.History.GetAt(tRet); ok {
 							targetID := ""
 							if missile.Target != 0 {
@@ -462,21 +479,12 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 	conn.Close()
 
 	room.Mu.Lock()
-	if p := room.Players[playerID]; p != nil {
-		toRemove := []EntityID{}
-		if p.Ship != 0 {
-			toRemove = append(toRemove, p.Ship)
-		}
-		room.World.ForEach([]ComponentKey{CompOwner}, func(e EntityID) {
-			owner := room.World.Owner(e)
-			if owner != nil && owner.PlayerID == playerID {
-				toRemove = append(toRemove, e)
-			}
-		})
-		for _, e := range toRemove {
-			room.World.RemoveEntity(e)
-		}
+	if _, ok := room.Players[playerID]; ok {
+		room.RemovePlayerEntitiesLocked(playerID)
+		delete(room.Players, playerID)
 	}
-	delete(room.Players, playerID)
+	if room.HumanPlayerCountLocked() == 0 {
+		room.RemoveAllBotsLocked()
+	}
 	room.Mu.Unlock()
 }

@@ -4,6 +4,9 @@
 
 The result is a prediction-heavy cat-and-mouse game where speed, timing, and foresight matter as much as accuracy.
 
+## Play the game  
+[lightspeedduel.com](www.lightspeedduel.com)
+
 
 ## Current Features
 

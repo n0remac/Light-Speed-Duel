@@ -1,71 +1,114 @@
 <!doctype html>
 <html>
+
 <head>
   <meta charset="utf-8" />
   <title>Light Speed Duel – PoC</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    html,body {
-      margin:0;
-      background:#0b0f12;
-      color:#d8dee9;
+    html,
+    body {
+      margin: 0;
+      background: #0b0f12;
+      color: #d8dee9;
       font: 14px/1.4 system-ui, sans-serif;
-      min-height:100vh;
-      display:flex;
-      flex-direction:column;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
     }
+
     #app {
-      display:flex;
-      flex-direction:column;
-      flex:1;
+      display: flex;
+      flex-direction: column;
+      flex: 1;
     }
+
     #canvas-wrap {
-      flex:1;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      padding:12px;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
     }
+
     canvas {
-      width:100%;
-      max-width:1200px;
+      width: 100%;
+      max-width: 1200px;
       aspect-ratio: 16 / 9;
       background: radial-gradient(ellipse at center, #0e1620 0%, #0b0f12 70%);
       box-shadow: 0 0 32px #000 inset;
-      border:1px solid #1f2937;
-      border-radius:8px;
+      border: 1px solid #1f2937;
+      border-radius: 8px;
     }
+
     #control-section {
-      display:grid;
+      display: grid;
       grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap:12px;
-      padding:12px;
-      background:#0b0f12;
+      gap: 12px;
+      padding: 12px;
+      background: #0b0f12;
     }
+
     .panel {
-      background:#1117;
-      border:1px solid #1f2937;
-      border-radius:8px;
-      padding:12px;
+      background: #1117;
+      border: 1px solid #1f2937;
+      border-radius: 8px;
+      padding: 12px;
+      min-height: 340px;
     }
+
     .panel h2 {
-      margin:0 0 8px;
-      font-size:16px;
-      font-weight:600;
+      margin: 0 0 8px;
+      font-size: 16px;
+      font-weight: 600;
     }
-    input,button,select {
-      background:#1f2937;
-      color:#e5e7eb;
-      border:1px solid #374151;
-      padding:4px 8px;
-      border-radius:6px;
+
+    .selection-panel {
+      min-height: 70px;
+      padding: 10px;
+      background: #1f293733;
+      border: 1px dashed #374151;
+      border-radius: 6px;
+      transition: opacity 0.2s ease;
     }
-    button { cursor:pointer; }
-    .field { margin-top:6px; }
-    .field:first-of-type { margin-top:0; }
-    .inline { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+
+    .selection-panel.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    input,
+    button,
+    select {
+      background: #1f2937;
+      color: #e5e7eb;
+      border: 1px solid #374151;
+      padding: 4px 8px;
+      border-radius: 6px;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .field {
+      margin-top: 6px;
+    }
+
+    .field:first-of-type {
+      margin-top: 0;
+    }
+
+    .inline {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
   </style>
 </head>
+
 <body>
   <div id="app">
     <div id="canvas-wrap">
@@ -77,11 +120,15 @@
         <div class="field"><strong>Light Speed Duel – PoC</strong></div>
         <div class="field">Room: <code id="room-name"></code></div>
         <div class="field">World t: <span id="t">0.00</span> s</div>
-        <div class="field">c: <span id="c">–</span> | map: <span id="wh">–</span> | HP: <span id="ship-hp">3</span></div>
+        <div class="field">c: <span id="c">–</span> | map: <span id="wh">–</span> | HP: <span id="ship-hp">3</span>
+        </div>
         <div class="field inline">
           <label for="name">Name:</label>
           <input id="name" placeholder="Your callsign" size="10" />
           <button id="join">Join</button>
+        </div>
+        <div class="field inline">
+          <button id="spawn-bot">Spawn AI Opponent</button>
         </div>
         <div class="field">
           <label for="speed-slider">Waypoint speed:</label>
@@ -93,7 +140,7 @@
         <div class="field">
           <label class="inline"><input id="toggle-route" type="checkbox" checked /> Show route</label>
         </div>
-        <div id="selection-panel" class="field" style="display:none">
+        <div id="selection-panel" class="field selection-panel hidden">
           <div id="selection-label"></div>
           <button id="delete-waypoint">Delete from this waypoint onward</button>
         </div>
@@ -145,4 +192,5 @@
   </div>
   <script src="client.js"></script>
 </body>
+
 </html>

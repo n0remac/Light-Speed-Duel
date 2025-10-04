@@ -14,6 +14,7 @@
   const selectionPanel = document.getElementById("selection-panel");
   const selectionLabel = document.getElementById("selection-label");
   const deleteWaypointBtn = document.getElementById("delete-waypoint");
+  const spawnBotBtn = document.getElementById("spawn-bot");
   const routeToggle = document.getElementById("toggle-route");
   const missileModeToggle = document.getElementById("toggle-missile-mode");
   const missileSpeedSlider = document.getElementById("missile-speed");
@@ -226,6 +227,14 @@
     }
   });
 
+  spawnBotBtn?.addEventListener("click", () => {
+    ws?.send(
+      JSON.stringify({
+        type: "spawn_bot",
+      })
+    );
+  });
+
   const state = {
     now: 0,
     nowSyncedAt: (typeof performance !== "undefined" && typeof performance.now === "function")
@@ -380,7 +389,7 @@
 
   setSliderValue(defaultSpeed);
   if (selectionPanel) {
-    selectionPanel.style.display = "none";
+    selectionPanel.classList.add("hidden");
   }
 
   function clamp(v, lo, hi) {
@@ -700,13 +709,13 @@
   function refreshSelectionUI() {
     if (!selectionPanel) return;
     if (missileSetupMode) {
-      selectionPanel.style.display = "none";
+      selectionPanel.classList.add("hidden");
       return;
     }
     const wps = state.me && Array.isArray(state.me.waypoints) ? state.me.waypoints : [];
     if (!selection || !state.me || selection.index < 0 || selection.index >= wps.length) {
       selection = null;
-      selectionPanel.style.display = "none";
+      selectionPanel.classList.add("hidden");
       setSliderValue(defaultSpeed);
       return;
     }
@@ -717,7 +726,7 @@
     } else {
       updateSpeedLabel(speed);
     }
-    selectionPanel.style.display = "block";
+    selectionPanel.classList.remove("hidden");
     const labelBase = selection.type === "leg" ? `Leg ${selection.index + 1}` : `Waypoint ${selection.index + 1}`;
     selectionLabel.textContent = `${labelBase} – ${speed.toFixed(0)} u/s`;
   }
@@ -954,7 +963,7 @@
     lastLoopTs = ts;
     updateLegDashOffsets(dtSeconds);
 
-    ctx.clearRect(0,0,cv.width,cv.height);
+    ctx.clearRect(0, 0, cv.width, cv.height);
     drawGrid();
     drawRoute();
     drawMissileRoute();

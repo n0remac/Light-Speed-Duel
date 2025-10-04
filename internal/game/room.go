@@ -21,6 +21,7 @@ type Player struct {
 	MissileRoutes        []*MissileRouteDef
 	ActiveMissileRouteID string
 	MissileReadyAt       float64
+	IsBot                bool
 }
 
 type Room struct {
@@ -29,6 +30,7 @@ type Room struct {
 	World   *World
 	Players map[string]*Player
 	Mu      sync.Mutex
+	Bots    map[string]*AIAgent
 }
 
 func newRoom(id string) *Room {
@@ -36,6 +38,7 @@ func newRoom(id string) *Room {
 		ID:      id,
 		World:   newWorld(),
 		Players: map[string]*Player{},
+		Bots:    map[string]*AIAgent{},
 	}
 }
 
@@ -62,8 +65,84 @@ func (r *Room) Tick() {
 	defer r.Mu.Unlock()
 	r.Now += Dt
 
+	r.updateAI()
 	updateShips(r, Dt)
 	updateMissiles(r, Dt)
+}
+
+func (r *Room) humanPlayerCountUnlocked() int {
+	count := 0
+	for _, p := range r.Players {
+		if p != nil && !p.IsBot {
+			count++
+		}
+	}
+	return count
+}
+
+func (r *Room) removePlayerEntitiesUnlocked(playerID string) {
+	var toRemove []EntityID
+	r.World.ForEach([]ComponentKey{CompOwner}, func(e EntityID) {
+		owner := r.World.Owner(e)
+		if owner != nil && owner.PlayerID == playerID {
+			toRemove = append(toRemove, e)
+		}
+	})
+	for _, e := range toRemove {
+		r.World.RemoveEntity(e)
+	}
+}
+
+func (r *Room) addBotUnlocked(name string, behavior AIBehavior, startPos Vec2) *Player {
+	id := RandId("bot")
+	for {
+		if _, exists := r.Players[id]; !exists {
+			break
+		}
+		id = RandId("bot")
+	}
+	player := &Player{
+		ID:            id,
+		Name:          name,
+		MissileConfig: SanitizeMissileConfig(MissileConfig{Speed: ShipMaxSpeed * 0.7, AgroRadius: 900}),
+		IsBot:         true,
+	}
+	player.EnsureMissileRoutes()
+	shipID := r.SpawnShip(id, startPos)
+	player.Ship = shipID
+	r.Players[id] = player
+	r.Bots[id] = NewAIAgent(id, behavior)
+	return player
+}
+
+func (r *Room) removeBotUnlocked(id string) {
+	delete(r.Bots, id)
+	if _, ok := r.Players[id]; ok {
+		r.removePlayerEntitiesUnlocked(id)
+		delete(r.Players, id)
+	}
+}
+
+func (r *Room) removeAllBotsUnlocked() {
+	for id := range r.Bots {
+		r.removeBotUnlocked(id)
+	}
+}
+
+func (r *Room) HumanPlayerCountLocked() int {
+	return r.humanPlayerCountUnlocked()
+}
+
+func (r *Room) AddBotLocked(name string, behavior AIBehavior, startPos Vec2) *Player {
+	return r.addBotUnlocked(name, behavior, startPos)
+}
+
+func (r *Room) RemoveAllBotsLocked() {
+	r.removeAllBotsUnlocked()
+}
+
+func (r *Room) RemovePlayerEntitiesLocked(playerID string) {
+	r.removePlayerEntitiesUnlocked(playerID)
 }
 
 func (r *Room) SpawnShip(owner string, startPos Vec2) EntityID {
