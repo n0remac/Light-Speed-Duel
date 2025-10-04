@@ -133,8 +133,10 @@
   // Input: click to set waypoint
   cv.addEventListener("click", (e) => {
     const rect = cv.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const scaleX = rect.width !== 0 ? cv.width / rect.width : 1;
+    const scaleY = rect.height !== 0 ? cv.height / rect.height : 1;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
     const canvasPoint = { x, y };
     if (missileSetupMode) {
       const route = getActiveMissileRoute();
