@@ -4,7 +4,7 @@ All noteworthy changes to **Light Speed Duel** will be documented in this file.
 
 ## [Unreleased]
 ### Added
-- Contextual landscape UI for touch devices with edge sliders for ship speed and missile controls.
+- Contextual landscape UI for touch devices with a bottom rail for ship speed, missile speed, and missile agro sliders.
 - Keyboard help overlay (`?`) and full keybind coverage for ship and missile actions.
 - In-cockpit commands to clear all ship waypoints and delete specific missile waypoints directly from the board.
 

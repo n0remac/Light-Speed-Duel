@@ -9,7 +9,6 @@
   const Cspan = document.getElementById("c");
   const WHspan = document.getElementById("wh");
   const HPspan = document.getElementById("ship-hp");
-  const shipModeBtn = document.getElementById("ship-mode-toggle");
   const shipControlsCard = document.getElementById("ship-controls");
   const shipClearBtn = document.getElementById("ship-clear");
   const shipSetBtn = document.getElementById("ship-set");
@@ -22,7 +21,6 @@
   const shipSpeedSlider = document.getElementById("ship-speed-slider");
   const shipSpeedValue = document.getElementById("ship-speed-value");
 
-  const missileModeBtn = document.getElementById("missile-mode-toggle");
   const missileControlsCard = document.getElementById("missile-controls");
   const missileAddRouteBtn = document.getElementById("missile-add-route");
   const missileLaunchBtn = document.getElementById("missile-launch");
@@ -71,9 +69,9 @@
   };
 
   const uiState = {
-    primaryMode: "ship",
-    shipSubMode: "set",
-    missileSubMode: "set",
+    inputContext: "ship",
+    shipTool: "set",
+    missileTool: "set",
     showShipRoute: true,
     helpVisible: false,
   };
@@ -203,12 +201,10 @@
     const canvasPoint = { x, y };
     const worldPoint = canvasToWorld(canvasPoint);
 
-    if (isMissileModeActive()) {
+    const context = uiState.inputContext === "missile" ? "missile" : "ship";
+    if (context === "missile") {
       handleMissilePointer(canvasPoint, worldPoint);
     } else {
-      if (!isShipModeActive()) {
-        setPrimaryMode("ship");
-      }
       handleShipPointer(canvasPoint, worldPoint);
     }
     e.preventDefault();
@@ -250,36 +246,27 @@
   let lastMissileConfigSent = null;
 
   syncMissileUIFromState();
-  updateModeUI();
+  updateControlHighlights();
   refreshShipSelectionUI();
   refreshMissileSelectionUI();
   updateHelpOverlay();
 
-  shipModeBtn?.addEventListener("click", () => {
-    togglePrimaryMode("ship");
-  });
-
-  missileModeBtn?.addEventListener("click", () => {
-    togglePrimaryMode("missile");
-  });
-
   shipClearBtn?.addEventListener("click", () => {
+    setInputContext("ship");
     clearShipRoute();
   });
 
   shipSetBtn?.addEventListener("click", () => {
-    setPrimaryMode("ship");
-    setShipSubMode("set");
+    setShipTool("set");
   });
 
   shipSelectBtn?.addEventListener("click", () => {
-    setPrimaryMode("ship");
-    setShipSubMode("select");
+    setShipTool("select");
   });
 
   shipShowRouteBtn?.addEventListener("click", () => {
     uiState.showShipRoute = !uiState.showShipRoute;
-    updateModeUI();
+    updateControlHighlights();
   });
 
   shipSpeedSlider?.addEventListener("input", (e) => {
@@ -295,10 +282,12 @@
   });
 
   shipDeleteBtn?.addEventListener("click", () => {
+    setInputContext("ship");
     deleteSelectedShipWaypoint();
   });
 
   missileAddRouteBtn?.addEventListener("click", () => {
+    setInputContext("missile");
     ws?.send(
       JSON.stringify({
         type: "add_missile_route",
@@ -307,20 +296,20 @@
   });
 
   missileLaunchBtn?.addEventListener("click", () => {
+    setInputContext("missile");
     launchActiveMissileRoute();
   });
 
   missileSetBtn?.addEventListener("click", () => {
-    setPrimaryMode("missile");
-    setMissileSubMode("set");
+    setMissileTool("set");
   });
 
   missileSelectBtn?.addEventListener("click", () => {
-    setPrimaryMode("missile");
-    setMissileSubMode("select");
+    setMissileTool("select");
   });
 
   missileDeleteBtn?.addEventListener("click", () => {
+    setInputContext("missile");
     deleteSelectedMissileWaypoint();
   });
 
@@ -752,31 +741,30 @@
     }
     const wps = state.me && Array.isArray(state.me.waypoints) ? state.me.waypoints : [];
     const hasValidSelection = Boolean(selection) && selection.index >= 0 && selection.index < wps.length;
-
-    if (!state.me || !isShipModeActive()) {
-      shipSelectionContainer.style.display = "none";
-      shipDeleteBtn.disabled = true;
-      return;
-    }
+    const isShipContext = uiState.inputContext === "ship";
 
     shipSelectionContainer.style.display = "flex";
-    if (!hasValidSelection) {
+    shipSelectionContainer.style.opacity = isShipContext ? "1" : "0.6";
+
+    if (!state.me || !hasValidSelection) {
       shipSelectionLabel.textContent = "No waypoint selected";
       shipDeleteBtn.disabled = true;
-      setShipSliderValue(defaultSpeed);
+      if (isShipContext) {
+        setShipSliderValue(defaultSpeed);
+      }
       return;
     }
 
     const wp = wps[selection.index];
     const speed = wp && typeof wp.speed === "number" ? wp.speed : defaultSpeed;
-    if (shipSpeedSlider && Math.abs(parseFloat(shipSpeedSlider.value) - speed) > 0.25) {
+    if (isShipContext && shipSpeedSlider && Math.abs(parseFloat(shipSpeedSlider.value) - speed) > 0.25) {
       setShipSliderValue(speed);
     } else {
       updateSpeedLabel(speed);
     }
     const labelBase = selection.type === "leg" ? `Leg ${selection.index + 1}` : `Waypoint ${selection.index + 1}`;
     shipSelectionLabel.textContent = `${labelBase} — ${speed.toFixed(0)} u/s`;
-    shipDeleteBtn.disabled = false;
+    shipDeleteBtn.disabled = !isShipContext;
   }
 
   function refreshMissileSelectionUI() {
@@ -850,7 +838,7 @@
 
   function handleShipPointer(canvasPoint, worldPoint) {
     if (!state.me) return;
-    if (uiState.shipSubMode === "select") {
+    if (uiState.shipTool === "select") {
       const hit = hitTestRoute(canvasPoint);
       setSelection(hit || null);
       return;
@@ -870,7 +858,7 @@
     const route = getActiveMissileRoute();
     if (!route) return;
 
-    if (uiState.missileSubMode === "select") {
+    if (uiState.missileTool === "select") {
       const hit = hitTestMissileRoute(canvasPoint);
       setMissileSelection(hit);
       return;
@@ -978,64 +966,44 @@
     setSelection({ type: "leg", index });
   }
 
-  function setPrimaryMode(mode) {
-    const normalized = mode === "ship" || mode === "missile" ? mode : "none";
-    if (uiState.primaryMode === normalized) {
+  function setInputContext(context) {
+    const next = context === "missile" ? "missile" : "ship";
+    if (uiState.inputContext === next) {
       return;
     }
-    uiState.primaryMode = normalized;
-    if (normalized !== "ship") {
-      shipSelectionContainer && (shipSelectionContainer.style.display = "none");
+    uiState.inputContext = next;
+    updateControlHighlights();
+    refreshShipSelectionUI();
+    refreshMissileSelectionUI();
+  }
+
+  function setShipTool(tool) {
+    if (tool !== "set" && tool !== "select") {
+      return;
     }
-    if (normalized !== "missile") {
+    if (uiState.shipTool === tool) {
+      setInputContext("ship");
+      return;
+    }
+    uiState.shipTool = tool;
+    setInputContext("ship");
+    updateControlHighlights();
+  }
+
+  function setMissileTool(tool) {
+    if (tool !== "set" && tool !== "select") {
+      return;
+    }
+    if (uiState.missileTool === tool) {
+      setInputContext("missile");
+      return;
+    }
+    uiState.missileTool = tool;
+    setInputContext("missile");
+    if (tool === "set") {
       setMissileSelection(null);
     }
-    updateModeUI();
-  }
-
-  function togglePrimaryMode(mode) {
-    if (uiState.primaryMode === mode) {
-      setPrimaryMode("none");
-    } else {
-      setPrimaryMode(mode);
-    }
-  }
-
-  function setShipSubMode(mode) {
-    if (mode !== "set" && mode !== "select") return;
-    if (uiState.shipSubMode === mode) return;
-    uiState.shipSubMode = mode;
-    if (mode === "set") {
-      // keep selection but hide panel if not in select mode
-    }
-    updateModeUI();
-  }
-
-  function setMissileSubMode(mode) {
-    if (mode !== "set" && mode !== "select") return;
-    if (uiState.missileSubMode === mode) return;
-    uiState.missileSubMode = mode;
-    if (mode === "set") {
-      setMissileSelection(null);
-    }
-    updateModeUI();
-  }
-
-  function isShipModeActive() {
-    return uiState.primaryMode === "ship";
-  }
-
-  function isMissileModeActive() {
-    return uiState.primaryMode === "missile";
-  }
-
-  function setCardVisible(el, visible) {
-    if (!el) return;
-    if (visible) {
-      el.classList.remove("hidden");
-    } else {
-      el.classList.add("hidden");
-    }
+    updateControlHighlights();
   }
 
   function setButtonState(btn, active) {
@@ -1049,30 +1017,19 @@
     }
   }
 
-  function setPrimaryToggleState(btn, active) {
-    if (!btn) return;
-    btn.classList.toggle("active", active);
-    btn.setAttribute("aria-pressed", active ? "true" : "false");
-  }
-
-  function updateModeUI() {
-    setPrimaryToggleState(shipModeBtn, isShipModeActive());
-    setPrimaryToggleState(missileModeBtn, isMissileModeActive());
-
-    setCardVisible(shipControlsCard, isShipModeActive());
-    setCardVisible(shipSpeedCard, isShipModeActive());
-    setCardVisible(missileControlsCard, isMissileModeActive());
-    setCardVisible(missileSpeedCard, isMissileModeActive());
-    setCardVisible(missileAgroCard, isMissileModeActive());
-
-    setButtonState(shipSetBtn, uiState.shipSubMode === "set");
-    setButtonState(shipSelectBtn, uiState.shipSubMode === "select");
+  function updateControlHighlights() {
+    setButtonState(shipSetBtn, uiState.shipTool === "set");
+    setButtonState(shipSelectBtn, uiState.shipTool === "select");
     setButtonState(shipShowRouteBtn, uiState.showShipRoute);
-    setButtonState(missileSetBtn, uiState.missileSubMode === "set");
-    setButtonState(missileSelectBtn, uiState.missileSubMode === "select");
+    setButtonState(missileSetBtn, uiState.missileTool === "set");
+    setButtonState(missileSelectBtn, uiState.missileTool === "select");
 
-    refreshShipSelectionUI();
-    refreshMissileSelectionUI();
+    if (shipControlsCard) {
+      shipControlsCard.classList.toggle("active", uiState.inputContext === "ship");
+    }
+    if (missileControlsCard) {
+      missileControlsCard.classList.toggle("active", uiState.inputContext === "missile");
+    }
   }
 
   function setHelpVisible(flag) {
@@ -1129,80 +1086,79 @@
 
     switch (event.code) {
       case "Digit1":
-        togglePrimaryMode("ship");
+        setInputContext("ship");
         event.preventDefault();
         return;
       case "Digit2":
-        togglePrimaryMode("missile");
+        setInputContext("missile");
         event.preventDefault();
         return;
       case "KeyT":
-        setPrimaryMode("ship");
-        setShipSubMode(uiState.shipSubMode === "set" ? "select" : "set");
+        setShipTool(uiState.shipTool === "set" ? "select" : "set");
         event.preventDefault();
         return;
       case "KeyC":
-        setPrimaryMode("ship");
+        setInputContext("ship");
         clearShipRoute();
         event.preventDefault();
         return;
       case "KeyR":
         uiState.showShipRoute = !uiState.showShipRoute;
-        updateModeUI();
+        updateControlHighlights();
         event.preventDefault();
         return;
       case "BracketLeft":
-        setPrimaryMode("ship");
+        setInputContext("ship");
         adjustSliderValue(shipSpeedSlider, -1, event.shiftKey);
         event.preventDefault();
         return;
       case "BracketRight":
-        setPrimaryMode("ship");
+        setInputContext("ship");
         adjustSliderValue(shipSpeedSlider, 1, event.shiftKey);
         event.preventDefault();
         return;
       case "Tab":
+        setInputContext("ship");
         cycleShipSelection(event.shiftKey ? -1 : 1);
         event.preventDefault();
         return;
       case "KeyN":
-        setPrimaryMode("missile");
+        setInputContext("missile");
         missileAddRouteBtn?.click();
         event.preventDefault();
         return;
       case "KeyL":
-        setPrimaryMode("missile");
+        setInputContext("missile");
         launchActiveMissileRoute();
         event.preventDefault();
         return;
       case "KeyE":
-        setPrimaryMode("missile");
-        setMissileSubMode(uiState.missileSubMode === "set" ? "select" : "set");
+        setMissileTool(uiState.missileTool === "set" ? "select" : "set");
         event.preventDefault();
         return;
       case "Comma":
-        setPrimaryMode("missile");
+        setInputContext("missile");
         adjustSliderValue(missileAgroSlider, -1, event.shiftKey);
         event.preventDefault();
         return;
       case "Period":
-        setPrimaryMode("missile");
+        setInputContext("missile");
         adjustSliderValue(missileAgroSlider, 1, event.shiftKey);
         event.preventDefault();
         return;
       case "Semicolon":
-        setPrimaryMode("missile");
+        setInputContext("missile");
         adjustSliderValue(missileSpeedSlider, -1, event.shiftKey);
         event.preventDefault();
         return;
       case "Quote":
-        setPrimaryMode("missile");
+        setInputContext("missile");
         adjustSliderValue(missileSpeedSlider, 1, event.shiftKey);
         event.preventDefault();
         return;
       case "Delete":
       case "Backspace":
-        if (isMissileModeActive() && missileSelection) {
+        if (uiState.inputContext === "missile" && missileSelection) {
           deleteSelectedMissileWaypoint();
         } else if (selection) {
           deleteSelectedShipWaypoint();
@@ -1216,8 +1172,8 @@
           setMissileSelection(null);
         } else if (selection) {
           setSelection(null);
-        } else if (uiState.primaryMode !== "none") {
-          setPrimaryMode("none");
+        } else if (uiState.inputContext === "missile") {
+          setInputContext("ship");
         }
         event.preventDefault();
         return;
@@ -1329,7 +1285,7 @@
 
   function drawMissileRoute() {
     if (!state.me) return;
-    if (!isMissileModeActive()) return;
+    if (uiState.inputContext !== "missile") return;
     const route = computeMissileRoutePoints();
     if (!route || route.waypoints.length === 0) return;
     const { canvasPoints } = route;

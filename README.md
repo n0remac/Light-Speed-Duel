@@ -22,19 +22,17 @@ The result is a prediction-heavy cat-and-mouse game where speed, timing, and for
 ## Controls & HUD
 
 * **Primary modes**
-  * Bottom-left / `1` – Ship navigation. Lights up the left corner controls and bottom speed slider.
-  * Bottom-right / `2` – Missile coordination. Activates the right corner actions plus agro (left edge) and missile speed (bottom) sliders.
-  * Tap the corner badges on mobile or press the keys on desktop to toggle the active mode.
+  * `1` focuses the ship bank on the left edge; `2` focuses the missile bank on the right edge.
+  * Both banks stay visible—on touch you simply tap the buttons you need, no corner toggles required.
 * **Ship navigation**
-  * `Set` drops waypoints directly onto the map; `Select` lets you tap a leg/waypoint to inspect it.
-  * `Clear route` wipes the ship plan; `Show route` toggles route rendering for uncluttered views.
-  * The bottom slider changes the default waypoint speed and live-updates the selected leg on desktop.
+  * Left edge buttons cover `Set`, `Select`, `Delete`, `Clear`, and `Route`; `1` focuses this bank.
+  * Ship speed lives on the leftmost slider in the bottom rail and still drives the selected leg.
 * **Missile coordination**
-  * `Set` places missile waypoints; `Select` lets you highlight one and delete it with the rail button or `Delete` key.
-  * `Add route` creates a new missile route, `Launch missiles` fires along the active route when the cooldown allows.
+  * Right edge buttons cover `Set`, `Select`, `Delete`, `New`, and `Launch`; `2` focuses this bank.
+  * The bottom rail also hosts missile agro and missile speed sliders side-by-side with ship speed.
   * Use the chevrons in the top HUD to cycle active routes; the popover (`⋯`) lets you rename, clear, or delete a route.
 * **Keyboard reference (desktop)**
-  * `1 / 2` toggle ship or missile mode · `T` flips ship set/select · `E` flips missile set/select.
+  * `1 / 2` focus the ship or missile banks · `T` flips ship set/select · `E` flips missile set/select.
   * `C` clears ship route · `R` toggles route visibility · `[` `]` adjust ship speed (`Shift` for coarse).
   * `N` adds missile route · `L` launches · `,` `.` adjust agro · `;` `'` adjust missile speed (`Shift` for coarse).
   * `Tab` cycles ship waypoints · `Delete` removes the selected waypoint (ship or missile) · `?` opens the key map overlay.
