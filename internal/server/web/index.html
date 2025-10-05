@@ -232,15 +232,17 @@
 
 
     #ship-selection {
-      display: none;
+      display: flex;
       flex-direction: column;
       gap: 4px;
       font-size: 11px;
       color: var(--text-muted);
+      min-height: 32px;
     }
 
     #ship-selection span {
       color: var(--text-strong);
+      white-space: nowrap;
     }
 
     .edge-buttons {
@@ -264,6 +266,13 @@
       background: rgba(37, 99, 235, 0.32);
       border-color: rgba(96, 165, 250, 0.8);
       color: #bfdbfe;
+    }
+
+    .edge-btn {
+      display: block;
+      width: 100%;
+      white-space: nowrap;
+      text-align: center;
     }
 
     .edge-btn:disabled {
@@ -302,6 +311,17 @@
       align-items: flex-end;
     }
 
+    #missile-slider-group {
+      margin-left: auto;
+      display: flex;
+      gap: 22px;
+      align-items: flex-end;
+    }
+
+    #missile-slider-group .slider-card {
+      min-width: 160px;
+    }
+
     #bottom-sliders .slider-card {
       min-width: 160px;
     }
@@ -310,6 +330,18 @@
       display: inline-flex;
       align-items: center;
       gap: 6px;
+    }
+
+    #top-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .route-count {
+      font-size: 11px;
+      color: var(--text-muted);
     }
 
     #route-switcher button {
@@ -468,21 +500,15 @@
           <span class="status-chip">c=<span id="c">–</span></span>
           <span class="status-chip">t=<span id="t">0.00</span>s</span>
           <span class="status-chip">HP <span id="ship-hp">–</span></span>
-          <span class="status-chip">
-            <span id="route-switcher">
-              <button id="route-prev" title="Previous missile route">◀</button>
-              <span id="missile-route-name">Route</span>
-              <button id="route-next" title="Next missile route">▶</button>
-            </span>
-            <span id="missile-route-count">0 pts</span>
-          </span>
         </div>
-        <div id="join-form">
-          <input id="name" placeholder="Callsign" maxlength="16" />
-          <button id="join">Join</button>
+        <div id="top-right">
           <button id="spawn-bot" class="ghost-btn">Bot</button>
-          <button id="route-menu-toggle" class="ghost-btn small" title="Route options">⋯</button>
-          <button id="help-toggle" title="Show keyboard map">?</button>
+          <div id="route-switcher">
+            <button id="route-prev" title="Previous missile route">◀</button>
+            <span id="missile-route-name">Route</span>
+            <button id="route-next" title="Next missile route">▶</button>
+          </div>
+          <span id="missile-route-count" class="route-count">0 pts</span>
         </div>
       </div>
 
@@ -496,7 +522,7 @@
             <button id="ship-toggle-route" class="edge-btn">Route</button>
           </div>
           <div id="ship-selection" class="edge-stack">
-            <span id="ship-selection-label">No waypoint selected</span>
+            <span id="ship-selection-label"></span>
           </div>
         </div>
       </div>
@@ -524,15 +550,17 @@
             <input id="ship-speed-slider" type="range" min="20" max="250" value="150" step="5" />
             <span id="ship-speed-value">150</span>
           </div>
-          <div id="missile-agro-card" class="slider-card">
-            <label for="missile-agro-slider">Missile Agro</label>
-            <input id="missile-agro-slider" type="range" min="100" max="2000" value="800" step="50" />
-            <span id="missile-agro-value">800</span>
-          </div>
-          <div id="missile-speed-card" class="slider-card">
-            <label for="missile-speed-slider">Missile Speed</label>
-            <input id="missile-speed-slider" type="range" min="40" max="250" value="180" step="5" />
-            <span id="missile-speed-value">180</span>
+          <div id="missile-slider-group">
+            <div id="missile-agro-card" class="slider-card">
+              <label for="missile-agro-slider">Missile Agro</label>
+              <input id="missile-agro-slider" type="range" min="100" max="2000" value="800" step="50" />
+              <span id="missile-agro-value">800</span>
+            </div>
+            <div id="missile-speed-card" class="slider-card">
+              <label for="missile-speed-slider">Missile Speed</label>
+              <input id="missile-speed-slider" type="range" min="40" max="250" value="180" step="5" />
+              <span id="missile-speed-value">180</span>
+            </div>
           </div>
         </div>
       </div>

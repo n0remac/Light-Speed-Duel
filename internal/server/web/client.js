@@ -170,11 +170,6 @@
   }
   connect();
 
-  document.getElementById("join").addEventListener("click", () => {
-    const name = document.getElementById("name").value.trim() || "Anon";
-    ws?.send(JSON.stringify({ type: "join", name, room: ROOM }));
-  });
-
   // World → canvas transform (simple letterbox fit)
   const world = { w: 8000, h: 4500 }; // synced from server meta after first state
   function worldToCanvas(p) {
@@ -747,7 +742,7 @@
     shipSelectionContainer.style.opacity = isShipContext ? "1" : "0.6";
 
     if (!state.me || !hasValidSelection) {
-      shipSelectionLabel.textContent = "No waypoint selected";
+      shipSelectionLabel.textContent = "";
       shipDeleteBtn.disabled = true;
       if (isShipContext) {
         setShipSliderValue(defaultSpeed);
@@ -762,8 +757,8 @@
     } else {
       updateSpeedLabel(speed);
     }
-    const labelBase = selection.type === "leg" ? `Leg ${selection.index + 1}` : `Waypoint ${selection.index + 1}`;
-    shipSelectionLabel.textContent = `${labelBase} — ${speed.toFixed(0)} u/s`;
+    const displayIndex = selection.index + 1;
+    shipSelectionLabel.textContent = `${displayIndex} — ${speed.toFixed(0)} u/s`;
     shipDeleteBtn.disabled = !isShipContext;
   }
 
