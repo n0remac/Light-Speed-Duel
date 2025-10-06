@@ -1,0 +1,271 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Light Speed Duel – Briefing</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <style>
+    :root {
+      --bg: radial-gradient(ellipse at top, #061321 0%, #030508 70%);
+      --panel: rgba(13, 23, 42, 0.82);
+      --panel-border: rgba(59, 130, 246, 0.38);
+      --text: #e5e7eb;
+      --muted: rgba(148, 163, 184, 0.78);
+      --accent: #60a5fa;
+      --btn-bg: rgba(23, 37, 84, 0.78);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.5 "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    #app {
+      width: min(960px, 100vw);
+      display: flex;
+      flex-direction: column;
+      background: rgba(8, 12, 20, 0.85);
+      border: 1px solid rgba(37, 99, 235, 0.35);
+      border-radius: 20px;
+      box-shadow: 0 40px 80px rgba(2, 6, 16, 0.55);
+      overflow: hidden;
+    }
+
+    header {
+      padding: 26px 32px 18px;
+      border-bottom: 1px solid rgba(37, 99, 235, 0.28);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 26px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    header p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+      padding: 28px 32px 36px;
+    }
+
+    section {
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 16px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    section h2 {
+      margin: 0;
+      font-size: 16px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+    }
+
+    li + li {
+      margin-top: 6px;
+    }
+
+    label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--muted);
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(96, 165, 250, 0.32);
+      background: rgba(8, 15, 30, 0.9);
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    input[readonly] {
+      cursor: text;
+    }
+
+    button {
+      align-self: flex-start;
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(96, 165, 250, 0.6);
+      background: var(--btn-bg);
+      color: var(--text);
+      font: inherit;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 11px;
+      transition: background 0.2s ease, transform 0.2s ease;
+    }
+
+    button:hover {
+      background: rgba(96, 165, 250, 0.24);
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    form {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    #save-status {
+      font-size: 12px;
+      color: var(--accent);
+      min-height: 14px;
+    }
+
+    #room-share {
+      display: none;
+      gap: 12px;
+    }
+
+    #room-share.visible {
+      display: flex;
+      flex-direction: column;
+    }
+
+    #room-share .row {
+      width: 100%;
+    }
+
+    @media (max-width: 720px) {
+      body {
+        padding: 16px;
+      }
+      header {
+        padding: 20px;
+      }
+      main {
+        padding: 22px 20px 28px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Light Speed Duel</h1>
+      <p>This is a 2 player dogfighting game set across lightyears of space.</p>
+    </header>
+    <main>
+      <section>
+        <h2>Flight Notes</h2>
+        <ul>
+          <li>Time delay and time dilation are core mechanics of this game. When you see an enemy ship, you are actually seeing it as it was in the past.</li>
+          <li>The further away a ship is, the more the offset in its actual position will be.</li>
+          <li>You can use this information to help you lead shots when planning missile routes.</li>
+          <li>Time dilation is expressed though cool down times. When you are moving faster missile cool downs will be longer.</li>
+        </ul>
+      </section>
+      <section>
+        <h2>Call Sign</h2>
+        <form id="call-sign-form">
+          <div>
+            <label for="call-sign-input">Pilot handle</label>
+            <input id="call-sign-input" type="text" maxlength="24" placeholder="Anon" autocomplete="off" />
+          </div>
+          <div class="row">
+            <button id="call-sign-save" type="submit">Save Call Sign</button>
+            <span id="save-status"></span>
+          </div>
+          <p class="muted">Your call sign is stored locally and sent to the server when you join a room.</p>
+        </form>
+      </section>
+      <section>
+        <h2>Spin Up A Room</h2>
+        <form id="new-room-form">
+          <p class="muted">Create a fresh room, copy the invite link, then enter to deploy. Share the URL with your squad to fly together.</p>
+          <button id="new-room-button" type="submit">Generate Room</button>
+        </form>
+        <div id="room-share">
+          <div>
+            <label for="room-url">Shareable link</label>
+            <div class="row">
+              <input id="room-url" type="text" readonly />
+              <button id="copy-room-url" type="button">Copy Link</button>
+            </div>
+          </div>
+          <div class="row">
+            <span class="muted">Ready?</span>
+            <button id="enter-room" type="button">Enter Room</button>
+          </div>
+        </div>
+      </section>
+      <section>
+        <h2>Join Existing Room</h2>
+        <form id="join-room-form">
+          <div>
+            <label for="join-room-input">Room ID</label>
+            <input id="join-room-input" type="text" placeholder="r-abcdef" autocomplete="off" />
+          </div>
+          <button id="join-room-button" type="submit">Join Room</button>
+          <p class="muted">Paste an ID from a wingmate&apos;s URL. We&apos;ll take you straight to the command console.</p>
+        </form>
+      </section>
+    </main>
+  </div>
+  <script src="lobby.js"></script>
+</body>
+</html>

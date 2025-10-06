@@ -65,6 +65,7 @@ interface ConnectOptions {
   state: AppState;
   bus: EventBus;
   onStateUpdated?: () => void;
+  onOpen?: (socket: WebSocket) => void;
 }
 
 let ws: WebSocket | null = null;
@@ -75,10 +76,16 @@ export function sendMessage(payload: unknown): void {
   ws.send(data);
 }
 
-export function connectWebSocket({ room, state, bus, onStateUpdated }: ConnectOptions): void {
+export function connectWebSocket({ room, state, bus, onStateUpdated, onOpen }: ConnectOptions): void {
   const protocol = window.location.protocol === "https:" ? "wss://" : "ws://";
   ws = new WebSocket(`${protocol}${window.location.host}/ws?room=${encodeURIComponent(room)}`);
-  ws.addEventListener("open", () => console.log("[ws] open"));
+  ws.addEventListener("open", () => {
+    console.log("[ws] open");
+    const socket = ws;
+    if (socket && onOpen) {
+      onOpen(socket);
+    }
+  });
   ws.addEventListener("close", () => console.log("[ws] close"));
 
   let prevRoutes = new Map<string, MissileRoute>();
