@@ -54,6 +54,8 @@ export function createTutorialEngine({ id, bus, roles, steps }: EngineOptions): 
   let currentStep: TutorialStep | null = null;
   let cleanupCurrent: (() => void) | null = null;
   let renderCurrent: (() => void) | null = null;
+  let lastSavedCompleted = false;
+  let suppressPersistOnStop = false;
 
   const persistentListeners: Array<() => void> = [];
 
@@ -111,11 +113,7 @@ export function createTutorialEngine({ id, bus, roles, steps }: EngineOptions): 
     const step = steps[index];
     currentStep = step;
 
-    saveProgress(id, {
-      stepIndex: index,
-      completed: false,
-      updatedAt: Date.now(),
-    });
+    persistProgress(index, false);
 
     bus.emit("tutorial:stepChanged", { id, stepIndex: index, total: steps.length });
     step.onEnter?.();
@@ -185,20 +183,20 @@ export function createTutorialEngine({ id, bus, roles, steps }: EngineOptions): 
   function skipTutorial(): void {
     if (!running) return;
     const atStep = currentIndex >= 0 ? currentIndex : 0;
+    suppressPersistOnStop = true;
     stop();
+    suppressPersistOnStop = false;
     clearProgress(id);
     bus.emit("tutorial:skipped", { id, atStep });
   }
 
   function completeTutorial(): void {
     if (!running) return;
-    saveProgress(id, {
-      stepIndex: steps.length,
-      completed: true,
-      updatedAt: Date.now(),
-    });
+    suppressPersistOnStop = true;
+    persistProgress(steps.length, true);
     bus.emit("tutorial:completed", { id });
     stop();
+    suppressPersistOnStop = false;
   }
 
   function start(options?: StartOptions): void {
@@ -212,6 +210,8 @@ export function createTutorialEngine({ id, bus, roles, steps }: EngineOptions): 
     }
     running = true;
     paused = false;
+    suppressPersistOnStop = false;
+    lastSavedCompleted = false;
     let startIndex = 0;
     if (resume) {
       const progress = loadProgress(id);
@@ -231,6 +231,9 @@ export function createTutorialEngine({ id, bus, roles, steps }: EngineOptions): 
   }
 
   function stop(): void {
+    const shouldPersist = !suppressPersistOnStop && running && !lastSavedCompleted && currentIndex >= 0 && currentIndex < steps.length;
+    const indexToPersist = currentIndex;
+
     if (cleanupCurrent) {
       cleanupCurrent();
       cleanupCurrent = null;
@@ -238,6 +241,9 @@ export function createTutorialEngine({ id, bus, roles, steps }: EngineOptions): 
     if (currentStep) {
       currentStep.onExit?.();
       currentStep = null;
+    }
+    if (shouldPersist) {
+      persistProgress(indexToPersist, false);
     }
     running = false;
     paused = false;
@@ -256,6 +262,15 @@ export function createTutorialEngine({ id, bus, roles, steps }: EngineOptions): 
       dispose();
     }
     highlighter.destroy();
+  }
+
+  function persistProgress(stepIndex: number, completed: boolean): void {
+    lastSavedCompleted = completed;
+    saveProgress(id, {
+      stepIndex,
+      completed,
+      updatedAt: Date.now(),
+    });
   }
 
   return {

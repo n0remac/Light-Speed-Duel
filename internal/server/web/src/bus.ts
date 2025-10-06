@@ -9,6 +9,7 @@ export interface EventMap {
   "ship:legSelected": { index: number | null };
   "ship:waypointDeleted": { index: number };
   "ship:waypointsCleared": void;
+  "ship:clearInvoked": void;
   "ship:speedChanged": { value: number };
   "missile:routeAdded": { routeId: string };
   "missile:routeDeleted": { routeId: string };
@@ -23,6 +24,7 @@ export interface EventMap {
   "missile:launchRequested": { routeId: string };
   "missile:launched": { routeId: string };
   "missile:cooldownUpdated": { secondsRemaining: number };
+  "missile:deleteInvoked": void;
   "help:visibleChanged": { visible: boolean };
   "state:updated": void;
   "tutorial:started": { id: string };

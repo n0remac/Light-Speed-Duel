@@ -76,7 +76,7 @@ export function getBasicTutorialSteps(): TutorialStep[] {
       body: "Clear remaining waypoints to reset your plotted course.",
       advance: {
         kind: "event",
-        event: "ship:waypointsCleared",
+        event: "ship:clearInvoked",
       },
     },
     {
@@ -106,27 +106,6 @@ export function getBasicTutorialSteps(): TutorialStep[] {
           }
           return true;
         },
-      },
-    },
-    {
-      id: "missile-select-mode",
-      target: "missileSelect",
-      title: "Select missile waypoints",
-      body: "Switch to Select mode (E key) so you can highlight individual missile waypoints.",
-      advance: {
-        kind: "event",
-        event: "missile:toolChanged",
-        when: payloadToolEquals("select"),
-      },
-    },
-    {
-      id: "missile-delete-waypoint",
-      target: "missileDelete",
-      title: "Delete a missile waypoint",
-      body: "Select a waypoint on the map, then remove it with the Delete control or key.",
-      advance: {
-        kind: "event",
-        event: "missile:waypointDeleted",
       },
     },
     {

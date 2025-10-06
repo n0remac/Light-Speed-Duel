@@ -53,7 +53,7 @@ export function createHighlighter(): Highlighter {
   const skipBtn = document.createElement("button");
   skipBtn.type = "button";
   skipBtn.className = "tutorial-overlay__btn tutorial-overlay__btn--ghost";
-  skipBtn.textContent = "Skip";
+  skipBtn.textContent = "Close";
 
   const nextBtn = document.createElement("button");
   nextBtn.type = "button";
@@ -184,7 +184,7 @@ export function createHighlighter(): Highlighter {
 
     onSkip = showSkip ? options.onSkip ?? null : null;
     if (showSkip) {
-      skipBtn.textContent = skipLabel ?? "Skip";
+      skipBtn.textContent = skipLabel ?? "Close";
       skipBtn.style.display = "inline-flex";
     } else {
       skipBtn.style.display = "none";

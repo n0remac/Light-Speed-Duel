@@ -207,6 +207,7 @@ function bindListeners(): void {
   shipClearBtn?.addEventListener("click", () => {
     setInputContext("ship");
     clearShipRoute();
+    busRef.emit("ship:clearInvoked");
   });
 
   shipSetBtn?.addEventListener("click", () => {
@@ -261,6 +262,7 @@ function bindListeners(): void {
   missileDeleteBtn?.addEventListener("click", () => {
     setInputContext("missile");
     deleteSelectedMissileWaypoint();
+    busRef.emit("missile:deleteInvoked");
   });
 
   missileSpeedSlider?.addEventListener("input", (event) => {
