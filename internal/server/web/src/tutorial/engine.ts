@@ -134,7 +134,7 @@ export function createTutorialEngine({ id, bus, roles, steps }: EngineOptions): 
         onNext: step.advance.kind === "manual" ? advanceStep : undefined,
         showSkip: allowSkip,
         skipLabel: step.skipLabel,
-        onSkip: allowSkip ? skipTutorial : undefined,
+        onSkip: allowSkip ? skipCurrentStep : undefined,
       });
     };
 
@@ -180,14 +180,10 @@ export function createTutorialEngine({ id, bus, roles, steps }: EngineOptions): 
     advanceTo(currentIndex + 1);
   }
 
-  function skipTutorial(): void {
+  function skipCurrentStep(): void {
     if (!running) return;
-    const atStep = currentIndex >= 0 ? currentIndex : 0;
-    suppressPersistOnStop = true;
-    stop();
-    suppressPersistOnStop = false;
-    clearProgress(id);
-    bus.emit("tutorial:skipped", { id, atStep });
+    const nextIndex = currentIndex >= 0 ? currentIndex + 1 : 0;
+    advanceTo(nextIndex);
   }
 
   function completeTutorial(): void {

@@ -1528,7 +1528,7 @@
     const skipBtn = document.createElement("button");
     skipBtn.type = "button";
     skipBtn.className = "tutorial-overlay__btn tutorial-overlay__btn--ghost";
-    skipBtn.textContent = "Close";
+    skipBtn.textContent = "Skip";
     const nextBtn = document.createElement("button");
     nextBtn.type = "button";
     nextBtn.className = "tutorial-overlay__btn tutorial-overlay__btn--primary";
@@ -1641,7 +1641,7 @@
       }
       onSkip = showSkip ? (_b = options.onSkip) != null ? _b : null : null;
       if (showSkip) {
-        skipBtn.textContent = skipLabel != null ? skipLabel : "Close";
+        skipBtn.textContent = skipLabel != null ? skipLabel : "Skip";
         skipBtn.style.display = "inline-flex";
       } else {
         skipBtn.style.display = "none";
@@ -1934,7 +1934,7 @@
           onNext: step.advance.kind === "manual" ? advanceStep : void 0,
           showSkip: allowSkip,
           skipLabel: step.skipLabel,
-          onSkip: allowSkip ? skipTutorial : void 0
+          onSkip: allowSkip ? skipCurrentStep : void 0
         });
       };
       renderCurrent = render;
@@ -1976,14 +1976,10 @@
     function advanceStep() {
       advanceTo(currentIndex + 1);
     }
-    function skipTutorial() {
+    function skipCurrentStep() {
       if (!running) return;
-      const atStep = currentIndex >= 0 ? currentIndex : 0;
-      suppressPersistOnStop = true;
-      stop();
-      suppressPersistOnStop = false;
-      clearProgress(id);
-      bus.emit("tutorial:skipped", { id, atStep });
+      const nextIndex = currentIndex >= 0 ? currentIndex + 1 : 0;
+      advanceTo(nextIndex);
     }
     function completeTutorial() {
       if (!running) return;
