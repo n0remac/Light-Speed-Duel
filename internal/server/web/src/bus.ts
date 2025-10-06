@@ -6,6 +6,7 @@ export interface EventMap {
   "context:changed": { context: ShipContext };
   "ship:toolChanged": { tool: ShipTool };
   "ship:waypointAdded": { index: number };
+  "ship:legSelected": { index: number | null };
   "ship:waypointDeleted": { index: number };
   "ship:waypointsCleared": void;
   "ship:speedChanged": { value: number };
@@ -13,6 +14,7 @@ export interface EventMap {
   "missile:routeDeleted": { routeId: string };
   "missile:routeRenamed": { routeId: string; name: string };
   "missile:activeRouteChanged": { routeId: string | null };
+  "missile:toolChanged": { tool: MissileTool };
   "missile:waypointAdded": { routeId: string; index: number };
   "missile:waypointDeleted": { routeId: string; index: number };
   "missile:waypointsCleared": { routeId: string };
@@ -23,6 +25,11 @@ export interface EventMap {
   "missile:cooldownUpdated": { secondsRemaining: number };
   "help:visibleChanged": { visible: boolean };
   "state:updated": void;
+  "tutorial:started": { id: string };
+  "tutorial:stepChanged": { id: string; stepIndex: number; total: number };
+  "tutorial:completed": { id: string };
+  "tutorial:skipped": { id: string; atStep: number };
+  "bot:spawnRequested": void;
 }
 
 export type EventKey = keyof EventMap;

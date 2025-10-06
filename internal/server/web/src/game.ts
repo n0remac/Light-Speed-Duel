@@ -201,6 +201,7 @@ function bindListeners(): void {
 
   spawnBotBtn?.addEventListener("click", () => {
     sendMessage({ type: "spawn_bot" });
+    busRef.emit("bot:spawnRequested");
   });
 
   shipClearBtn?.addEventListener("click", () => {
@@ -565,6 +566,8 @@ function refreshMissileSelectionUI(): void {
 function setSelection(sel: Selection | null): void {
   selection = sel;
   refreshShipSelectionUI();
+  const index = selection ? selection.index : null;
+  busRef.emit("ship:legSelected", { index });
 }
 
 function setMissileSelection(sel: MissileSelection | null): void {
@@ -733,16 +736,22 @@ function setMissileTool(tool: "set" | "select"): void {
   if (tool !== "set" && tool !== "select") {
     return;
   }
-  if (uiStateRef.missileTool === tool) {
+  const previous = uiStateRef.missileTool;
+  const changed = previous !== tool;
+  if (changed) {
+    uiStateRef.missileTool = tool;
     setInputContext("missile");
-    return;
+    if (tool === "set") {
+      setMissileSelection(null);
+    }
+  } else {
+    setInputContext("missile");
+    updateControlHighlights();
   }
-  uiStateRef.missileTool = tool;
-  setInputContext("missile");
-  if (tool === "set") {
-    setMissileSelection(null);
+  if (changed) {
+    updateControlHighlights();
   }
-  updateControlHighlights();
+  busRef.emit("missile:toolChanged", { tool });
 }
 
 function setButtonState(btn: HTMLButtonElement | null, active: boolean): void {

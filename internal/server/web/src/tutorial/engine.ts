@@ -1,0 +1,268 @@
+import type { EventBus, EventKey } from "../bus";
+import { createHighlighter, type Highlighter } from "./highlight";
+import { clearProgress, loadProgress, saveProgress } from "./storage";
+import { getRoleElement, type RoleId, type RolesMap } from "./roles";
+
+export type StepAdvance =
+  | {
+      kind: "event";
+      event: EventKey;
+      when?: (payload: unknown) => boolean;
+      check?: () => boolean;
+    }
+  | {
+      kind: "manual";
+      nextLabel?: string;
+    };
+
+export interface TutorialStep {
+  id: string;
+  target: RoleId | (() => HTMLElement | null) | null;
+  title?: string;
+  body: string;
+  advance: StepAdvance;
+  onEnter?: () => void;
+  onExit?: () => void;
+  allowSkip?: boolean;
+  skipLabel?: string;
+}
+
+interface EngineOptions {
+  id: string;
+  bus: EventBus;
+  roles: RolesMap;
+  steps: TutorialStep[];
+}
+
+interface StartOptions {
+  resume?: boolean;
+}
+
+export interface TutorialEngine {
+  start(options?: StartOptions): void;
+  restart(): void;
+  stop(): void;
+  isRunning(): boolean;
+  destroy(): void;
+}
+
+export function createTutorialEngine({ id, bus, roles, steps }: EngineOptions): TutorialEngine {
+  const highlighter: Highlighter = createHighlighter();
+  let running = false;
+  let paused = false;
+  let currentIndex = -1;
+  let currentStep: TutorialStep | null = null;
+  let cleanupCurrent: (() => void) | null = null;
+  let renderCurrent: (() => void) | null = null;
+
+  const persistentListeners: Array<() => void> = [];
+
+  persistentListeners.push(
+    bus.on("help:visibleChanged", ({ visible }) => {
+      if (!running) return;
+      paused = Boolean(visible);
+      if (paused) {
+        highlighter.hide();
+      } else {
+        renderCurrent?.();
+      }
+    }),
+  );
+
+  function resolveTarget(step: TutorialStep): HTMLElement | null {
+    if (!step.target) {
+      return null;
+    }
+    if (typeof step.target === "function") {
+      return step.target();
+    }
+    return getRoleElement(roles, step.target);
+  }
+
+  function clampIndex(index: number): number {
+    if (steps.length === 0) return 0;
+    if (!Number.isFinite(index) || index < 0) return 0;
+    if (index >= steps.length) return steps.length - 1;
+    return Math.floor(index);
+  }
+
+  function setStep(index: number): void {
+    if (!running) return;
+    if (steps.length === 0) {
+      completeTutorial();
+      return;
+    }
+    if (index < 0 || index >= steps.length) {
+      completeTutorial();
+      return;
+    }
+
+    if (cleanupCurrent) {
+      cleanupCurrent();
+      cleanupCurrent = null;
+    }
+
+    if (currentStep) {
+      currentStep.onExit?.();
+      currentStep = null;
+    }
+
+    currentIndex = index;
+    const step = steps[index];
+    currentStep = step;
+
+    saveProgress(id, {
+      stepIndex: index,
+      completed: false,
+      updatedAt: Date.now(),
+    });
+
+    bus.emit("tutorial:stepChanged", { id, stepIndex: index, total: steps.length });
+    step.onEnter?.();
+
+    const allowSkip = step.allowSkip !== false;
+    const render = (): void => {
+      if (!running || paused) return;
+      highlighter.show({
+        target: resolveTarget(step),
+        title: step.title,
+        body: step.body,
+        stepIndex: index,
+        stepCount: steps.length,
+        showNext: step.advance.kind === "manual",
+        nextLabel: step.advance.kind === "manual"
+          ? step.advance.nextLabel ?? (index === steps.length - 1 ? "Finish" : "Next")
+          : undefined,
+        onNext: step.advance.kind === "manual" ? advanceStep : undefined,
+        showSkip: allowSkip,
+        skipLabel: step.skipLabel,
+        onSkip: allowSkip ? skipTutorial : undefined,
+      });
+    };
+
+    renderCurrent = render;
+    render();
+
+    if (step.advance.kind === "event") {
+      const handler = (payload: unknown): void => {
+        if (!running || paused) return;
+        if (step.advance.when && !step.advance.when(payload)) {
+          return;
+        }
+        advanceTo(index + 1);
+      };
+      cleanupCurrent = bus.on(step.advance.event, handler as (value: never) => void);
+      if (step.advance.check && step.advance.check()) {
+        handler(undefined);
+      }
+    } else {
+      cleanupCurrent = null;
+    }
+  }
+
+  function advanceTo(nextIndex: number): void {
+    if (!running) return;
+    if (cleanupCurrent) {
+      cleanupCurrent();
+      cleanupCurrent = null;
+    }
+    if (currentStep) {
+      currentStep.onExit?.();
+      currentStep = null;
+    }
+    renderCurrent = null;
+    if (nextIndex >= steps.length) {
+      completeTutorial();
+    } else {
+      setStep(nextIndex);
+    }
+  }
+
+  function advanceStep(): void {
+    advanceTo(currentIndex + 1);
+  }
+
+  function skipTutorial(): void {
+    if (!running) return;
+    const atStep = currentIndex >= 0 ? currentIndex : 0;
+    stop();
+    clearProgress(id);
+    bus.emit("tutorial:skipped", { id, atStep });
+  }
+
+  function completeTutorial(): void {
+    if (!running) return;
+    saveProgress(id, {
+      stepIndex: steps.length,
+      completed: true,
+      updatedAt: Date.now(),
+    });
+    bus.emit("tutorial:completed", { id });
+    stop();
+  }
+
+  function start(options?: StartOptions): void {
+    const resume = options?.resume !== false;
+    if (running) {
+      restart();
+      return;
+    }
+    if (steps.length === 0) {
+      return;
+    }
+    running = true;
+    paused = false;
+    let startIndex = 0;
+    if (resume) {
+      const progress = loadProgress(id);
+      if (progress && !progress.completed) {
+        startIndex = clampIndex(progress.stepIndex);
+      }
+    } else {
+      clearProgress(id);
+    }
+    bus.emit("tutorial:started", { id });
+    setStep(startIndex);
+  }
+
+  function restart(): void {
+    stop();
+    start({ resume: false });
+  }
+
+  function stop(): void {
+    if (cleanupCurrent) {
+      cleanupCurrent();
+      cleanupCurrent = null;
+    }
+    if (currentStep) {
+      currentStep.onExit?.();
+      currentStep = null;
+    }
+    running = false;
+    paused = false;
+    currentIndex = -1;
+    renderCurrent = null;
+    highlighter.hide();
+  }
+
+  function isRunning(): boolean {
+    return running;
+  }
+
+  function destroy(): void {
+    stop();
+    for (const dispose of persistentListeners) {
+      dispose();
+    }
+    highlighter.destroy();
+  }
+
+  return {
+    start,
+    restart,
+    stop,
+    isRunning,
+    destroy,
+  };
+}
