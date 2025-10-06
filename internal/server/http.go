@@ -8,6 +8,8 @@ import (
 	. "LightSpeedDuel/internal/game"
 )
 
+//go:generate go run ./cmd/webbuild
+
 /* ------------------------------ Embeds ------------------------------ */
 
 //go:embed web/index.html
