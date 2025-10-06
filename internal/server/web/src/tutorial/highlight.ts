@@ -250,7 +250,6 @@ function ensureStyles(): void {
     .tutorial-overlay__scrim {
       position: absolute;
       inset: 0;
-      background: rgba(2, 6, 23, 0.72);
     }
     .tutorial-overlay__highlight {
       position: absolute;

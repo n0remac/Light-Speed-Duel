@@ -2,7 +2,9 @@ import { createEventBus } from "./bus";
 import { connectWebSocket, sendMessage } from "./net";
 import { initGame } from "./game";
 import { createInitialState, createInitialUIState } from "./state";
-import { mountTutorial } from "./tutorial";
+import { mountTutorial, BASIC_TUTORIAL_ID } from "./tutorial";
+import { clearProgress as clearTutorialProgress } from "./tutorial/storage";
+import { mountStory, INTRO_CHAPTER_ID, INTRO_INITIAL_RESPONSE_IDS } from "./story";
 
 const CALL_SIGN_STORAGE_KEY = "lsd:callsign";
 
@@ -27,7 +29,26 @@ const CALL_SIGN_STORAGE_KEY = "lsd:callsign";
   const bus = createEventBus();
 
   const game = initGame({ state, uiState, bus });
-  mountTutorial(bus);
+  const tutorial = mountTutorial(bus);
+
+  let tutorialStarted = false;
+  const startTutorial = (): void => {
+    if (tutorialStarted) return;
+    tutorialStarted = true;
+    clearTutorialProgress(BASIC_TUTORIAL_ID);
+    tutorial.start({ resume: false });
+  };
+
+  const unsubscribeStoryClosed = bus.on("dialogue:closed", ({ chapterId, nodeId }) => {
+    if (chapterId !== INTRO_CHAPTER_ID) return;
+    if (!INTRO_INITIAL_RESPONSE_IDS.includes(nodeId as typeof INTRO_INITIAL_RESPONSE_IDS[number])) {
+      return;
+    }
+    unsubscribeStoryClosed();
+    startTutorial();
+  });
+
+  mountStory({ bus, roomId: room });
 
   connectWebSocket({
     room,

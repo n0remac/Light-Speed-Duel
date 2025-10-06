@@ -32,6 +32,11 @@ export interface EventMap {
   "tutorial:completed": { id: string };
   "tutorial:skipped": { id: string; atStep: number };
   "bot:spawnRequested": void;
+  "dialogue:opened": { nodeId: string; chapterId: string };
+  "dialogue:closed": { nodeId: string; chapterId: string };
+  "dialogue:choice": { nodeId: string; choiceId: string; chapterId: string };
+  "story:flagUpdated": { flag: string; value: boolean };
+  "story:progressed": { chapterId: string; nodeId: string };
 }
 
 export type EventKey = keyof EventMap;

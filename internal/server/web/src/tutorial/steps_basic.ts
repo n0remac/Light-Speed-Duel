@@ -240,9 +240,9 @@ export function getBasicTutorialSteps(): TutorialStep[] {
     },
     {
       id: "tutorial-complete",
-      target: "tutorialStart",
+      target: null,
       title: "You’re ready",
-      body: "Great work. Restart the tutorial from the top bar whenever you need a refresher.",
+      body: "Great work. Reload the console or rejoin a room to revisit these drills.",
       advance: {
         kind: "manual",
         nextLabel: "Finish",
