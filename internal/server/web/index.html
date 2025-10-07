@@ -231,16 +231,17 @@
     }
 
 
-    #ship-selection {
+    #ship-routes {
       display: flex;
       flex-direction: column;
       gap: 4px;
       font-size: 11px;
       color: var(--text-muted);
       min-height: 32px;
+      align-items: center;
     }
 
-    #ship-selection span {
+    #ship-routes span {
       color: var(--text-strong);
       white-space: nowrap;
     }
@@ -260,6 +261,12 @@
       letter-spacing: 0.1em;
       text-transform: uppercase;
       color: var(--text-strong);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      white-space: nowrap;
     }
 
     .edge-btn[data-state="active"] {
@@ -268,16 +275,21 @@
       color: #bfdbfe;
     }
 
-    .edge-btn {
-      display: block;
-      width: 100%;
-      white-space: nowrap;
-      text-align: center;
+    #missile-launch {
+      gap: 2px;
     }
 
     .edge-btn:disabled {
       opacity: 0.45;
       cursor: not-allowed;
+    }
+
+    .btn-text-full {
+      display: inline;
+    }
+
+    .btn-text-short {
+      display: none;
     }
 
     .slider-card {
@@ -486,6 +498,12 @@
       .slider-card input[type="range"] {
         width: 110px;
       }
+      .btn-text-full {
+        display: none;
+      }
+      .btn-text-short {
+        display: inline;
+      }
     }
   </style>
 </head>
@@ -495,12 +513,7 @@
     <div id="frame">
       <div id="frame-top" class="frame-edge">
         <div id="status-group">
-          <span class="status-chip">Room <strong id="room-name"></strong></span>
-          <span class="status-chip">World <span id="wh">–</span></span>
-          <span class="status-chip">c=<span id="c">–</span></span>
-          <span class="status-chip">t=<span id="t">0.00</span>s</span>
           <span class="status-chip">HP <span id="ship-hp">–</span></span>
-          <button id="mute-top" class="ghost-btn small" aria-pressed="false" title="Mute (M)">🔇 Mute</button>
         </div>
         <div id="top-right">
           <button id="spawn-bot" class="ghost-btn">Bot</button>
@@ -516,14 +529,26 @@
       <div id="frame-left" class="frame-edge">
         <div id="ship-controls" class="edge-stack">
           <div class="edge-buttons">
-            <button id="ship-set" class="edge-btn" data-mode="set">Set</button>
-            <button id="ship-select" class="edge-btn" data-mode="select">Select</button>
-            <button id="ship-delete" class="edge-btn">Delete</button>
-            <button id="ship-clear" class="edge-btn">Clear</button>
-            <button id="ship-toggle-route" class="edge-btn">Route</button>
-          </div>
-          <div id="ship-selection" class="edge-stack">
-            <span id="ship-selection-label"></span>
+            <button id="ship-set" class="edge-btn" data-mode="set">
+              <span class="btn-text-full">Set</span>
+              <span class="btn-text-short">Set</span>
+            </button>
+            <button id="ship-select" class="edge-btn" data-mode="select">
+              <span class="btn-text-full">Select</span>
+              <span class="btn-text-short">Sel</span>
+            </button>
+            <button id="ship-delete" class="edge-btn">
+              <span class="btn-text-full">Delete</span>
+              <span class="btn-text-short">Del</span>
+            </button>
+            <button id="ship-clear" class="edge-btn">
+              <span class="btn-text-full">Clear</span>
+              <span class="btn-text-short">Clr</span>
+            </button>
+            <div id="ship-routes">
+              <span id="ship-route-leg"></span>
+              <span id="ship-route-speed"></span>
+            </div>
           </div>
         </div>
       </div>
@@ -533,13 +558,29 @@
       <div id="frame-right" class="frame-edge">
         <div id="missile-controls" class="edge-stack">
           <div class="edge-buttons">
-            <button id="missile-set" class="edge-btn" data-mode="set">Set</button>
-            <button id="missile-select" class="edge-btn" data-mode="select">Select</button>
-            <button id="missile-delete" class="edge-btn">Delete</button>
-          </div>
-          <div class="edge-buttons">
-            <button id="missile-add-route" class="edge-btn">New</button>
-            <button id="missile-launch" class="edge-btn">Launch</button>
+            <button id="missile-set" class="edge-btn" data-mode="set">
+              <span class="btn-text-full">Set</span>
+              <span class="btn-text-short">Set</span>
+            </button>
+            <button id="missile-select" class="edge-btn" data-mode="select">
+              <span class="btn-text-full">Select</span>
+              <span class="btn-text-short">Sel</span>
+            </button>
+            <button id="missile-delete" class="edge-btn">
+              <span class="btn-text-full">Delete</span>
+              <span class="btn-text-short">Del</span>
+            </button>
+            <button id="missile-add-route" class="edge-btn">
+              <span class="btn-text-full">New</span>
+              <span class="btn-text-short">New</span>
+            </button>
+            <button id="missile-launch" class="edge-btn">
+              <span id="missile-launch-text">
+                <span class="btn-text-full">Launch</span>
+                <span class="btn-text-short">Fire</span>
+              </span>
+              <span id="missile-launch-info"></span>
+            </button>
           </div>
         </div>
       </div>

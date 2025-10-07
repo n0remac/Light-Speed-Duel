@@ -93,10 +93,18 @@ export interface MissileSelection {
   index: number;
 }
 
+export type ActiveTool =
+  | "ship-set"
+  | "ship-select"
+  | "missile-set"
+  | "missile-select"
+  | null;
+
 export interface UIState {
   inputContext: ShipContext;
   shipTool: ShipTool;
   missileTool: MissileTool;
+  activeTool: ActiveTool;
   showShipRoute: boolean;
   helpVisible: boolean;
 }
@@ -105,7 +113,8 @@ export function createInitialUIState(): UIState {
   return {
     inputContext: "ship",
     shipTool: "set",
-    missileTool: "set",
+    missileTool: null,
+    activeTool: "ship-set",
     showShipRoute: true,
     helpVisible: false,
   };

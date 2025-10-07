@@ -1,6 +1,6 @@
 export type ShipContext = "ship" | "missile";
-export type ShipTool = "set" | "select";
-export type MissileTool = "set" | "select";
+export type ShipTool = "set" | "select" | null;
+export type MissileTool = "set" | "select" | null;
 
 export interface EventMap {
   "context:changed": { context: ShipContext };

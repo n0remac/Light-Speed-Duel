@@ -25,9 +25,6 @@ const CALL_SIGN_STORAGE_KEY = "lsd:callsign";
     persistCallSign(nameParam);
   }
 
-  const roomLabel = document.getElementById("room-name");
-  if (roomLabel) roomLabel.textContent = room;
-
   // Gate everything on a user gesture (centred button)
   await waitForUserStart({
     label: "Start Game",
