@@ -82,6 +82,8 @@ let defaultSpeed = 150;
 let lastLoopTs: number | null = null;
 let lastMissileConfigSent: { speed: number; agroRadius: number } | null = null;
 const legDashOffsets = new Map<number, number>();
+let lastMissileLaunchTextHTML = "";
+let lastMissileLaunchInfoHTML = "";
 
 const HELP_TEXT = [
   "Primary Modes",
@@ -1273,25 +1275,29 @@ function updateMissileLaunchButtonState(): void {
   const shouldDisable = !route || count === 0 || coolingDown;
   missileLaunchBtn.disabled = shouldDisable;
 
+  const launchTextHTML = '<span class="btn-text-full">Launch</span><span class="btn-text-short">Fire</span>';
+  let launchInfoHTML = "";
+
   if (!route) {
-    missileLaunchText.innerHTML = '<span class="btn-text-full">Launch</span><span class="btn-text-short">Fire</span>';
-    missileLaunchInfo.textContent = "";
-    return;
-  }
-
-  if (coolingDown) {
-    missileLaunchText.innerHTML = '<span class="btn-text-full">Launch</span><span class="btn-text-short">Fire</span>';
-    missileLaunchInfo.textContent = `${remaining.toFixed(1)}s`;
-    return;
-  }
-
-  missileLaunchText.innerHTML = '<span class="btn-text-full">Launch</span><span class="btn-text-short">Fire</span>';
-  if (route.name) {
+    launchInfoHTML = "";
+  } else if (coolingDown) {
+    launchInfoHTML = `${remaining.toFixed(1)}s`;
+  } else if (route.name) {
     const routes = Array.isArray(stateRef.missileRoutes) ? stateRef.missileRoutes : [];
     const routeIndex = routes.findIndex((r) => r.id === route.id) + 1;
-    missileLaunchInfo.innerHTML = `<span class="btn-text-full">${route.name}</span><span class="btn-text-short">${routeIndex}</span>`;
+    launchInfoHTML = `<span class="btn-text-full">${route.name}</span><span class="btn-text-short">${routeIndex}</span>`;
   } else {
-    missileLaunchInfo.textContent = "";
+    launchInfoHTML = "";
+  }
+
+  if (lastMissileLaunchTextHTML !== launchTextHTML) {
+    missileLaunchText.innerHTML = launchTextHTML;
+    lastMissileLaunchTextHTML = launchTextHTML;
+  }
+
+  if (lastMissileLaunchInfoHTML !== launchInfoHTML) {
+    missileLaunchInfo.innerHTML = launchInfoHTML;
+    lastMissileLaunchInfoHTML = launchInfoHTML;
   }
 }
 

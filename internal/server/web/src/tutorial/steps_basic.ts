@@ -144,17 +144,6 @@ export function getBasicTutorialSteps(): TutorialStep[] {
       },
     },
     {
-      id: "missile-set-mode-again",
-      target: "missileSet",
-      title: "Return to Set mode",
-      body: "Switch back to Set so you can chart waypoints on the new missile route.",
-      advance: {
-        kind: "event",
-        event: "missile:toolChanged",
-        when: payloadToolEquals("set"),
-      },
-    },
-    {
       id: "missile-plot-new-route",
       target: "canvas",
       title: "Plot the new missile route",

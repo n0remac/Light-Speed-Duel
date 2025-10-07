@@ -326,6 +326,39 @@ function ensureStyles(): void {
     .tutorial-overlay__btn--ghost:hover {
       border-color: rgba(203, 213, 225, 0.55);
     }
+    @media (max-width: 768px) {
+      .tutorial-overlay__tooltip {
+        min-width: 200px;
+        max-width: min(320px, calc(100vw - 24px));
+        padding: 10px 12px;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 12px;
+      }
+      .tutorial-overlay__progress {
+        display: none !important;
+      }
+      .tutorial-overlay__title {
+        display: none !important;
+      }
+      .tutorial-overlay__body {
+        margin: 0;
+        font-size: 12px;
+        flex: 1;
+        line-height: 1.4;
+      }
+      .tutorial-overlay__actions {
+        flex-direction: column;
+        gap: 6px;
+        flex-shrink: 0;
+      }
+      .tutorial-overlay__btn {
+        padding: 5px 10px;
+        font-size: 10px;
+        white-space: nowrap;
+      }
+    }
   `;
   document.head.appendChild(style);
 }

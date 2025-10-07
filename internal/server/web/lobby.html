@@ -220,20 +220,6 @@
         </ul>
       </section>
       <section>
-        <h2>Call Sign</h2>
-        <form id="call-sign-form">
-          <div>
-            <label for="call-sign-input">Pilot handle</label>
-            <input id="call-sign-input" type="text" maxlength="24" placeholder="Anon" autocomplete="off" />
-          </div>
-          <div class="row">
-            <button id="call-sign-save" type="submit">Save Call Sign</button>
-            <span id="save-status"></span>
-          </div>
-          <p class="muted">Your call sign is stored locally and sent to the server when you join a room.</p>
-        </form>
-      </section>
-      <section>
         <h2>Game Modes</h2>
         <div style="display: flex; flex-direction: column; gap: 12px;">
           <button id="campaign-button" type="button">Campaign</button>
@@ -245,34 +231,17 @@
         </div>
       </section>
       <section>
-        <h2>Multiplayer Room</h2>
-        <form id="new-room-form">
-          <p class="muted">Create a fresh room, copy the invite link, then enter to deploy. Share the URL with your squad to fly together.</p>
-          <button id="new-room-button" type="submit">Generate Room</button>
-        </form>
-        <div id="room-share">
+        <h2>Call Sign</h2>
+        <form id="call-sign-form">
           <div>
-            <label for="room-url">Shareable link</label>
-            <div class="row">
-              <input id="room-url" type="text" readonly />
-              <button id="copy-room-url" type="button">Copy Link</button>
-            </div>
+            <label for="call-sign-input">Pilot handle</label>
+            <input id="call-sign-input" type="text" maxlength="24" placeholder="Anon" autocomplete="off" />
           </div>
           <div class="row">
-            <span class="muted">Ready?</span>
-            <button id="enter-room" type="button">Enter Room</button>
+            <button id="call-sign-save" type="submit">Save Call Sign</button>
+            <span id="save-status"></span>
           </div>
-        </div>
-      </section>
-      <section>
-        <h2>Join Existing Room</h2>
-        <form id="join-room-form">
-          <div>
-            <label for="join-room-input">Room ID</label>
-            <input id="join-room-input" type="text" placeholder="r-abcdef" autocomplete="off" />
-          </div>
-          <button id="join-room-button" type="submit">Join Room</button>
-          <p class="muted">Paste an ID from a wingmate&apos;s URL. We&apos;ll take you straight to the command console.</p>
+          <p class="muted">Your call sign is stored locally and sent to the server when you join a room.</p>
         </form>
       </section>
     </main>

@@ -3,15 +3,9 @@ const STORAGE_KEY = "lsd:callsign";
 type Maybe<T> = T | null | undefined;
 
 let saveStatusTimer: number | null = null;
-let pendingRoomId: string | null = null;
 
 const callSignInput = document.querySelector<HTMLInputElement>("#call-sign-input");
 const saveStatus = document.getElementById("save-status");
-const copyRoomButton = document.getElementById("copy-room-url");
-const roomUrlInput = document.querySelector<HTMLInputElement>("#room-url");
-const roomShare = document.getElementById("room-share");
-const enterRoomButton = document.getElementById("enter-room");
-const joinRoomInput = document.querySelector<HTMLInputElement>("#join-room-input");
 const campaignButton = document.getElementById("campaign-button");
 const tutorialButton = document.getElementById("tutorial-button");
 const freeplayButton = document.getElementById("freeplay-button");
@@ -32,59 +26,6 @@ function bootstrap(): void {
     } else {
       showSaveStatus("Cleared call sign");
     }
-  });
-
-  document.getElementById("new-room-form")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const name = ensureCallSign();
-    const roomId = generateRoomId();
-    pendingRoomId = roomId;
-    const url = buildRoomUrl(roomId, name);
-    if (roomUrlInput) {
-      roomUrlInput.value = url;
-    }
-    roomShare?.classList.add("visible");
-  });
-
-  copyRoomButton?.addEventListener("click", async () => {
-    const url = roomUrlInput?.value.trim();
-    if (!url) {
-      return;
-    }
-    const originalLabel = copyRoomButton.textContent;
-    try {
-      await navigator.clipboard.writeText(url);
-      copyRoomButton.textContent = "Copied";
-    } catch {
-      roomUrlInput?.select();
-      document.execCommand("copy");
-      copyRoomButton.textContent = "Copied";
-    }
-    window.setTimeout(() => {
-      copyRoomButton.textContent = originalLabel ?? "Copy Link";
-    }, 1500);
-  });
-
-  enterRoomButton?.addEventListener("click", () => {
-    const roomId = pendingRoomId;
-    if (!roomId) {
-      joinRoomInput?.focus();
-      return;
-    }
-    const url = buildRoomUrl(roomId, ensureCallSign());
-    window.location.href = url;
-  });
-
-  document.getElementById("join-room-form")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const raw = joinRoomInput?.value ?? "";
-    const extracted = extractRoomId(raw);
-    if (!extracted) {
-      joinRoomInput?.focus();
-      return;
-    }
-    const url = buildRoomUrl(extracted, ensureCallSign());
-    window.location.href = url;
   });
 
   campaignButton?.addEventListener("click", () => {
@@ -182,35 +123,6 @@ function generateRoomId(prefix?: string): string {
     return `${prefix}-${slug}`;
   }
   return `r-${slug}`;
-}
-
-function extractRoomId(raw: string): string | null {
-  const value = raw.trim();
-  if (!value) {
-    return null;
-  }
-  try {
-    const maybeUrl = new URL(value);
-    const param = maybeUrl.searchParams.get("room");
-    if (param) {
-      return param.trim();
-    }
-  } catch {
-    // not a full URL
-  }
-  const qsIndex = value.indexOf("room=");
-  if (qsIndex !== -1) {
-    const substring = value.slice(qsIndex + 5);
-    const ampIndex = substring.indexOf("&");
-    const id = ampIndex === -1 ? substring : substring.slice(0, ampIndex);
-    if (id) {
-      return id.trim();
-    }
-  }
-  if (/^[a-zA-Z0-9_-]+$/.test(value)) {
-    return value;
-  }
-  return null;
 }
 
 function showSaveStatus(message: string): void {
