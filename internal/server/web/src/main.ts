@@ -7,6 +7,9 @@ import { clearProgress as clearTutorialProgress } from "./tutorial/storage";
 import { mountStory, INTRO_CHAPTER_ID, INTRO_INITIAL_RESPONSE_IDS } from "./story";
 import { waitForUserStart } from "./start-gate";
 import { resumeAudio } from "./story/sfx";
+import { AudioEngine } from "./audio/engine";
+import { MusicDirector } from "./audio/music";
+import { registerAudioBusBindings } from "./audio/cues";
 
 const CALL_SIGN_STORAGE_KEY = "lsd:callsign";
 
@@ -35,6 +38,24 @@ const CALL_SIGN_STORAGE_KEY = "lsd:callsign";
   const state = createInitialState();
   const uiState = createInitialUIState();
   const bus = createEventBus();
+
+  // --- AUDIO: engine + bindings + default scene ---
+  const engine = AudioEngine.get();
+  await engine.resume(); // safe post-gesture
+  const music = new MusicDirector(engine);
+  registerAudioBusBindings(bus as any, engine, music);
+
+  // Start a default music scene (adjust seed/scene as you like)
+  bus.emit("audio:music:set-scene", { scene: "ambient", seed: 42 });
+
+  // Optional: basic hooks to demonstrate SFX & ducking
+  // bus.on("dialogue:opened", () => engine.duckMusic(0.35, 0.1));
+  // bus.on("dialogue:closed", () => engine.unduckMusic(0.25));
+
+  // Example game SFX wiring (adapt to your actual events)
+  bus.on("ship:speedChanged", ({ value }) => {
+    if (value > 0) bus.emit("audio:sfx", { name: "thrust", velocity: Math.min(1, value) });
+  });
 
   const game = initGame({ state, uiState, bus });
   const tutorial = mountTutorial(bus);
@@ -65,6 +86,15 @@ const CALL_SIGN_STORAGE_KEY = "lsd:callsign";
       const nameToSend = callSign || sanitizeCallSign(readStoredCallSign());
       if (nameToSend) sendMessage({ type: "join", name: nameToSend });
     },
+  });
+
+  // Optional: suspend/resume audio on tab visibility to save CPU
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      void engine.suspend();
+    } else {
+      void engine.resume();
+    }
   });
 })();
 

@@ -37,16 +37,30 @@ export interface EventMap {
   "dialogue:choice": { nodeId: string; choiceId: string; chapterId: string };
   "story:flagUpdated": { flag: string; value: boolean };
   "story:progressed": { chapterId: string; nodeId: string };
+  "audio:resume": void;
+  "audio:mute": void;
+  "audio:unmute": void;
+  "audio:set-master-gain": { gain: number };
+  "audio:sfx": { name: "ui" | "laser" | "thrust" | "explosion" | "lock" | "dialogue"; velocity?: number; pan?: number };
+  "audio:music:set-scene": { scene: "ambient" | "combat" | "lobby"; seed?: number };
+  "audio:music:param": { key: string; value: number };               
+  "audio:music:transport": { cmd: "start" | "stop" | "pause" };
 }
 
 export type EventKey = keyof EventMap;
 export type EventPayload<K extends EventKey> = EventMap[K];
 export type Handler<K extends EventKey> = (payload: EventPayload<K>) => void;
 
+type VoidKeys = {
+  [K in EventKey]: EventMap[K] extends void ? K : never
+}[EventKey];
+
+type NonVoidKeys = Exclude<EventKey, VoidKeys>;
+
 export interface EventBus {
   on<K extends EventKey>(event: K, handler: Handler<K>): () => void;
-  emit<K extends EventKey>(event: K, payload: EventPayload<K>): void;
-  emit<K extends EventKey>(event: K): void;
+  emit<K extends NonVoidKeys>(event: K, payload: EventPayload<K>): void;
+  emit<K extends VoidKeys>(event: K): void;
 }
 
 export function createEventBus(): EventBus {
@@ -59,7 +73,7 @@ export function createEventBus(): EventBus {
         handlers.set(event, set);
       }
       set.add(handler);
-      return () => set?.delete(handler);
+      return () => set!.delete(handler);
     },
     emit(event: EventKey, payload?: unknown) {
       const set = handlers.get(event);

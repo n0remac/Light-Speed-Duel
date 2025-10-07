@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Space Drone (Moving Root + Modes + Now Playing)</title>
+<style>
+  :root { color-scheme: dark; font: 16px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif; }
+  body { margin: 0; min-height: 100dvh; background: radial-gradient(1200px 600px at 60% -10%, #1b2a5d 0%, #0b1020 60%); color: #e7eefc; display: grid; grid-template-rows: auto 1fr; }
+  header { padding: 18px 22px; display:flex; flex-wrap: wrap; gap:14px; align-items:center; background: rgba(9,14,28,.6); border-bottom: 1px solid #1f2a4a; backdrop-filter: blur(6px); }
+  .ui { display:flex; flex-wrap: wrap; gap:12px; align-items:center; }
+  .ui > * { margin: 0; }
+  button, select, input[type=range] {
+    padding: 8px 12px; border-radius: 12px; border: 1px solid #2a3b6e; background:#121a33; color:#e7eefc;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.03);
+  }
+  button:disabled { opacity:.6; cursor:not-allowed; }
+  label { font-size:.9rem; opacity:.95; display:flex; gap:8px; align-items:center; }
+  main { padding: 18px 22px; display: grid; gap: 16px; grid-template-columns: 1fr; }
+  .panels { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+  @media (max-width: 900px){ .panels { grid-template-columns: 1fr; } }
+  .card {
+    background: rgba(12,18,36,.7); border:1px solid #1f2a4a; border-radius: 14px; padding:14px 16px;
+    box-shadow: 0 20px 40px rgba(0,0,0,.28);
+  }
+  .card h3 { margin: 0 0 10px; font-weight: 650; letter-spacing:.2px; color:#bcd1ff; }
+  .chips { display:flex; gap:8px; flex-wrap: wrap; }
+  .chip {
+    padding:6px 10px; border-radius: 999px; background: #172345; border:1px solid #2b3f78; font-size: .9rem;
+    display:flex; gap:6px; align-items: baseline;
+  }
+  .chip small { opacity:.75; font-size: .75rem; }
+  .muted { opacity:.7; }
+  footer { padding: 8px 22px 18px; color:#9fb4ee; font-size:.85rem; opacity:.9; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="ui">
+      <button id="start">Start</button>
+      <button id="stop" disabled>Stop</button>
+
+      <label>Key
+        <select id="key">
+          <option>C</option><option>C#</option><option>D</option><option>D#</option>
+          <option>E</option><option>F</option><option>F#</option><option>G</option>
+          <option>G#</option><option>A</option><option>A#</option><option>B</option>
+        </select>
+      </label>
+
+      <label>Base Octave
+        <select id="oct"><option>2</option><option selected>3</option><option>4</option></select>
+      </label>
+
+      <label>Mode
+        <select id="mode">
+          <option value="Ionian">Ionian (major)</option>
+          <option value="Dorian">Dorian</option>
+          <option value="Phrygian">Phrygian</option>
+          <option value="Lydian" selected>Lydian</option>
+          <option value="Mixolydian">Mixolydian</option>
+          <option value="Aeolian">Aeolian (natural minor)</option>
+          <option value="Locrian">Locrian</option>
+        </select>
+      </label>
+
+      <label>Intensity
+        <input id="intensity" type="range" min="0" max="1" step="0.01" value="0.75">
+      </label>
+    </div>
+  </header>
+
+  <main>
+    <div class="panels">
+      <section class="card">
+        <h3>Now Playing</h3>
+        <div class="chips" id="now-playing">
+          <span class="muted">— nothing yet —</span>
+        </div>
+      </section>
+      <section class="card">
+        <h3>Scale (Degrees)</h3>
+        <div class="chips" id="scale-degrees"></div>
+      </section>
+    </div>
+    <section class="card">
+      <h3>Hints</h3>
+      <div class="muted">
+        The **drone root glides** to other scale degrees within the key at long intervals.  
+        Chords often align to the drone’s current degree for consonance, but sometimes roam for color.
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    Low-pass sweeps + a super-slow LFO breathe the timbre; long fades make the texture rise and fall.
+  </footer>
+
+<script>
+(() => {
+  /* ------------------------------- Config ------------------------------- */
+  const MODES = {
+    Ionian:     [0,2,4,5,7,9,11],
+    Dorian:     [0,2,3,5,7,9,10],
+    Phrygian:   [0,1,3,5,7,8,10],
+    Lydian:     [0,2,4,6,7,9,11],
+    Mixolydian: [0,2,4,5,7,9,10],
+    Aeolian:    [0,2,3,5,7,8,10],
+    Locrian:    [0,1,3,5,6,8,10],
+  };
+
+  // Root drone behavior
+  const ROOT_SWELL_TIME = 20;                // seconds for initial swell
+  const ROOT_MAX_GAIN   = 0.33;
+  const DRONE_SHIFT_MIN = 24;                // seconds between root moves
+  const DRONE_SHIFT_MAX = 48;
+  const DRONE_GLIDE_MIN = 8;                 // seconds to glide between roots
+  const DRONE_GLIDE_MAX = 15;
+
+  // Chord behavior
+  const CHORD_VOICES    = 5;
+  const CHORD_FADE_MIN  = 8;
+  const CHORD_FADE_MAX  = 16;
+  const CHORD_HOLD_MIN  = 10;
+  const CHORD_HOLD_MAX  = 22;
+  const CHORD_GAP_MIN   = 4;
+  const CHORD_GAP_MAX   = 9;
+  const CHORD_ANCHOR_PROB = 0.6;             // align chord root with drone degree
+
+  // Filter / FX
+  const FILTER_BASE     = 220;               // Hz
+  const FILTER_PEAK     = 4200;              // Hz
+  const SWEEP_TIME      = 30;                // seconds rise/fall segment
+  const LFO_RATE        = 0.05;              // Hz
+  const LFO_DEPTH       = 900;               // Hz
+  const DELAY_TIME      = 0.45;              // seconds
+  const FEEDBACK_GAIN   = 0.35;
+  const WET_MIX         = 0.28;
+
+  /* -------------------------------- Util -------------------------------- */
+  const noteNames = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  const toMidi = (name, octave) => 12*(octave+1) + noteNames.indexOf(name);
+  const midiToFreq = m => 440 * Math.pow(2, (m - 69) / 12);
+  const midiToNameOct = (m) => {
+    const name = noteNames[((m % 12) + 12) % 12];
+    const oct = Math.floor(m/12) - 1;
+    return { name, oct };
+  };
+  const rand = (a,b) => a + Math.random()*(b-a);
+  const choice = arr => arr[Math.floor(Math.random()*arr.length)];
+
+  // Prefer musically stable degrees (indexes in the 7-note array): 1,5,3,6,2,4,7
+  const PREFERRED_DEGREE_ORDER = [0,4,2,5,1,3,6];
+
+  /* ------------------------------- Engine ------------------------------- */
+  let ctx, master, filter, dry, wet, delay, feedback, lfo, lfoGain;
+  let running = false, stopFlag = false;
+
+  // UI
+  const startBtn = document.getElementById('start');
+  const stopBtn  = document.getElementById('stop');
+  const keySel   = document.getElementById('key');
+  const octSel   = document.getElementById('oct');
+  const modeSel  = document.getElementById('mode');
+  const intensity= document.getElementById('intensity');
+  const nowUI    = document.getElementById('now-playing');
+  const scaleUI  = document.getElementById('scale-degrees');
+
+  // State for active voices
+  const activeVoices = new Map(); // id -> Voice
+
+  // Current drone degree index (0..6 within the mode)
+  let droneDegreeIdx = 0; // start on tonic
+
+  const keyRootMidi = () => toMidi(keySel.value, parseInt(octSel.value, 10));
+  const currentDegrees = () => MODES[modeSel.value] || MODES.Lydian;
+
+  function renderScale() {
+    scaleUI.innerHTML = '';
+    const root = keyRootMidi();
+    currentDegrees().forEach(d => {
+      const m = root + d;
+      const {name, oct} = midiToNameOct(m);
+      const el = document.createElement('span');
+      el.className = 'chip';
+      el.textContent = `${name}${oct}`;
+      scaleUI.appendChild(el);
+    });
+  }
+
+  class Voice {
+    constructor({id, midi, freq, role='chord', gainTarget=0.18, waveform='sine'}) {
+      this.id = id;
+      this.midi = midi;
+      this.freq = freq;
+      this.role = role;
+
+      this.osc = ctx.createOscillator();
+      this.osc.type = waveform;
+
+      // subtle detune shimmer
+      this.shimmer = ctx.createOscillator();
+      this.shimmer.type = 'sine';
+      this.shimmer.frequency.value = rand(0.06, 0.18);
+      this.shimmerGain = ctx.createGain();
+      this.shimmerGain.gain.value = rand(0.4, 1.2);
+      const scale = ctx.createGain();
+      scale.gain.value = 25; // +/- cents
+
+      this.g = ctx.createGain();
+      this.g.gain.value = 0;
+
+      this.osc.frequency.value = freq;
+      this.shimmer.connect(this.shimmerGain).connect(scale).connect(this.osc.detune);
+      this.osc.connect(this.g).connect(filter);
+
+      this.osc.start();
+      this.shimmer.start();
+
+      this.target = gainTarget;
+      this.killed = false;
+
+      activeVoices.set(this.id, this);
+      renderNowPlaying();
+    }
+    fadeIn(seconds) {
+      const now = ctx.currentTime;
+      this.g.gain.cancelScheduledValues(now);
+      this.g.gain.setValueAtTime(this.g.gain.value, now);
+      this.g.gain.linearRampToValueAtTime(this.target, now + seconds);
+    }
+    fadeOutKill(seconds) {
+      if (this.killed) return;
+      this.killed = true;
+      const now = ctx.currentTime;
+      this.g.gain.cancelScheduledValues(now);
+      this.g.gain.setValueAtTime(this.g.gain.value, now);
+      this.g.gain.linearRampToValueAtTime(0.0001, now + seconds);
+      setTimeout(() => this.stop(), seconds*1000 + 50);
+    }
+    stop() {
+      try { this.osc.stop(); this.shimmer.stop(); } catch {}
+      try { this.osc.disconnect(); this.shimmer.disconnect(); this.g.disconnect(); this.shimmerGain.disconnect(); } catch {}
+      activeVoices.delete(this.id);
+      renderNowPlaying();
+    }
+    setMidiGlide(newMidi, glideSeconds=10) {
+      const newFreq = midiToFreq(newMidi);
+      const now = ctx.currentTime;
+      try {
+        // Use exponential to avoid stepping artifacts (must be > 0)
+        const safeNowVal = Math.max(0.0001, this.osc.frequency.value);
+        this.osc.frequency.cancelScheduledValues(now);
+        this.osc.frequency.setValueAtTime(safeNowVal, now);
+        this.osc.frequency.exponentialRampToValueAtTime(newFreq, now + glideSeconds);
+      } catch {
+        // fallback linear
+        this.osc.frequency.linearRampToValueAtTime(newFreq, now + glideSeconds);
+      }
+      this.midi = Math.round(newMidi); // update for UI readout once target hit
+      setTimeout(renderNowPlaying, glideSeconds * 1000 * 0.9);
+    }
+  }
+
+  function renderNowPlaying() {
+    nowUI.innerHTML = '';
+    if (activeVoices.size === 0) {
+      const span = document.createElement('span');
+      span.className = 'muted';
+      span.textContent = '— nothing yet —';
+      nowUI.appendChild(span);
+      return;
+    }
+    const list = [...activeVoices.values()].sort((a,b) => {
+      if (a.role === 'root' && b.role !== 'root') return -1;
+      if (b.role === 'root' && a.role !== 'root') return 1;
+      return a.midi - b.midi;
+    });
+    for (const v of list) {
+      const { name, oct } = midiToNameOct(v.midi);
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      const label = v.role === 'root' ? 'ROOT' : 'CH';
+      chip.innerHTML = `<strong>${name}${oct}</strong> <small>${label}</small> <small>${midiToFreq(v.midi).toFixed(1)}Hz</small>`;
+      nowUI.appendChild(chip);
+    }
+  }
+
+  async function setup() {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    master = ctx.createGain();
+    dry = ctx.createGain();
+    wet = ctx.createGain();
+    delay = ctx.createDelay(2.0);
+    feedback = ctx.createGain();
+    filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+
+    // routing
+    filter.connect(dry).connect(master);
+    filter.connect(delay);
+    delay.connect(feedback).connect(delay);
+    delay.connect(wet).connect(master);
+    master.connect(ctx.destination);
+
+    master.gain.value = parseFloat(intensity.value);
+    wet.gain.value = WET_MIX;
+    delay.delayTime.setValueAtTime(DELAY_TIME, ctx.currentTime);
+    feedback.gain.value = FEEDBACK_GAIN;
+
+    // filter + LFO
+    filter.frequency.value = FILTER_BASE;
+    lfo = ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = LFO_RATE;
+    lfoGain = ctx.createGain();
+    lfoGain.gain.value = LFO_DEPTH;
+    lfo.connect(lfoGain).connect(filter.frequency);
+    lfo.start();
+
+    // long sweeps
+    const sweep = () => {
+      const t = ctx.currentTime;
+      filter.frequency.cancelScheduledValues(t);
+      filter.frequency.setTargetAtTime(FILTER_PEAK, t, SWEEP_TIME/3);
+      filter.frequency.setTargetAtTime(FILTER_BASE, t + SWEEP_TIME, SWEEP_TIME/3);
+      if (!stopFlag) setTimeout(sweep, (SWEEP_TIME*2)*1000);
+    };
+    sweep();
+  }
+
+  // Root drone + movement
+  let rootVoice = null;
+
+  function spawnRootDrone() {
+    const rootMidi = keyRootMidi() + currentDegrees()[droneDegreeIdx];
+    const v = new Voice({
+      id: 'root',
+      midi: rootMidi,
+      freq: midiToFreq(rootMidi),
+      role: 'root',
+      gainTarget: ROOT_MAX_GAIN,
+      waveform: 'sine'
+    });
+    rootVoice = v;
+    v.fadeIn(ROOT_SWELL_TIME);
+    scheduleNextDroneMove();
+  }
+
+  function scheduleNextDroneMove() {
+    if (stopFlag) return;
+    const wait = rand(DRONE_SHIFT_MIN, DRONE_SHIFT_MAX) * 1000;
+    setTimeout(() => {
+      if (stopFlag || !rootVoice) return;
+      changeDroneDegree();
+      scheduleNextDroneMove();
+    }, wait);
+  }
+
+  function pickNextDroneDegreeIdx() {
+    // Weighted preference order; avoid repeating same index too often
+    const degs = [...PREFERRED_DEGREE_ORDER];
+    // rotate so current degree appears later
+    const i = degs.indexOf(droneDegreeIdx);
+    if (i >= 0) { const [cur] = degs.splice(i,1); degs.push(cur); }
+    return choice(degs);
+  }
+
+  function changeDroneDegree() {
+    const degrees = currentDegrees();
+    const nextIdx = pickNextDroneDegreeIdx();
+    const baseMidi = keyRootMidi();
+    const targetMidi = baseMidi + degrees[nextIdx];
+    const glide = rand(DRONE_GLIDE_MIN, DRONE_GLIDE_MAX);
+    rootVoice.setMidiGlide(targetMidi, glide);
+    droneDegreeIdx = nextIdx; // update immediately so chords can follow
+  }
+
+  /* ---------------------- Chords built in diatonic 3rds ---------------------- */
+  function buildChordDegrees(modeDegs, rootIndex, size=4, add9=false, add11=false, add13=false) {
+    const steps = [0,2,4,6]; // stack-of-thirds indexes (mod 7)
+    const chordIdxs = steps.slice(0, Math.min(size, 4)).map(s => (rootIndex + s) % 7);
+    if (add9)  chordIdxs.push((rootIndex + 8) % 7);
+    if (add11) chordIdxs.push((rootIndex + 10) % 7);
+    if (add13) chordIdxs.push((rootIndex + 12) % 7);
+    return chordIdxs.map(i => modeDegs[i]);
+  }
+
+  function* endlessChords() {
+    while (true) {
+      const modeDegs = currentDegrees();
+
+      // Choose root degree for the chord; usually align with drone
+      let rootDegreeIndex;
+      if (Math.random() < CHORD_ANCHOR_PROB) rootDegreeIndex = droneDegreeIdx;
+      else rootDegreeIndex = Math.floor(Math.random() * 7);
+
+      // Chord size/ext
+      const r = Math.random();
+      let size = 3; let add9=false, add11=false, add13=false;
+      if (r < 0.35)            { size = 3; }
+      else if (r < 0.75)       { size = 4; }
+      else if (r < 0.90)       { size = 4; add9 = true; }
+      else if (r < 0.97)       { size = 4; add11 = true; }
+      else                     { size = 4; add13 = true; }
+
+      const chordSemis = buildChordDegrees(modeDegs, rootDegreeIndex, size, add9, add11, add13);
+      const spread = chordSemis.map(semi => semi + choice([-12, 0, 0, 12]));
+
+      // Ensure key tonic appears sometimes for grounding
+      if (!spread.includes(0) && Math.random() < 0.5) spread.push(0);
+      yield spread;
+    }
+  }
+
+  async function chordCycle() {
+    const gen = endlessChords();
+    while (!stopFlag) {
+      const base = keyRootMidi();
+      const degreesOff = gen.next().value;
+
+      const spawned = [];
+      for (const off of degreesOff) {
+        if (activeVoices.size >= CHORD_VOICES + 1) break; // +1 for root
+        const midi = base + off;
+        const freq = midiToFreq(midi);
+        const id = `v-${crypto.getRandomValues(new Uint32Array(1))[0].toString(16)}`;
+        const v = new Voice({
+          id, midi, freq,
+          role: 'chord',
+          gainTarget: rand(0.08, 0.22),
+          waveform: choice(['sine','triangle','sawtooth'])
+        });
+        spawned.push(v);
+        v.fadeIn(rand(CHORD_FADE_MIN, CHORD_FADE_MAX));
+      }
+
+      await sleep(rand(CHORD_HOLD_MIN, CHORD_HOLD_MAX) * 1000);
+      for (const v of spawned) v.fadeOutKill(rand(CHORD_FADE_MIN, CHORD_FADE_MAX));
+      await sleep(rand(CHORD_GAP_MIN, CHORD_GAP_MAX) * 1000);
+    }
+  }
+
+  function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+
+  /* ------------------------------- Events ------------------------------- */
+  intensity.addEventListener('input', () => { if (master) master.gain.value = parseFloat(intensity.value); });
+  keySel.addEventListener('change', () => { renderScale(); /* reset drone to tonic on key change */ droneDegreeIdx = 0; if (rootVoice) rootVoice.setMidiGlide(keyRootMidi() + currentDegrees()[droneDegreeIdx], 4); });
+  octSel.addEventListener('change', () => { renderScale(); if (rootVoice) rootVoice.setMidiGlide(keyRootMidi() + currentDegrees()[droneDegreeIdx], 4); });
+  modeSel.addEventListener('change', () => { renderScale(); if (rootVoice) rootVoice.setMidiGlide(keyRootMidi() + currentDegrees()[droneDegreeIdx], 6); });
+
+  startBtn.addEventListener('click', async () => {
+    if (running) return;
+    running = true; stopFlag = false;
+    startBtn.disabled = true; stopBtn.disabled = false;
+
+    await setup();
+    renderScale();
+    droneDegreeIdx = 0; // start on tonic
+    spawnRootDrone();
+    chordCycle(); // async loop
+  });
+
+  stopBtn.addEventListener('click', () => {
+    if (!running) return;
+    stopFlag = true; running = false;
+    startBtn.disabled = false; stopBtn.disabled = true;
+
+    const now = ctx.currentTime;
+    try {
+      master.gain.cancelScheduledValues(now);
+      master.gain.setValueAtTime(master.gain.value, now);
+      master.gain.linearRampToValueAtTime(0.0001, now + 1.5);
+    } catch {}
+    setTimeout(() => {
+      [...activeVoices.values()].forEach(v => v.fadeOutKill(0.8));
+      activeVoices.clear();
+      renderNowPlaying();
+      try { lfo.stop(); } catch {}
+      [master, dry, wet, delay, feedback, filter, lfo, lfoGain].forEach(n => { try { n.disconnect(); } catch {}});
+      try { ctx.close(); } catch {}
+      rootVoice = null;
+    }, 1600);
+  });
+
+  // initial scale preview
+  renderScale();
+})();
+</script>
+</body>
+</html>
