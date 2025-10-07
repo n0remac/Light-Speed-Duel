@@ -12,6 +12,9 @@ const roomUrlInput = document.querySelector<HTMLInputElement>("#room-url");
 const roomShare = document.getElementById("room-share");
 const enterRoomButton = document.getElementById("enter-room");
 const joinRoomInput = document.querySelector<HTMLInputElement>("#join-room-input");
+const campaignButton = document.getElementById("campaign-button");
+const tutorialButton = document.getElementById("tutorial-button");
+const freeplayButton = document.getElementById("freeplay-button");
 
 bootstrap();
 
@@ -83,6 +86,27 @@ function bootstrap(): void {
     const url = buildRoomUrl(extracted, ensureCallSign());
     window.location.href = url;
   });
+
+  campaignButton?.addEventListener("click", () => {
+    const name = ensureCallSign();
+    const roomId = generateRoomId("campaign");
+    const url = buildRoomUrl(roomId, name, "campaign");
+    window.location.href = url;
+  });
+
+  tutorialButton?.addEventListener("click", () => {
+    const name = ensureCallSign();
+    const roomId = generateRoomId("tutorial");
+    const url = buildRoomUrl(roomId, name, "tutorial");
+    window.location.href = url;
+  });
+
+  freeplayButton?.addEventListener("click", () => {
+    const name = ensureCallSign();
+    const roomId = generateRoomId("freeplay");
+    const url = buildRoomUrl(roomId, name, "freeplay");
+    window.location.href = url;
+  });
 }
 
 function ensureCallSign(): string {
@@ -138,18 +162,24 @@ function readStoredCallSign(): string {
   }
 }
 
-function buildRoomUrl(roomId: string, callSign: string): string {
-  const base = `${window.location.origin}/?room=${encodeURIComponent(roomId)}`;
-  if (callSign) {
-    return `${base}&name=${encodeURIComponent(callSign)}`;
+function buildRoomUrl(roomId: string, callSign: string, mode?: string): string {
+  let url = `${window.location.origin}/?room=${encodeURIComponent(roomId)}`;
+  if (mode) {
+    url += `&mode=${encodeURIComponent(mode)}`;
   }
-  return base;
+  if (callSign) {
+    url += `&name=${encodeURIComponent(callSign)}`;
+  }
+  return url;
 }
 
-function generateRoomId(): string {
+function generateRoomId(prefix?: string): string {
   let slug = "";
   while (slug.length < 6) {
     slug = Math.random().toString(36).slice(2, 8);
+  }
+  if (prefix) {
+    return `${prefix}-${slug}`;
   }
   return `r-${slug}`;
 }

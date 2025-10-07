@@ -234,7 +234,18 @@
         </form>
       </section>
       <section>
-        <h2>Spin Up A Room</h2>
+        <h2>Game Modes</h2>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <button id="campaign-button" type="button">Campaign</button>
+          <p class="muted">Story-driven experience with tutorial and narrative elements.</p>
+          <button id="tutorial-button" type="button">Tutorial</button>
+          <p class="muted">Learn the basics of flight and combat mechanics.</p>
+          <button id="freeplay-button" type="button">Free Play</button>
+          <p class="muted">Jump straight into action without guidance.</p>
+        </div>
+      </section>
+      <section>
+        <h2>Multiplayer Room</h2>
         <form id="new-room-form">
           <p class="muted">Create a fresh room, copy the invite link, then enter to deploy. Share the URL with your squad to fly together.</p>
           <button id="new-room-button" type="submit">Generate Room</button>

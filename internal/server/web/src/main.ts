@@ -16,6 +16,7 @@ const CALL_SIGN_STORAGE_KEY = "lsd:callsign";
 (async function bootstrap() {
   const qs = new URLSearchParams(window.location.search);
   const room = qs.get("room") || "default";
+  const mode = qs.get("mode") || "";
   const nameParam = sanitizeCallSign(qs.get("name"));
   const storedName = sanitizeCallSign(readStoredCallSign());
   const callSign = nameParam || storedName;
@@ -58,24 +59,39 @@ const CALL_SIGN_STORAGE_KEY = "lsd:callsign";
   });
 
   const game = initGame({ state, uiState, bus });
-  const tutorial = mountTutorial(bus);
 
+  // Mount tutorial and story based on game mode
+  const enableTutorial = mode === "campaign" || mode === "tutorial";
+  const enableStory = mode === "campaign";
+
+  let tutorial: ReturnType<typeof mountTutorial> | null = null;
   let tutorialStarted = false;
+
+  if (enableTutorial) {
+    tutorial = mountTutorial(bus);
+  }
+
   const startTutorial = (): void => {
-    if (tutorialStarted) return;
+    if (!tutorial || tutorialStarted) return;
     tutorialStarted = true;
     clearTutorialProgress(BASIC_TUTORIAL_ID);
     tutorial.start({ resume: false });
   };
 
-  const unsubscribeStoryClosed = bus.on("dialogue:closed", ({ chapterId, nodeId }) => {
-    if (chapterId !== INTRO_CHAPTER_ID) return;
-    if (!INTRO_INITIAL_RESPONSE_IDS.includes(nodeId as typeof INTRO_INITIAL_RESPONSE_IDS[number])) return;
-    unsubscribeStoryClosed();
+  if (enableStory) {
+    // Campaign mode: story + tutorial
+    const unsubscribeStoryClosed = bus.on("dialogue:closed", ({ chapterId, nodeId }) => {
+      if (chapterId !== INTRO_CHAPTER_ID) return;
+      if (!INTRO_INITIAL_RESPONSE_IDS.includes(nodeId as typeof INTRO_INITIAL_RESPONSE_IDS[number])) return;
+      unsubscribeStoryClosed();
+      startTutorial();
+    });
+    mountStory({ bus, roomId: room });
+  } else if (mode === "tutorial") {
+    // Tutorial mode: auto-start tutorial without story
     startTutorial();
-  });
-
-  mountStory({ bus, roomId: room });
+  }
+  // Free play and default: no systems mounted
 
   connectWebSocket({
     room,
