@@ -14,7 +14,7 @@ The result is a prediction-heavy cat-and-mouse game where speed, timing, and for
 * Click anywhere in space to set a waypoint — your ship will accelerate, cruise, and decelerate to hit the point, stopping cleanly at each leg.
 * You see:
 
-  * **Your ship** only at its delayed (retarded) position, just like opponents. No instant knowledge of where anything is *right now*.
+  * **Your ship** only at its delayed position, just like opponents. No instant knowledge of where anything is *right now*.
   * **Opponent ships** also at their delayed positions — interception relies on prediction.
 * Launch configurable missiles that inherit the same light-time rules, pursue enemies that wander into their aggro radius, and detonate after three successful hits.
 

@@ -36,8 +36,8 @@ All noteworthy changes to **Light Speed Duel** will be documented in this file.
 - HUD shows ship HP and renders missile overlays.
 
 ### Fixed
-- Percieved missile positions now always use retarded-time snapshots, even for the firing player.
+- Percieved missile positions now always use delayed-time snapshots, even for the firing player.
 
 ## [0.1.0] - 2024-10-02
 ### Added
-- Initial prototype with ship navigation, retarded-opponent rendering, and WebSocket sync.
+- Initial prototype with ship navigation, delayed-opponent rendering, and WebSocket sync.
