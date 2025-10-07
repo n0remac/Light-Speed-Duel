@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"strings"
 	"sync"
+	"time"
 )
 
 type MissileRouteDef struct {
@@ -25,20 +26,24 @@ type Player struct {
 }
 
 type Room struct {
-	ID      string
-	Now     float64
-	World   *World
-	Players map[string]*Player
-	Mu      sync.Mutex
-	Bots    map[string]*AIAgent
+	ID       string
+	Now      float64
+	World    *World
+	Players  map[string]*Player
+	Mu       sync.Mutex
+	Bots     map[string]*AIAgent
+	stopChan chan struct{}
+	stopped  bool
 }
 
 func newRoom(id string) *Room {
 	return &Room{
-		ID:      id,
-		World:   newWorld(),
-		Players: map[string]*Player{},
-		Bots:    map[string]*AIAgent{},
+		ID:       id,
+		World:    newWorld(),
+		Players:  map[string]*Player{},
+		Bots:     map[string]*AIAgent{},
+		stopChan: make(chan struct{}),
+		stopped:  false,
 	}
 }
 
@@ -56,8 +61,20 @@ func (h *Hub) GetRoom(id string) *Room {
 	if !ok {
 		r = newRoom(id)
 		h.Rooms[id] = r
+		r.Start()
 	}
 	return r
+}
+
+func (h *Hub) CleanupEmptyRooms() {
+	h.Mu.Lock()
+	defer h.Mu.Unlock()
+	for id, r := range h.Rooms {
+		if r.IsEmpty() {
+			r.Stop()
+			delete(h.Rooms, id)
+		}
+	}
 }
 
 func (r *Room) Tick() {
@@ -68,6 +85,36 @@ func (r *Room) Tick() {
 	r.updateAI()
 	updateShips(r, Dt)
 	updateMissiles(r, Dt)
+}
+
+func (r *Room) Start() {
+	go func() {
+		ticker := time.NewTicker(time.Duration(1000.0/SimHz) * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-r.stopChan:
+				return
+			case <-ticker.C:
+				r.Tick()
+			}
+		}
+	}()
+}
+
+func (r *Room) Stop() {
+	r.Mu.Lock()
+	defer r.Mu.Unlock()
+	if !r.stopped {
+		r.stopped = true
+		close(r.stopChan)
+	}
+}
+
+func (r *Room) IsEmpty() bool {
+	r.Mu.Lock()
+	defer r.Mu.Unlock()
+	return len(r.Players) == 0
 }
 
 func (r *Room) humanPlayerCountUnlocked() int {

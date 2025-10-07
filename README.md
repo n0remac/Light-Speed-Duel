@@ -19,29 +19,6 @@ The result is a prediction-heavy cat-and-mouse game where speed, timing, and for
 * Launch configurable missiles that inherit the same light-time rules, pursue enemies that wander into their aggro radius, and detonate after three successful hits.
 
 
-## Controls & HUD
-
-* **Primary modes**
-  * `1` focuses the ship bank on the left edge; `2` focuses the missile bank on the right edge.
-  * Both banks stay visible—on touch you simply tap the buttons you need, no corner toggles required.
-* **Ship navigation**
-  * Left edge buttons cover `Set`, `Select`, `Delete`, `Clear`, and `Route`; `1` focuses this bank.
-  * Ship speed lives on the leftmost slider in the bottom rail and still drives the selected leg.
-* **Missile coordination**
-  * Right edge buttons cover `Set`, `Select`, `Delete`, `New`, and `Launch`; `2` focuses this bank.
-  * The bottom rail also hosts missile agro and missile speed sliders side-by-side with ship speed.
-  * Use the chevrons in the top HUD to cycle active routes; the popover (`⋯`) lets you rename, clear, or delete a route.
-* **Keyboard reference (desktop)**
-  * `1 / 2` focus the ship or missile banks · `T` flips ship set/select · `E` flips missile set/select.
-  * `C` clears ship route · `R` toggles route visibility · `[` `]` adjust ship speed (`Shift` for coarse).
-  * `N` adds missile route · `L` launches · `,` `.` adjust agro · `;` `'` adjust missile speed (`Shift` for coarse).
-  * `Tab` cycles ship waypoints · `Delete` removes the selected waypoint (ship or missile) · `?` opens the key map overlay.
-* **HUD Call-outs**
-  * Picture-frame border keeps all controls out of the playfield while showing room stats along the top.
-  * Corner stacks hold the ship/missile tools; slim sliders live in the bottom edge and along the left border.
-  * In-canvas visuals still render light-delayed ships, missiles, and agro rings for self-owned ordnance.
-
-
 ## Running the Game
 
 1. Clone the repo and install Go 1.21+.

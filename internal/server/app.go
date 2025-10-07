@@ -10,16 +10,12 @@ import (
 func StartApp() {
 	hub := NewHub()
 
-	// Global sim ticker
+	// Periodic cleanup of empty rooms (every 60 seconds)
 	go func() {
-		t := time.NewTicker(time.Duration(1000.0/SimHz) * time.Millisecond)
-		defer t.Stop()
-		for range t.C {
-			hub.Mu.Lock()
-			for _, r := range hub.Rooms {
-				r.Tick()
-			}
-			hub.Mu.Unlock()
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			hub.CleanupEmptyRooms()
 		}
 	}()
 
