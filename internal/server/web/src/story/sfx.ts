@@ -2,6 +2,19 @@ import type { StoryIntent } from "./types";
 
 let audioCtx: AudioContext | null = null;
 let lastPlayedAt = 0;
+let ctx: AudioContext | null = null;
+
+export function getAudioContext(): AudioContext {
+  if (!ctx) ctx = new AudioContext();
+  return ctx;
+}
+
+export async function resumeAudio(): Promise<void> {
+  const ac = getAudioContext();
+  if (ac.state === "suspended") {
+    await ac.resume();
+  }
+}
 
 function ensureContext(): AudioContext | null {
   if (typeof window === "undefined" || typeof window.AudioContext !== "function") {
@@ -19,14 +32,18 @@ function ensureContext(): AudioContext | null {
 }
 
 export function playDialogueCue(intent: StoryIntent): void {
+
   const ctx = ensureContext();
   if (!ctx) return;
 
   const now = ctx.currentTime;
+  console.log({ now, lastPlayedAt, diff: now - lastPlayedAt });
   if (now - lastPlayedAt < 0.1) {
+    console.log("Dialogue cue skipped", intent);
     return;
   }
   lastPlayedAt = now;
+
 
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -41,6 +58,7 @@ export function playDialogueCue(intent: StoryIntent): void {
   osc.connect(gain);
   gain.connect(ctx.destination);
 
+  console.log("Playing dialogue cue", intent, osc.frequency.value);
   osc.start(now);
   osc.stop(now + 0.3);
 }

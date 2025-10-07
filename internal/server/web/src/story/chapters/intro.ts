@@ -78,7 +78,7 @@ export const introChapter: StoryChapter = {
       id: "6A",
       speaker: "Factory",
       intent: "factory",
-      text: "Authorization granted. Safety protocol in malfunctioning.",
+      text: "Authorization granted. Safety protocols malfunctioning.",
       next: null,
     },
     "6B": {
