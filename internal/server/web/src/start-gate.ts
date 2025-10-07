@@ -131,6 +131,7 @@ export function waitForUserStart(opts: StartGateOptions = {}): Promise<void> {
         <div style="margin-top:10px">
           <button id="mute-below-start" class="ghost-btn" aria-pressed="false" title="Mute (M)">🔇 Mute</button>
         </div>
+        <p> On mobile turn phone to landscape for best experience. </p>
       </div>
     `;
     document.body.appendChild(overlay);
