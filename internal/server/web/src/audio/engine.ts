@@ -19,6 +19,7 @@ export class AudioEngine {
 
   private constructor() {
     this.ctx = new AudioContext();
+    (window as any).LSD_AUDIO_CTX = (this as any).ctx;
 
     this.master = new GainNode(this.ctx, { gain: this._targetMaster });
     this.musicBus = new GainNode(this.ctx, { gain: this._targetMusic });
