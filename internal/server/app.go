@@ -7,7 +7,7 @@ import (
 	. "LightSpeedDuel/internal/game"
 )
 
-func StartApp() {
+func StartApp(addr string) {
 	hub := NewHub()
 
 	// Periodic cleanup of empty rooms (every 60 seconds)
@@ -19,6 +19,6 @@ func StartApp() {
 		}
 	}()
 
-	log.Println("starting web server on :8080")
-	startServer(hub)
+	log.Printf("starting web server on %s\n", addr)
+	startServer(hub, addr)
 }

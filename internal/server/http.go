@@ -26,7 +26,7 @@ var jsLobby []byte
 
 /* ------------------------------- HTTP ------------------------------- */
 
-func startServer(h *Hub) {
+func startServer(h *Hub, addr string) {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write(htmlIndex)
@@ -46,6 +46,6 @@ func startServer(h *Hub) {
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		serveWS(h, w, r)
 	})
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Fatal(http.ListenAndServe(addr, nil))
 }
 
