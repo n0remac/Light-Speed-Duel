@@ -707,6 +707,20 @@ function setInputContext(context: "ship" | "missile"): void {
     return;
   }
   uiStateRef.inputContext = next;
+
+  // Also update activeTool to match the context to keep button states in sync
+  if (next === "ship") {
+    const shipToolToUse = uiStateRef.shipTool === "select" ? "ship-select" : "ship-set";
+    if (uiStateRef.activeTool !== shipToolToUse) {
+      uiStateRef.activeTool = shipToolToUse;
+    }
+  } else {
+    const missileToolToUse = uiStateRef.missileTool === "select" ? "missile-select" : "missile-set";
+    if (uiStateRef.activeTool !== missileToolToUse) {
+      uiStateRef.activeTool = missileToolToUse;
+    }
+  }
+
   busRef.emit("context:changed", { context: next });
   updateControlHighlights();
   refreshShipSelectionUI();
