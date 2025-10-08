@@ -85,6 +85,30 @@ func (r *Room) Tick() {
 	r.updateAI()
 	updateShips(r, Dt)
 	updateMissiles(r, Dt)
+
+	// Run garbage collection every second to clean up old destroyed entities
+	tickCount := int(r.Now * SimHz)
+	if tickCount%int(SimHz) == 0 {
+		r.cleanupDestroyedEntitiesLocked()
+	}
+}
+
+func (r *Room) cleanupDestroyedEntitiesLocked() {
+	world := r.World
+	var toRemove []EntityID
+
+	// Find all entities that were destroyed more than HistoryKeepS ago
+	world.ForEach([]ComponentKey{CompDestroyed}, func(id EntityID) {
+		destroyed := world.DestroyedData(id)
+		if destroyed != nil && r.Now-destroyed.DestroyedAt > HistoryKeepS {
+			toRemove = append(toRemove, id)
+		}
+	})
+
+	// Actually remove the entities
+	for _, id := range toRemove {
+		world.RemoveEntity(id)
+	}
 }
 
 func (r *Room) Start() {

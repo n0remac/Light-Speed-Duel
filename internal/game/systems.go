@@ -50,9 +50,13 @@ func updateShips(r *Room, dt float64) {
 
 func updateMissiles(r *Room, dt float64) {
 	world := r.World
-	var toRemove []EntityID
 
 	world.ForEach([]ComponentKey{CompTransform, compMovement, CompMissile}, func(id EntityID) {
+		// Skip destroyed missiles - they no longer participate in physics
+		if world.DestroyedData(id) != nil {
+			return
+		}
+
 		tr := world.Transform(id)
 		mov := world.Movement(id)
 		missile := world.MissileData(id)
@@ -64,7 +68,8 @@ func updateMissiles(r *Room, dt float64) {
 
 		age := r.Now - missile.LaunchTime
 		if age >= missile.Lifetime {
-			toRemove = append(toRemove, id)
+			// Soft delete: mark as destroyed instead of removing
+			world.SetComponent(id, CompDestroyed, &DestroyedComponent{DestroyedAt: r.Now})
 			return
 		}
 
@@ -197,7 +202,8 @@ func updateMissiles(r *Room, dt float64) {
 					r.reSpawnShip(hitShip)
 				}
 			}
-			toRemove = append(toRemove, id)
+			// Soft delete: mark as destroyed instead of removing
+			world.SetComponent(id, CompDestroyed, &DestroyedComponent{DestroyedAt: r.Now})
 			return
 		}
 
@@ -205,8 +211,4 @@ func updateMissiles(r *Room, dt float64) {
 			hist.History.push(Snapshot{T: r.Now, Pos: tr.Pos, Vel: tr.Vel})
 		}
 	})
-
-	for _, id := range toRemove {
-		world.RemoveEntity(id)
-	}
 }

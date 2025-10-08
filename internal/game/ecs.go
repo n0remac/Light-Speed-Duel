@@ -52,6 +52,10 @@ type HistoryComponent struct {
 	History *History
 }
 
+type DestroyedComponent struct {
+	DestroyedAt float64
+}
+
 type MissileConfig struct {
 	Speed      float64
 	AgroRadius float64
@@ -67,6 +71,7 @@ const (
 	compMissileRoute ComponentKey = "missile_route"
 	CompOwner        ComponentKey = "owner"
 	CompHistory      ComponentKey = "history"
+	CompDestroyed    ComponentKey = "destroyed"
 )
 
 func SanitizeMissileConfig(cfg MissileConfig) MissileConfig {
@@ -164,6 +169,15 @@ func (w *World) Owner(id EntityID) *OwnerComponent {
 func (w *World) HistoryComponent(id EntityID) *HistoryComponent {
 	if v, ok := w.GetComponent(id, CompHistory); ok {
 		if t, ok := v.(*HistoryComponent); ok {
+			return t
+		}
+	}
+	return nil
+}
+
+func (w *World) DestroyedData(id EntityID) *DestroyedComponent {
+	if v, ok := w.GetComponent(id, CompDestroyed); ok {
+		if t, ok := v.(*DestroyedComponent); ok {
 			return t
 		}
 	}

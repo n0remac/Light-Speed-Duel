@@ -18,6 +18,13 @@ func PerceiveEntity(observerPos Vec2, target EntityID, world *World, now float64
 	// Calculate retarded time (when light left the target to reach observer now)
 	tRet := now - (distance / C)
 
+	// Check if entity was destroyed before the light we're observing was emitted
+	destroyed := world.DestroyedData(target)
+	if destroyed != nil && tRet > destroyed.DestroyedAt {
+		// Requesting light from after destruction - entity stopped emitting light
+		return Snapshot{}, false
+	}
+
 	// Get target's historical position at that retarded time
 	snap, ok := hist.History.GetAt(tRet)
 	if !ok {
