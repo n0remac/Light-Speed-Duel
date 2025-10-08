@@ -36,13 +36,12 @@ type MissileRoute struct {
 }
 
 type MissileComponent struct {
-	AgroRadius   float64
-	LaunchTime   float64
-	Lifetime     float64
-	WaypointIdx  int
-	ReturnIdx    int
-	Target       EntityID
-	BaseVelocity Vec2 // Ship's velocity at launch - inherited by missile
+	AgroRadius  float64
+	LaunchTime  float64
+	Lifetime    float64
+	WaypointIdx int
+	ReturnIdx   int
+	Target      EntityID
 }
 
 type OwnerComponent struct {

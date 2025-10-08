@@ -69,6 +69,20 @@ func (h *History) push(s Snapshot) {
 	h.mu.Unlock()
 }
 
+func (h *History) clone() *History {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	cloned := &History{
+		buf:   make([]Snapshot, h.limit),
+		head:  h.head,
+		size:  h.size,
+		limit: h.limit,
+	}
+	copy(cloned.buf, h.buf)
+	return cloned
+}
+
 func (h *History) GetAt(t float64) (Snapshot, bool) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()

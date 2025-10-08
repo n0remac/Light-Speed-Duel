@@ -132,21 +132,19 @@ func updateMissiles(r *Room, dt float64) {
 			})
 		}
 
-		// Start with base velocity inherited from ship at launch
-		tr.Vel = missile.BaseVelocity
+		tr.Vel = Vec2{}
 
 		if chasing {
-			// Navigate toward perceived target position, adding to base velocity
+			// Navigate toward perceived target position
 			toTarget := perceivedTargetPos.Sub(tr.Pos)
 			dist := toTarget.Len()
 			speed := mov.MaxSpeed
 			if dist <= ShipStopEps || speed <= 1e-3 || dist <= speed*dt {
 				tr.Pos = perceivedTargetPos
-				tr.Vel = missile.BaseVelocity
+				tr.Vel = Vec2{}
 			} else {
 				direction := toTarget.Scale(1.0 / dist)
-				navVel := direction.Scale(speed)
-				tr.Vel = missile.BaseVelocity.Add(navVel)
+				tr.Vel = direction.Scale(speed)
 				tr.Pos = tr.Pos.Add(tr.Vel.Scale(dt))
 			}
 		} else if route != nil && missile.WaypointIdx < len(route.Waypoints) {
@@ -156,12 +154,11 @@ func updateMissiles(r *Room, dt float64) {
 			speed := mov.MaxSpeed
 			if dist <= ShipStopEps || speed <= 1e-3 || dist <= speed*dt {
 				tr.Pos = wp
-				tr.Vel = missile.BaseVelocity
+				tr.Vel = Vec2{}
 				missile.WaypointIdx++
 			} else {
 				direction := toWp.Scale(1.0 / dist)
-				navVel := direction.Scale(speed)
-				tr.Vel = missile.BaseVelocity.Add(navVel)
+				tr.Vel = direction.Scale(speed)
 				tr.Pos = tr.Pos.Add(tr.Vel.Scale(dt))
 			}
 		}
@@ -180,7 +177,7 @@ func updateMissiles(r *Room, dt float64) {
 		}
 
 		if !chasing && route != nil && missile.WaypointIdx >= len(route.Waypoints) {
-			tr.Vel = missile.BaseVelocity
+			tr.Vel = Vec2{}
 		}
 
 		hitShip := EntityID(0)

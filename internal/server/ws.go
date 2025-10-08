@@ -290,7 +290,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 					}
 					if tr := room.World.Transform(p.Ship); tr != nil {
 						speed := tr.Vel.Len()
-						if id := room.LaunchMissile(playerID, cfg, waypoints, tr.Pos, tr.Vel); id != 0 {
+						if id := room.LaunchMissile(playerID, p.Ship, cfg, waypoints, tr.Pos, tr.Vel); id != 0 {
 							p.MissileReadyAt = now + MissileCooldownForSpeed(speed)
 						}
 					}

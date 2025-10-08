@@ -230,25 +230,34 @@ func (r *Room) SpawnShip(owner string, startPos Vec2) EntityID {
 	return id
 }
 
-func (r *Room) LaunchMissile(owner string, cfg MissileConfig, waypoints []Vec2, startPos Vec2, startVel Vec2) EntityID {
+func (r *Room) LaunchMissile(owner string, shipID EntityID, cfg MissileConfig, waypoints []Vec2, startPos Vec2, startVel Vec2) EntityID {
 	if len(waypoints) == 0 {
 		return 0
 	}
 	id := r.World.NewEntity()
-	r.World.SetComponent(id, CompTransform, &Transform{Pos: startPos, Vel: startVel})
+	// Missiles spawn at ship position with zero velocity
+	r.World.SetComponent(id, CompTransform, &Transform{Pos: startPos, Vel: Vec2{}})
 	r.World.SetComponent(id, compMovement, &Movement{MaxSpeed: cfg.Speed})
 	missile := &MissileComponent{
-		AgroRadius:   cfg.AgroRadius,
-		LaunchTime:   r.Now,
-		Lifetime:     cfg.Lifetime,
-		BaseVelocity: startVel, // Store ship's velocity to maintain it during navigation
+		AgroRadius: cfg.AgroRadius,
+		LaunchTime: r.Now,
+		Lifetime:   cfg.Lifetime,
 	}
 	r.World.SetComponent(id, CompMissile, missile)
 	copied := append([]Vec2(nil), waypoints...)
 	r.World.SetComponent(id, compMissileRoute, &MissileRoute{Waypoints: copied})
 	r.World.SetComponent(id, CompOwner, &OwnerComponent{PlayerID: owner})
-	history := newHistory(HistoryKeepS, SimHz)
-	history.push(Snapshot{T: r.Now, Pos: startPos, Vel: startVel})
+
+	// Copy ship's history so missile appears at same perceived position as ship
+	// This ensures all observers see missile spawn from where they perceive the ship
+	var history *History
+	if shipHist := r.World.HistoryComponent(shipID); shipHist != nil && shipHist.History != nil {
+		history = shipHist.History.clone()
+	} else {
+		history = newHistory(HistoryKeepS, SimHz)
+	}
+	// Add current spawn snapshot
+	history.push(Snapshot{T: r.Now, Pos: startPos, Vel: Vec2{}})
 	r.World.SetComponent(id, CompHistory, &HistoryComponent{History: history})
 	return id
 }

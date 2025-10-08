@@ -47,7 +47,7 @@ func (c aiCommandLaunchMissile) apply(r *Room, p *Player) {
 	}
 	cfg := SanitizeMissileConfig(c.config)
 	if tr := r.World.Transform(p.Ship); tr != nil {
-		missileID := r.LaunchMissile(p.ID, cfg, c.waypoints, tr.Pos, tr.Vel)
+		missileID := r.LaunchMissile(p.ID, p.Ship, cfg, c.waypoints, tr.Pos, tr.Vel)
 		if missileID != 0 {
 			speed := tr.Vel.Len()
 			p.MissileReadyAt = now + MissileCooldownForSpeed(speed)
