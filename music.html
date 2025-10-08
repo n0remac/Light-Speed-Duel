@@ -16,6 +16,7 @@
   }
   button:disabled { opacity:.6; cursor:not-allowed; }
   label { font-size:.9rem; opacity:.95; display:flex; gap:8px; align-items:center; }
+  label .ticks { display:flex; justify-content:space-between; font-size:.75rem; opacity:.8; margin-top:4px; }
   main { padding: 18px 22px; display: grid; gap: 16px; grid-template-columns: 1fr; }
   .panels { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
   @media (max-width: 900px){ .panels { grid-template-columns: 1fr; } }
@@ -61,11 +62,57 @@
           <option value="Mixolydian">Mixolydian</option>
           <option value="Aeolian">Aeolian (natural minor)</option>
           <option value="Locrian">Locrian</option>
+          <option value="MajorPentatonic">Major Pentatonic</option>
+          <option value="MinorPentatonic">Minor Pentatonic</option>
         </select>
       </label>
 
       <label>Intensity
         <input id="intensity" type="range" min="0" max="1" step="0.01" value="0.75">
+      </label>
+
+      <!-- Pace (chord rate) -->
+      <label style="min-width:240px; flex-direction:column; align-items:stretch;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span>Chord Speed</span>
+          <span id="pace-value" class="muted" style="font-size:.8rem;">0.40</span>
+        </div>
+        <input id="pace" type="range" min="0" max="1" step="0.01" value="0.40">
+        <div class="ticks"><span>slow</span><span>fast</span></div>
+      </label>
+
+      <!-- Glide (portamento) -->
+      <label style="min-width:220px; flex-direction:column; align-items:stretch;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span>Glide</span>
+          <span id="glide-value" class="muted" style="font-size:.8rem;">0.50</span>
+        </div>
+        <input id="glide" type="range" min="0" max="1" step="0.01" value="0.50">
+        <div class="ticks"><span>off</span><span>max</span></div>
+      </label>
+
+      <!-- Melody controls -->
+      <label style="gap:6px;">
+        <input id="melody-on" type="checkbox" checked>
+        Melody
+      </label>
+      <label style="min-width:240px; flex-direction:column; align-items:stretch;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span>Melody Rate</span>
+          <span id="mel-rate-value" class="muted" style="font-size:.8rem;">0.30</span>
+        </div>
+        <input id="mel-rate" type="range" min="0" max="1" step="0.01" value="0.30">
+        <div class="ticks"><span>few / chord</span><span>many / chord</span></div>
+      </label>
+
+      <!-- Rest density -->
+      <label style="min-width:220px; flex-direction:column; align-items:stretch;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span>Rest Density</span>
+          <span id="rest-value" class="muted" style="font-size:.8rem;">0.60</span>
+        </div>
+        <input id="rest" type="range" min="0" max="1" step="0.01" value="0.60">
+        <div class="ticks"><span>few rests</span><span>many rests</span></div>
       </label>
     </div>
   </header>
@@ -86,8 +133,7 @@
     <section class="card">
       <h3>Hints</h3>
       <div class="muted">
-        The **drone root glides** to other scale degrees within the key at long intervals.  
-        Chords often align to the drone’s current degree for consonance, but sometimes roam for color.
+        <strong>Melody Rate</strong> now spans from ~1 note/chord to a flurry (capped by the chord hold). Use <strong>Rest Density</strong> to keep air in the texture.
       </div>
     </section>
   </main>
@@ -107,14 +153,16 @@
     Mixolydian: [0,2,4,5,7,9,10],
     Aeolian:    [0,2,3,5,7,8,10],
     Locrian:    [0,1,3,5,6,8,10],
+    MajorPentatonic: [0,2,4,7,9],
+    MinorPentatonic: [0,3,5,7,10],
   };
 
   // Root drone behavior
-  const ROOT_SWELL_TIME = 20;                // seconds for initial swell
+  const ROOT_SWELL_TIME = 20;
   const ROOT_MAX_GAIN   = 0.33;
-  const DRONE_SHIFT_MIN = 24;                // seconds between root moves
+  const DRONE_SHIFT_MIN = 24;
   const DRONE_SHIFT_MAX = 48;
-  const DRONE_GLIDE_MIN = 8;                 // seconds to glide between roots
+  const DRONE_GLIDE_MIN = 8;
   const DRONE_GLIDE_MAX = 15;
 
   // Chord behavior
@@ -125,17 +173,26 @@
   const CHORD_HOLD_MAX  = 22;
   const CHORD_GAP_MIN   = 4;
   const CHORD_GAP_MAX   = 9;
-  const CHORD_ANCHOR_PROB = 0.6;             // align chord root with drone degree
+  const CHORD_ANCHOR_PROB = 0.6;
 
   // Filter / FX
-  const FILTER_BASE     = 220;               // Hz
-  const FILTER_PEAK     = 4200;              // Hz
-  const SWEEP_TIME      = 30;                // seconds rise/fall segment
-  const LFO_RATE        = 0.05;              // Hz
-  const LFO_DEPTH       = 900;               // Hz
-  const DELAY_TIME      = 0.45;              // seconds
+  const FILTER_BASE     = 220;
+  const FILTER_PEAK     = 4200;
+  const SWEEP_TIME      = 30;
+  const LFO_RATE        = 0.05;
+  const LFO_DEPTH       = 900;
+  const DELAY_TIME      = 0.45;
   const FEEDBACK_GAIN   = 0.35;
   const WET_MIX         = 0.28;
+
+  // Melody (bright, staccato)
+  const MELODY_AMP    = 0.22;
+  const MELODY_HP_HZ  = 900;
+  const MELODY_DUR_MS = [80, 180];
+
+  // New melody scaling
+  const MAX_NOTES_PER_CHORD_HARD = 32;  // new wide ceiling
+  const MIN_INTERVAL_MS_SOFT     = 70;  // don't schedule faster than this (pre-rest/jitter)
 
   /* -------------------------------- Util -------------------------------- */
   const noteNames = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -147,14 +204,59 @@
     return { name, oct };
   };
   const rand = (a,b) => a + Math.random()*(b-a);
+  const randi = (a,b) => Math.floor(rand(a,b+1));
   const choice = arr => arr[Math.floor(Math.random()*arr.length)];
+  const clamp01 = x => Math.max(0, Math.min(1, x));
 
-  // Prefer musically stable degrees (indexes in the 7-note array): 1,5,3,6,2,4,7
-  const PREFERRED_DEGREE_ORDER = [0,4,2,5,1,3,6];
+  // Pace (0..1) → time scale 1.0..0.35
+  const pace    = document.getElementById('pace');
+  const paceVal = document.getElementById('pace-value');
+  const getPace = () => parseFloat(pace.value);
+  const paceScale = () => 1 - 0.65 * clamp01(getPace());
+
+  // Glide
+  const glide    = document.getElementById('glide');
+  const glideVal = document.getElementById('glide-value');
+  const getGlide = () => parseFloat(glide.value);
+  function glideSeconds(baseSeconds) {
+    const g = clamp01(getGlide());
+    if (g <= 0.001) return 0;
+    const scale = 0.15 + 1.85 * g;
+    return baseSeconds * scale;
+  }
+
+  // Melody controls
+  const melOn       = document.getElementById('melody-on');
+  const melRate     = document.getElementById('mel-rate');
+  const melRateVal  = document.getElementById('mel-rate-value');
+
+  // Rest density controls
+  const restCtl     = document.getElementById('rest');
+  const restVal     = document.getElementById('rest-value');
+  const getRestProb = () => clamp01(parseFloat(restCtl.value));
+
+  // Map melRate (0..1) to intended notes per chord (1 → 32), then cap by chord hold length
+  function notesPerChordTargetFromHold(holdMs) {
+    const r = clamp01(parseFloat(melRate.value));
+    // Ease curve: give more resolution to sparse half
+    const curved = Math.pow(r, 1.15);
+    const raw = 1 + Math.round(curved * (MAX_NOTES_PER_CHORD_HARD - 1)); // 1..32
+    const timeCap = Math.max(1, Math.floor(holdMs / Math.max(MIN_INTERVAL_MS_SOFT, 1)));
+    return Math.max(1, Math.min(raw, timeCap));
+  }
 
   /* ------------------------------- Engine ------------------------------- */
   let ctx, master, filter, dry, wet, delay, feedback, lfo, lfoGain;
   let running = false, stopFlag = false;
+
+  // Melody state
+  let melHP;
+  let currentChordPool = [];
+  let melodyTimer = null;
+  let inChordHold = false;
+  let chordHoldEndsAtSec = 0;
+  let melodyNotesThisChord = 0;
+  let melodyMaxThisChord = 1;
 
   // UI
   const startBtn = document.getElementById('start');
@@ -166,11 +268,8 @@
   const nowUI    = document.getElementById('now-playing');
   const scaleUI  = document.getElementById('scale-degrees');
 
-  // State for active voices
-  const activeVoices = new Map(); // id -> Voice
-
-  // Current drone degree index (0..6 within the mode)
-  let droneDegreeIdx = 0; // start on tonic
+  const activeVoices = new Map();
+  let droneDegreeIdx = 0;
 
   const keyRootMidi = () => toMidi(keySel.value, parseInt(octSel.value, 10));
   const currentDegrees = () => MODES[modeSel.value] || MODES.Lydian;
@@ -190,35 +289,19 @@
 
   class Voice {
     constructor({id, midi, freq, role='chord', gainTarget=0.18, waveform='sine'}) {
-      this.id = id;
-      this.midi = midi;
-      this.freq = freq;
-      this.role = role;
+      this.id = id; this.midi = midi; this.role = role;
+      this.osc = ctx.createOscillator(); this.osc.type = waveform;
+      this.shimmer = ctx.createOscillator(); this.shimmer.type = 'sine'; this.shimmer.frequency.value = rand(0.06,0.18);
+      this.shimmerGain = ctx.createGain(); this.shimmerGain.gain.value = rand(0.4,1.2);
+      const scale = ctx.createGain(); scale.gain.value = 25;
 
-      this.osc = ctx.createOscillator();
-      this.osc.type = waveform;
-
-      // subtle detune shimmer
-      this.shimmer = ctx.createOscillator();
-      this.shimmer.type = 'sine';
-      this.shimmer.frequency.value = rand(0.06, 0.18);
-      this.shimmerGain = ctx.createGain();
-      this.shimmerGain.gain.value = rand(0.4, 1.2);
-      const scale = ctx.createGain();
-      scale.gain.value = 25; // +/- cents
-
-      this.g = ctx.createGain();
-      this.g.gain.value = 0;
-
+      this.g = ctx.createGain(); this.g.gain.value = 0;
       this.osc.frequency.value = freq;
       this.shimmer.connect(this.shimmerGain).connect(scale).connect(this.osc.detune);
       this.osc.connect(this.g).connect(filter);
 
-      this.osc.start();
-      this.shimmer.start();
-
-      this.target = gainTarget;
-      this.killed = false;
+      this.osc.start(); this.shimmer.start();
+      this.target = gainTarget; this.killed = false;
 
       activeVoices.set(this.id, this);
       renderNowPlaying();
@@ -230,8 +313,7 @@
       this.g.gain.linearRampToValueAtTime(this.target, now + seconds);
     }
     fadeOutKill(seconds) {
-      if (this.killed) return;
-      this.killed = true;
+      if (this.killed) return; this.killed = true;
       const now = ctx.currentTime;
       this.g.gain.cancelScheduledValues(now);
       this.g.gain.setValueAtTime(this.g.gain.value, now);
@@ -247,29 +329,27 @@
     setMidiGlide(newMidi, glideSeconds=10) {
       const newFreq = midiToFreq(newMidi);
       const now = ctx.currentTime;
+      if (!glideSeconds || glideSeconds <= 0.001) {
+        try { this.osc.frequency.cancelScheduledValues(now); this.osc.frequency.setValueAtTime(newFreq, now); } catch {}
+        this.midi = Math.round(newMidi); renderNowPlaying(); return;
+      }
       try {
-        // Use exponential to avoid stepping artifacts (must be > 0)
         const safeNowVal = Math.max(0.0001, this.osc.frequency.value);
         this.osc.frequency.cancelScheduledValues(now);
         this.osc.frequency.setValueAtTime(safeNowVal, now);
         this.osc.frequency.exponentialRampToValueAtTime(newFreq, now + glideSeconds);
       } catch {
-        // fallback linear
         this.osc.frequency.linearRampToValueAtTime(newFreq, now + glideSeconds);
       }
-      this.midi = Math.round(newMidi); // update for UI readout once target hit
-      setTimeout(renderNowPlaying, glideSeconds * 1000 * 0.9);
+      this.midi = Math.round(newMidi);
+      setTimeout(renderNowPlaying, glideSeconds*900);
     }
   }
 
   function renderNowPlaying() {
     nowUI.innerHTML = '';
     if (activeVoices.size === 0) {
-      const span = document.createElement('span');
-      span.className = 'muted';
-      span.textContent = '— nothing yet —';
-      nowUI.appendChild(span);
-      return;
+      const span = document.createElement('span'); span.className = 'muted'; span.textContent = '— nothing yet —'; nowUI.appendChild(span); return;
     }
     const list = [...activeVoices.values()].sort((a,b) => {
       if (a.role === 'root' && b.role !== 'root') return -1;
@@ -278,8 +358,7 @@
     });
     for (const v of list) {
       const { name, oct } = midiToNameOct(v.midi);
-      const chip = document.createElement('span');
-      chip.className = 'chip';
+      const chip = document.createElement('span'); chip.className = 'chip';
       const label = v.role === 'root' ? 'ROOT' : 'CH';
       chip.innerHTML = `<strong>${name}${oct}</strong> <small>${label}</small> <small>${midiToFreq(v.midi).toFixed(1)}Hz</small>`;
       nowUI.appendChild(chip);
@@ -288,43 +367,34 @@
 
   async function setup() {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
-    master = ctx.createGain();
-    dry = ctx.createGain();
-    wet = ctx.createGain();
-    delay = ctx.createDelay(2.0);
-    feedback = ctx.createGain();
-    filter = ctx.createBiquadFilter();
-    filter.type = 'lowpass';
+    const dry = ctx.createGain(), wet = ctx.createGain();
+    const delay = ctx.createDelay(2.0), feedback = ctx.createGain();
+    master = ctx.createGain(); filter = ctx.createBiquadFilter(); filter.type = 'lowpass';
 
-    // routing
     filter.connect(dry).connect(master);
-    filter.connect(delay);
-    delay.connect(feedback).connect(delay);
-    delay.connect(wet).connect(master);
-    master.connect(ctx.destination);
+    filter.connect(delay); delay.connect(feedback).connect(delay);
+    delay.connect(wet).connect(master); master.connect(ctx.destination);
+
+    // Melody branch
+    melHP = ctx.createBiquadFilter(); melHP.type = 'highpass'; melHP.frequency.value = MELODY_HP_HZ; melHP.connect(filter);
 
     master.gain.value = parseFloat(intensity.value);
-    wet.gain.value = WET_MIX;
-    delay.delayTime.setValueAtTime(DELAY_TIME, ctx.currentTime);
-    feedback.gain.value = FEEDBACK_GAIN;
+    wet.gain.value = WET_MIX; delay.delayTime.setValueAtTime(DELAY_TIME, ctx.currentTime); feedback.gain.value = FEEDBACK_GAIN;
 
-    // filter + LFO
+    // Filter LFO
     filter.frequency.value = FILTER_BASE;
-    lfo = ctx.createOscillator();
-    lfo.type = 'sine';
-    lfo.frequency.value = LFO_RATE;
-    lfoGain = ctx.createGain();
-    lfoGain.gain.value = LFO_DEPTH;
-    lfo.connect(lfoGain).connect(filter.frequency);
-    lfo.start();
+    lfo = ctx.createOscillator(); lfo.type = 'sine';
+    lfo.frequency.value = LFO_RATE * (1 + 0.8 * parseFloat(pace.value));
+    lfoGain = ctx.createGain(); lfoGain.gain.value = LFO_DEPTH;
+    lfo.connect(lfoGain).connect(filter.frequency); lfo.start();
 
-    // long sweeps
+    // Long sweeps (pace-aware)
     const sweep = () => {
-      const t = ctx.currentTime;
+      const t = ctx.currentTime, seg = SWEEP_TIME * paceScale();
       filter.frequency.cancelScheduledValues(t);
-      filter.frequency.setTargetAtTime(FILTER_PEAK, t, SWEEP_TIME/3);
-      filter.frequency.setTargetAtTime(FILTER_BASE, t + SWEEP_TIME, SWEEP_TIME/3);
-      if (!stopFlag) setTimeout(sweep, (SWEEP_TIME*2)*1000);
+      filter.frequency.setTargetAtTime(FILTER_PEAK, t, seg/3);
+      filter.frequency.setTargetAtTime(FILTER_BASE, t + seg, seg/3);
+      if (!stopFlag) setTimeout(sweep, (seg*2)*1000);
     };
     sweep();
   }
@@ -334,83 +404,65 @@
 
   function spawnRootDrone() {
     const rootMidi = keyRootMidi() + currentDegrees()[droneDegreeIdx];
-    const v = new Voice({
-      id: 'root',
-      midi: rootMidi,
-      freq: midiToFreq(rootMidi),
-      role: 'root',
-      gainTarget: ROOT_MAX_GAIN,
-      waveform: 'sine'
-    });
-    rootVoice = v;
-    v.fadeIn(ROOT_SWELL_TIME);
+    const v = new Voice({ id:'root', midi:rootMidi, freq:midiToFreq(rootMidi), role:'root', gainTarget:ROOT_MAX_GAIN, waveform:'sine' });
+    rootVoice = v; v.fadeIn(ROOT_SWELL_TIME * paceScale());
     scheduleNextDroneMove();
   }
 
   function scheduleNextDroneMove() {
     if (stopFlag) return;
-    const wait = rand(DRONE_SHIFT_MIN, DRONE_SHIFT_MAX) * 1000;
-    setTimeout(() => {
-      if (stopFlag || !rootVoice) return;
-      changeDroneDegree();
-      scheduleNextDroneMove();
-    }, wait);
+    const wait = rand(DRONE_SHIFT_MIN, DRONE_SHIFT_MAX) * 1000 * paceScale();
+    setTimeout(() => { if (stopFlag || !rootVoice) return; changeDroneDegree(); scheduleNextDroneMove(); }, wait);
   }
 
   function pickNextDroneDegreeIdx() {
-    // Weighted preference order; avoid repeating same index too often
-    const degs = [...PREFERRED_DEGREE_ORDER];
-    // rotate so current degree appears later
-    const i = degs.indexOf(droneDegreeIdx);
-    if (i >= 0) { const [cur] = degs.splice(i,1); degs.push(cur); }
-    return choice(degs);
+    const n = currentDegrees().length;
+    const base = n >= 7 ? [0,4,2,5,1,3,6] : n===5 ? [0,3,2,4,1] : Array.from({length:n}, (_,i)=>i);
+    const order = base.slice(); const i = order.indexOf(droneDegreeIdx); if (i>=0){ const [cur]=order.splice(i,1); order.push(cur); }
+    return choice(order);
   }
 
   function changeDroneDegree() {
-    const degrees = currentDegrees();
-    const nextIdx = pickNextDroneDegreeIdx();
-    const baseMidi = keyRootMidi();
-    const targetMidi = baseMidi + degrees[nextIdx];
-    const glide = rand(DRONE_GLIDE_MIN, DRONE_GLIDE_MAX);
-    rootVoice.setMidiGlide(targetMidi, glide);
-    droneDegreeIdx = nextIdx; // update immediately so chords can follow
+    const degrees = currentDegrees(), nextIdx = pickNextDroneDegreeIdx();
+    const baseMidi = keyRootMidi(), targetMidi = baseMidi + degrees[nextIdx];
+    const baseGlide = rand(DRONE_GLIDE_MIN, DRONE_GLIDE_MAX) * paceScale();
+    rootVoice.setMidiGlide(targetMidi, glideSeconds(baseGlide));
+    droneDegreeIdx = nextIdx;
   }
 
-  /* ---------------------- Chords built in diatonic 3rds ---------------------- */
+  /* ---------------------- Chords & Melody coupling ---------------------- */
   function buildChordDegrees(modeDegs, rootIndex, size=4, add9=false, add11=false, add13=false) {
-    const steps = [0,2,4,6]; // stack-of-thirds indexes (mod 7)
-    const chordIdxs = steps.slice(0, Math.min(size, 4)).map(s => (rootIndex + s) % 7);
-    if (add9)  chordIdxs.push((rootIndex + 8) % 7);
-    if (add11) chordIdxs.push((rootIndex + 10) % 7);
-    if (add13) chordIdxs.push((rootIndex + 12) % 7);
+    const N = modeDegs.length; const steps = [0,2,4,6];
+    const chordIdxs = steps.slice(0, Math.min(size, steps.length)).map(s => (rootIndex + s) % N);
+    if (add9 && N>=7)  chordIdxs.push((rootIndex + 8) % N);
+    if (add11 && N>=7) chordIdxs.push((rootIndex + 10)% N);
+    if (add13 && N>=7) chordIdxs.push((rootIndex + 12)% N);
     return chordIdxs.map(i => modeDegs[i]);
   }
 
   function* endlessChords() {
     while (true) {
-      const modeDegs = currentDegrees();
-
-      // Choose root degree for the chord; usually align with drone
-      let rootDegreeIndex;
-      if (Math.random() < CHORD_ANCHOR_PROB) rootDegreeIndex = droneDegreeIdx;
-      else rootDegreeIndex = Math.floor(Math.random() * 7);
-
-      // Chord size/ext
-      const r = Math.random();
-      let size = 3; let add9=false, add11=false, add13=false;
-      if (r < 0.35)            { size = 3; }
-      else if (r < 0.75)       { size = 4; }
-      else if (r < 0.90)       { size = 4; add9 = true; }
-      else if (r < 0.97)       { size = 4; add11 = true; }
-      else                     { size = 4; add13 = true; }
-
+      const modeDegs = currentDegrees(); const N = modeDegs.length;
+      let rootDegreeIndex = (Math.random() < CHORD_ANCHOR_PROB) ? (droneDegreeIdx % N) : Math.floor(Math.random()*N);
+      const r = Math.random(); let size=3, add9=false, add11=false, add13=false;
+      if (r < 0.35) { size = 3; }
+      else if (r < 0.75) { size = 4; }
+      else if (r < 0.90) { size = 4; add9 = true; }
+      else if (r < 0.97) { size = 4; add11 = true; }
+      else { size = 4; add13 = true; }
       const chordSemis = buildChordDegrees(modeDegs, rootDegreeIndex, size, add9, add11, add13);
       const spread = chordSemis.map(semi => semi + choice([-12, 0, 0, 12]));
-
-      // Ensure key tonic appears sometimes for grounding
       if (!spread.includes(0) && Math.random() < 0.5) spread.push(0);
       yield spread;
     }
+  }
+
+  function updateMelodyPoolFromChord(baseMidi, degreesOff) {
+    const pool = []; const low=60, high=84;
+    for (const off of degreesOff) for (let o=-2;o<=3;o++) {
+      const m = baseMidi + off + 12*o; if (m>=low && m<=high) pool.push(m);
+    }
+    currentChordPool = [...new Set(pool)].sort((a,b)=>a-b);
   }
 
   async function chordCycle() {
@@ -419,72 +471,172 @@
       const base = keyRootMidi();
       const degreesOff = gen.next().value;
 
+      updateMelodyPoolFromChord(base, degreesOff);
+
+      // Spawn chord voices
       const spawned = [];
       for (const off of degreesOff) {
-        if (activeVoices.size >= CHORD_VOICES + 1) break; // +1 for root
-        const midi = base + off;
-        const freq = midiToFreq(midi);
+        if (activeVoices.size >= CHORD_VOICES + 1) break;
+        const midi = base + off, freq = midiToFreq(midi);
         const id = `v-${crypto.getRandomValues(new Uint32Array(1))[0].toString(16)}`;
-        const v = new Voice({
-          id, midi, freq,
-          role: 'chord',
-          gainTarget: rand(0.08, 0.22),
-          waveform: choice(['sine','triangle','sawtooth'])
-        });
+        const v = new Voice({ id, midi, freq, role:'chord', gainTarget:rand(0.08,0.22), waveform:choice(['sine','triangle','sawtooth']) });
         spawned.push(v);
-        v.fadeIn(rand(CHORD_FADE_MIN, CHORD_FADE_MAX));
+        v.fadeIn(rand(CHORD_FADE_MIN, CHORD_FADE_MAX) * paceScale());
       }
 
-      await sleep(rand(CHORD_HOLD_MIN, CHORD_HOLD_MAX) * 1000);
-      for (const v of spawned) v.fadeOutKill(rand(CHORD_FADE_MIN, CHORD_FADE_MAX));
-      await sleep(rand(CHORD_GAP_MIN, CHORD_GAP_MAX) * 1000);
+      // Hold phase (melody allowed)
+      const holdMs = rand(CHORD_HOLD_MIN, CHORD_HOLD_MAX) * 1000 * paceScale();
+      inChordHold = true;
+      melodyNotesThisChord = 0;
+      melodyMaxThisChord = notesPerChordTargetFromHold(holdMs); // **new wide range**
+      chordHoldEndsAtSec = ctx.currentTime + holdMs/1000;
+
+      if (melOn.checked) scheduleNextMelodyAttempt();
+
+      await sleep(holdMs);
+
+      // End of hold: stop melody until next chord
+      inChordHold = false;
+
+      // Fade out + gap (no melody)
+      for (const v of spawned) v.fadeOutKill(rand(CHORD_FADE_MIN, CHORD_FADE_MAX) * paceScale());
+      const gapMs = rand(CHORD_GAP_MIN, CHORD_GAP_MAX) * 1000 * paceScale();
+      await sleep(gapMs);
     }
   }
 
+  /* ------------------------------ Melody engine ------------------------------ */
+  function pickMelodyMidi() {
+    if (!currentChordPool.length) return null;
+    const useNeighbor = Math.random() < 0.18; // small spice
+    if (!useNeighbor) {
+      const mid = Math.floor(currentChordPool.length/2);
+      const idx = Math.max(0, Math.min(currentChordPool.length-1, mid + randi(-2, 2)));
+      return currentChordPool[idx];
+    }
+    // neighbor tone
+    const scale = currentDegrees(); const root = keyRootMidi(); const base = choice(currentChordPool);
+    const baseSemi = ((base - root) % 12 + 12) % 12; const degs = scale.slice().sort((a,b)=>a-b);
+    let k = degs.indexOf(baseSemi); if (k === -1) return base + choice([-1,1]);
+    k += choice([-1,1]); if (k<0) k+=degs.length; if (k>=degs.length) k-=degs.length;
+    const targetSemi = degs[k]; const baseOct = Math.round((base - root - baseSemi)/12);
+    let cand = root + targetSemi + 12*baseOct; if (cand<60) cand+=12; if (cand>84) cand-=12; return cand;
+  }
+
+  function playBeep(midi) {
+    if (midi == null || !ctx) return;
+    const osc = ctx.createOscillator(); osc.type = Math.random()<0.7 ? 'square' : 'triangle'; osc.frequency.value = midiToFreq(midi);
+    const g = ctx.createGain(); const now = ctx.currentTime; const dur = rand(MELODY_DUR_MS[0], MELODY_DUR_MS[1]) / 1000; const amp = MELODY_AMP * rand(0.7, 1.1);
+    g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(amp, now + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, now + Math.max(0.06, dur));
+    try { const startHz = Math.max(0.0001, osc.frequency.value * rand(0.98,1.04)); osc.frequency.setValueAtTime(startHz, now); osc.frequency.exponentialRampToValueAtTime(midiToFreq(midi), now + 0.03); } catch {}
+    osc.connect(g).connect(melHP); osc.start(now); osc.stop(now + Math.max(0.08, dur + 0.04));
+    setTimeout(() => { try { osc.disconnect(); g.disconnect(); } catch {} }, (Math.max(0.08, dur + 0.04) * 1000) + 20);
+  }
+
+  function scheduleNextMelodyAttempt() {
+    if (melodyTimer) clearTimeout(melodyTimer);
+    if (!running || stopFlag || !melOn.checked) { melodyTimer = null; return; }
+
+    const now = ctx.currentTime;
+    if (!inChordHold || now >= chordHoldEndsAtSec) { melodyTimer = null; return; }
+
+    const remainingMs = Math.max(0, (chordHoldEndsAtSec - now) * 1000);
+    if (melodyNotesThisChord >= melodyMaxThisChord) {
+      // We've met the per-chord target: coast until next chord
+      melodyTimer = setTimeout(scheduleNextMelodyAttempt, Math.min(remainingMs, 100));
+      return;
+    }
+
+    // Base slice: divide remaining time by remaining notes (plus a cushion)
+    const remainingNotesTarget = Math.max(1, melodyMaxThisChord - melodyNotesThisChord + 0.5);
+    let baseMs = Math.max(MIN_INTERVAL_MS_SOFT, remainingMs / remainingNotesTarget);
+
+    // Decide rest vs note
+    const restProb = getRestProb();
+    const doRest = Math.random() < restProb;
+
+    if (doRest) {
+      // Insert a rest of 1.3–2.6x the base slice; occasionally chain longer
+      let restMs = baseMs * rand(1.3, 2.6);
+      if (Math.random() < 0.22) restMs *= rand(1.2, 1.8);
+      melodyTimer = setTimeout(scheduleNextMelodyAttempt, restMs);
+      return;
+    }
+
+    // Play a note
+    playBeep(pickMelodyMidi());
+    melodyNotesThisChord++;
+
+    // Next attempt with jitter (0.55–1.25x)
+    const nextMs = Math.max(MIN_INTERVAL_MS_SOFT, baseMs * rand(0.55, 1.25));
+    melodyTimer = setTimeout(scheduleNextMelodyAttempt, nextMs);
+  }
+
+  /* --------------------------------- Helpers -------------------------------- */
   function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
 
   /* ------------------------------- Events ------------------------------- */
   intensity.addEventListener('input', () => { if (master) master.gain.value = parseFloat(intensity.value); });
-  keySel.addEventListener('change', () => { renderScale(); /* reset drone to tonic on key change */ droneDegreeIdx = 0; if (rootVoice) rootVoice.setMidiGlide(keyRootMidi() + currentDegrees()[droneDegreeIdx], 4); });
-  octSel.addEventListener('change', () => { renderScale(); if (rootVoice) rootVoice.setMidiGlide(keyRootMidi() + currentDegrees()[droneDegreeIdx], 4); });
-  modeSel.addEventListener('change', () => { renderScale(); if (rootVoice) rootVoice.setMidiGlide(keyRootMidi() + currentDegrees()[droneDegreeIdx], 6); });
+
+  const updatePaceReadout = () => { paceVal.textContent = parseFloat(pace.value).toFixed(2); if (lfo) lfo.frequency.value = LFO_RATE * (1 + 0.8 * parseFloat(pace.value)); };
+  pace.addEventListener('input', updatePaceReadout);
+
+  const updateGlideReadout = () => { glideVal.textContent = parseFloat(glide.value).toFixed(2); };
+  glide.addEventListener('input', updateGlideReadout);
+
+  const updateMelRateReadout = () => { melRateVal.textContent = parseFloat(melRate.value).toFixed(2); };
+  melRate.addEventListener('input', updateMelRateReadout);
+
+  const updateRestReadout = () => { restVal.textContent = parseFloat(restCtl.value).toFixed(2); };
+  restCtl.addEventListener('input', () => { updateRestReadout(); });
+
+  keySel.addEventListener('change', () => {
+    renderScale(); droneDegreeIdx = 0;
+    if (rootVoice) rootVoice.setMidiGlide(keyRootMidi() + currentDegrees()[droneDegreeIdx], glideSeconds(4 * paceScale()));
+  });
+  octSel.addEventListener('change', () => {
+    renderScale();
+    if (rootVoice) rootVoice.setMidiGlide(keyRootMidi() + currentDegrees()[droneDegreeIdx], glideSeconds(4 * paceScale()));
+  });
+  modeSel.addEventListener('change', () => {
+    renderScale();
+    if (rootVoice) rootVoice.setMidiGlide(keyRootMidi() + currentDegrees()[droneDegreeIdx], glideSeconds(6 * paceScale()));
+  });
 
   startBtn.addEventListener('click', async () => {
-    if (running) return;
-    running = true; stopFlag = false;
+    if (running) return; running = true; stopFlag = false;
     startBtn.disabled = true; stopBtn.disabled = false;
 
-    await setup();
-    renderScale();
-    droneDegreeIdx = 0; // start on tonic
-    spawnRootDrone();
-    chordCycle(); // async loop
+    await setup(); renderScale();
+    updatePaceReadout(); updateGlideReadout(); updateMelRateReadout(); updateRestReadout();
+
+    droneDegreeIdx = 0; spawnRootDrone(); chordCycle();
   });
 
   stopBtn.addEventListener('click', () => {
-    if (!running) return;
-    stopFlag = true; running = false;
+    if (!running) return; stopFlag = true; running = false;
     startBtn.disabled = false; stopBtn.disabled = true;
 
+    if (melodyTimer) { clearTimeout(melodyTimer); melodyTimer = null; }
+
     const now = ctx.currentTime;
-    try {
-      master.gain.cancelScheduledValues(now);
-      master.gain.setValueAtTime(master.gain.value, now);
-      master.gain.linearRampToValueAtTime(0.0001, now + 1.5);
-    } catch {}
+    try { master.gain.cancelScheduledValues(now); master.gain.setValueAtTime(master.gain.value, now); master.gain.linearRampToValueAtTime(0.0001, now + 1.5); } catch {}
     setTimeout(() => {
       [...activeVoices.values()].forEach(v => v.fadeOutKill(0.8));
-      activeVoices.clear();
-      renderNowPlaying();
+      activeVoices.clear(); renderNowPlaying();
       try { lfo.stop(); } catch {}
-      [master, dry, wet, delay, feedback, filter, lfo, lfoGain].forEach(n => { try { n.disconnect(); } catch {}});
+      [master, filter, lfo, lfoGain, melHP].forEach(n => { try { n.disconnect(); } catch {}});
       try { ctx.close(); } catch {}
       rootVoice = null;
     }, 1600);
   });
 
-  // initial scale preview
+  // initial UI
   renderScale();
+  paceVal.textContent  = parseFloat(pace.value).toFixed(2);
+  glideVal.textContent = parseFloat(glide.value).toFixed(2);
+  melRateVal.textContent = parseFloat(melRate.value).toFixed(2);
+  restVal.textContent  = parseFloat(restCtl.value).toFixed(2);
 })();
 </script>
 </body>

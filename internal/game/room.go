@@ -23,6 +23,7 @@ type Player struct {
 	ActiveMissileRouteID string
 	MissileReadyAt       float64
 	IsBot                bool
+	Kills                int
 }
 
 type Room struct {
@@ -237,9 +238,10 @@ func (r *Room) LaunchMissile(owner string, cfg MissileConfig, waypoints []Vec2, 
 	r.World.SetComponent(id, CompTransform, &Transform{Pos: startPos, Vel: startVel})
 	r.World.SetComponent(id, compMovement, &Movement{MaxSpeed: cfg.Speed})
 	missile := &MissileComponent{
-		AgroRadius: cfg.AgroRadius,
-		LaunchTime: r.Now,
-		Lifetime:   cfg.Lifetime,
+		AgroRadius:   cfg.AgroRadius,
+		LaunchTime:   r.Now,
+		Lifetime:     cfg.Lifetime,
+		BaseVelocity: startVel, // Store ship's velocity to maintain it during navigation
 	}
 	r.World.SetComponent(id, CompMissile, missile)
 	copied := append([]Vec2(nil), waypoints...)
@@ -251,9 +253,44 @@ func (r *Room) LaunchMissile(owner string, cfg MissileConfig, waypoints []Vec2, 
 	return id
 }
 
+func (r *Room) handleShipDestruction(shipID EntityID, attackerID string) {
+	// Find which player owns this ship
+	owner := r.World.Owner(shipID)
+	if owner == nil {
+		return
+	}
+
+	player := r.Players[owner.PlayerID]
+	if player == nil {
+		return
+	}
+
+	// Increment kill count for attacker if they destroyed a bot
+	if attackerID != "" && player.IsBot {
+		if attacker := r.Players[attackerID]; attacker != nil && !attacker.IsBot {
+			attacker.Kills++
+		}
+	}
+
+	if player.IsBot {
+		// Bot: mark as destroyed and spawn a new bot at random location
+		r.World.SetComponent(shipID, CompDestroyed, &DestroyedComponent{DestroyedAt: r.Now})
+
+		// Spawn new bot at random location
+		randX := WorldW * (0.2 + 0.6*rand.Float64())
+		randY := WorldH * (0.2 + 0.6*rand.Float64())
+		r.addBotUnlocked(player.Name, NewDefensiveBehavior(), Vec2{X: randX, Y: randY})
+	} else {
+		// Player: respawn at center
+		r.reSpawnShip(shipID)
+	}
+}
+
 func (r *Room) reSpawnShip(id EntityID) {
+	respawnPos := Vec2{X: WorldW * 0.5, Y: WorldH * 0.5}
+
 	if tr := r.World.Transform(id); tr != nil {
-		tr.Pos = Vec2{X: WorldW * 0.5, Y: WorldH * 0.5}
+		tr.Pos = respawnPos
 		tr.Vel = Vec2{}
 	}
 	if route := r.World.ShipRoute(id); route != nil {
@@ -262,8 +299,11 @@ func (r *Room) reSpawnShip(id EntityID) {
 	if ship := r.World.ShipData(id); ship != nil {
 		ship.HP = ShipMaxHP
 	}
+	// Clear old history and start fresh from respawn position
+	// This prevents missiles from tracking/colliding with old positions
 	if hist := r.World.HistoryComponent(id); hist != nil {
-		hist.History.push(Snapshot{T: r.Now, Pos: Vec2{X: WorldW * 0.5, Y: WorldH * 0.5}})
+		hist.History = newHistory(HistoryKeepS, SimHz)
+		hist.History.push(Snapshot{T: r.Now, Pos: respawnPos})
 	}
 }
 

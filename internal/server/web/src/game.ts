@@ -33,6 +33,7 @@ let busRef: EventBus;
 let cv: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
 let HPspan: HTMLElement | null = null;
+let killsSpan: HTMLElement | null = null;
 let shipControlsCard: HTMLElement | null = null;
 let shipClearBtn: HTMLButtonElement | null = null;
 let shipSetBtn: HTMLButtonElement | null = null;
@@ -60,6 +61,7 @@ let missileAgroCard: HTMLElement | null = null;
 let missileAgroSlider: HTMLInputElement | null = null;
 let missileAgroValue: HTMLElement | null = null;
 let spawnBotBtn: HTMLButtonElement | null = null;
+let spawnBotText: HTMLElement | null = null;
 
 let routePrevBtn: HTMLButtonElement | null = null;
 let routeNextBtn: HTMLButtonElement | null = null;
@@ -178,6 +180,8 @@ function cacheDom(): void {
   missileAgroValue = document.getElementById("missile-agro-value");
 
   spawnBotBtn = document.getElementById("spawn-bot") as HTMLButtonElement | null;
+  spawnBotText = document.getElementById("spawn-bot-text");
+  killsSpan = document.getElementById("ship-kills");
   routePrevBtn = document.getElementById("route-prev") as HTMLButtonElement | null;
   routeNextBtn = document.getElementById("route-next") as HTMLButtonElement | null;
   routeMenuToggle = document.getElementById("route-menu-toggle") as HTMLButtonElement | null;
@@ -201,8 +205,26 @@ function bindListeners(): void {
   cv.addEventListener("pointerdown", onCanvasPointerDown);
 
   spawnBotBtn?.addEventListener("click", () => {
+    if (spawnBotBtn.disabled) return;
+
     sendMessage({ type: "spawn_bot" });
     busRef.emit("bot:spawnRequested");
+
+    // Disable button and update text
+    spawnBotBtn.disabled = true;
+    if (spawnBotText) {
+      spawnBotText.textContent = "Spawned";
+    }
+
+    // Re-enable after 5 seconds
+    setTimeout(() => {
+      if (spawnBotBtn) {
+        spawnBotBtn.disabled = false;
+      }
+      if (spawnBotText) {
+        spawnBotText.textContent = "Bot";
+      }
+    }, 5000);
   });
 
   shipClearBtn?.addEventListener("click", () => {
@@ -1336,6 +1358,13 @@ function updateStatusIndicators(): void {
       HPspan.textContent = Number(stateRef.me.hp).toString();
     } else {
       HPspan.textContent = "–";
+    }
+  }
+  if (killsSpan) {
+    if (stateRef.me && Number.isFinite(stateRef.me.kills)) {
+      killsSpan.textContent = Number(stateRef.me.kills).toString();
+    } else {
+      killsSpan.textContent = "0";
     }
   }
 }

@@ -65,6 +65,7 @@ type ghost struct {
 	Self      bool          `json:"self"`
 	Waypoints []waypointDTO `json:"waypoints,omitempty"`
 	HP        int           `json:"hp"`
+	Kills     int           `json:"kills"`
 }
 
 type liveConn struct {
@@ -145,14 +146,15 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 			case "spawn_bot":
 				room.Mu.Lock()
 				if p := room.Players[playerID]; p != nil {
+					// Spawn bot at random location on opposite side from player
 					spawnPos := Vec2{X: WorldW * 0.75, Y: WorldH * 0.5}
 					if tr := room.World.Transform(p.Ship); tr != nil {
+						// Spawn on opposite side with some randomness
 						spawnPos = Vec2{
 							X: Clamp(WorldW-tr.Pos.X, 0, WorldW),
 							Y: Clamp(WorldH-tr.Pos.Y, 0, WorldH),
 						}
 					}
-					room.RemoveAllBotsLocked()
 					room.AddBotLocked("Sentinel AI", NewDefensiveBehavior(), spawnPos)
 				}
 				room.Mu.Unlock()
@@ -372,6 +374,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 						if shipData != nil {
 							meGhost.HP = shipData.HP
 						}
+						meGhost.Kills = p.Kills
 						if route != nil && len(route.Waypoints) > 0 {
 							meGhost.Waypoints = make([]waypointDTO, len(route.Waypoints))
 							for i, wp := range route.Waypoints {
@@ -409,6 +412,10 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 						if !ok {
 							return
 						}
+						kills := 0
+						if otherPlayer := room.Players[owner.PlayerID]; otherPlayer != nil {
+							kills = otherPlayer.Kills
+						}
 						ghosts = append(ghosts, ghost{
 							ID:   fmt.Sprintf("ship-%s", owner.PlayerID),
 							X:    snap.Pos.X,
@@ -417,6 +424,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 							VY:   snap.Vel.Y,
 							T:    snap.T,
 							HP:   shipData.HP,
+							Kills: kills,
 							Self: false,
 						})
 					})

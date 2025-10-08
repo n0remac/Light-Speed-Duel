@@ -32,6 +32,7 @@ export interface ShipSnapshot {
   vx: number;
   vy: number;
   hp?: number;
+  kills?: number;
   waypoints: Waypoint[];
 }
 

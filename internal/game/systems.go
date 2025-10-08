@@ -3,6 +3,11 @@ package game
 func updateShips(r *Room, dt float64) {
 	world := r.World
 	world.ForEach([]ComponentKey{CompTransform, compMovement, CompShip}, func(id EntityID) {
+		// Skip destroyed ships - they no longer participate in physics
+		if world.DestroyedData(id) != nil {
+			return
+		}
+
 		tr := world.Transform(id)
 		mov := world.Movement(id)
 		ship := world.ShipData(id)
@@ -127,19 +132,21 @@ func updateMissiles(r *Room, dt float64) {
 			})
 		}
 
-		tr.Vel = Vec2{}
+		// Start with base velocity inherited from ship at launch
+		tr.Vel = missile.BaseVelocity
 
 		if chasing {
-			// Navigate toward perceived target position
+			// Navigate toward perceived target position, adding to base velocity
 			toTarget := perceivedTargetPos.Sub(tr.Pos)
 			dist := toTarget.Len()
 			speed := mov.MaxSpeed
 			if dist <= ShipStopEps || speed <= 1e-3 || dist <= speed*dt {
 				tr.Pos = perceivedTargetPos
-				tr.Vel = Vec2{}
+				tr.Vel = missile.BaseVelocity
 			} else {
 				direction := toTarget.Scale(1.0 / dist)
-				tr.Vel = direction.Scale(speed)
+				navVel := direction.Scale(speed)
+				tr.Vel = missile.BaseVelocity.Add(navVel)
 				tr.Pos = tr.Pos.Add(tr.Vel.Scale(dt))
 			}
 		} else if route != nil && missile.WaypointIdx < len(route.Waypoints) {
@@ -149,11 +156,12 @@ func updateMissiles(r *Room, dt float64) {
 			speed := mov.MaxSpeed
 			if dist <= ShipStopEps || speed <= 1e-3 || dist <= speed*dt {
 				tr.Pos = wp
-				tr.Vel = Vec2{}
+				tr.Vel = missile.BaseVelocity
 				missile.WaypointIdx++
 			} else {
 				direction := toWp.Scale(1.0 / dist)
-				tr.Vel = direction.Scale(speed)
+				navVel := direction.Scale(speed)
+				tr.Vel = missile.BaseVelocity.Add(navVel)
 				tr.Pos = tr.Pos.Add(tr.Vel.Scale(dt))
 			}
 		}
@@ -172,7 +180,7 @@ func updateMissiles(r *Room, dt float64) {
 		}
 
 		if !chasing && route != nil && missile.WaypointIdx >= len(route.Waypoints) {
-			tr.Vel = Vec2{}
+			tr.Vel = missile.BaseVelocity
 		}
 
 		hitShip := EntityID(0)
@@ -199,7 +207,7 @@ func updateMissiles(r *Room, dt float64) {
 			if shipData := world.ShipData(hitShip); shipData != nil {
 				shipData.HP--
 				if shipData.HP <= 0 {
-					r.reSpawnShip(hitShip)
+					r.handleShipDestruction(hitShip, owner.PlayerID)
 				}
 			}
 			// Soft delete: mark as destroyed instead of removing

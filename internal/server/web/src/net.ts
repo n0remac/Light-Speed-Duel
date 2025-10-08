@@ -24,6 +24,7 @@ interface ServerShipState {
   vx: number;
   vy: number;
   hp?: number;
+  kills?: number;
   waypoints?: Array<{ x: number; y: number; speed?: number }>;
 }
 
@@ -123,6 +124,7 @@ function handleStateMessage(
     vx: msg.me.vx,
     vy: msg.me.vy,
     hp: msg.me.hp,
+    kills: msg.me.kills ?? 0,
     waypoints: Array.isArray(msg.me.waypoints)
       ? msg.me.waypoints.map((wp) => ({ x: wp.x, y: wp.y, speed: Number.isFinite(wp.speed) ? wp.speed! : 180 }))
       : [],
