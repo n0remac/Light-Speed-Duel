@@ -394,69 +394,67 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 
 				if meTransform != nil {
 					mePos := meTransform.Pos
+					// Render other ships using perception system
 					room.World.ForEach([]ComponentKey{CompTransform, CompShip, CompOwner, CompHistory}, func(e EntityID) {
 						if e == meEntity {
 							return
 						}
 						owner := room.World.Owner(e)
-						tr := room.World.Transform(e)
-						hist := room.World.HistoryComponent(e)
 						shipData := room.World.ShipData(e)
-						if owner == nil || tr == nil || hist == nil || shipData == nil {
+						if owner == nil || shipData == nil {
 							return
 						}
-						d := mePos.Sub(tr.Pos).Len()
-						tRet := now - (d / C)
-						if snap, ok := hist.History.GetAt(tRet); ok {
-							ghosts = append(ghosts, ghost{
-								ID:   fmt.Sprintf("ship-%s", owner.PlayerID),
-								X:    snap.Pos.X,
-								Y:    snap.Pos.Y,
-								VX:   snap.Vel.X,
-								VY:   snap.Vel.Y,
-								T:    tRet,
-								HP:   shipData.HP,
-								Self: false,
-							})
+						// Use perception system to get what player sees of this ship
+						snap, ok := PerceiveEntity(mePos, e, room.World, now)
+						if !ok {
+							return
 						}
+						ghosts = append(ghosts, ghost{
+							ID:   fmt.Sprintf("ship-%s", owner.PlayerID),
+							X:    snap.Pos.X,
+							Y:    snap.Pos.Y,
+							VX:   snap.Vel.X,
+							VY:   snap.Vel.Y,
+							T:    snap.T,
+							HP:   shipData.HP,
+							Self: false,
+						})
 					})
 
+					// Render missiles using perception system
 					room.World.ForEach([]ComponentKey{CompTransform, CompMissile, CompOwner, CompHistory}, func(e EntityID) {
 						owner := room.World.Owner(e)
-						tr := room.World.Transform(e)
-						hist := room.World.HistoryComponent(e)
 						missile := room.World.MissileData(e)
-						if owner == nil || tr == nil || hist == nil || missile == nil {
+						if owner == nil || missile == nil {
 							return
 						}
-						d := mePos.Sub(tr.Pos).Len()
-						tRet := now - (d / C)
-						if tRet < missile.LaunchTime {
+						// Use perception system to get what player sees of this missile
+						// This handles light delay and prevents showing missiles before light reaches viewer
+						snap, ok := PerceiveEntity(mePos, e, room.World, now)
+						if !ok {
 							return
 						}
-						if snap, ok := hist.History.GetAt(tRet); ok {
-							targetID := ""
-							if missile.Target != 0 {
-								if targetOwner := room.World.Owner(missile.Target); targetOwner != nil {
-									targetID = fmt.Sprintf("ship-%s", targetOwner.PlayerID)
-								}
+						targetID := ""
+						if missile.Target != 0 {
+							if targetOwner := room.World.Owner(missile.Target); targetOwner != nil {
+								targetID = fmt.Sprintf("ship-%s", targetOwner.PlayerID)
 							}
-							missiles = append(missiles, missileDTO{
-								ID:         fmt.Sprintf("miss-%d", e),
-								Owner:      owner.PlayerID,
-								Self:       owner.PlayerID == playerID,
-								X:          snap.Pos.X,
-								Y:          snap.Pos.Y,
-								VX:         snap.Vel.X,
-								VY:         snap.Vel.Y,
-								T:          tRet,
-								AgroRadius: missile.AgroRadius,
-								Lifetime:   missile.Lifetime,
-								LaunchTime: missile.LaunchTime,
-								ExpiresAt:  missile.LaunchTime + missile.Lifetime,
-								TargetID:   targetID,
-							})
 						}
+						missiles = append(missiles, missileDTO{
+							ID:         fmt.Sprintf("miss-%d", e),
+							Owner:      owner.PlayerID,
+							Self:       owner.PlayerID == playerID,
+							X:          snap.Pos.X,
+							Y:          snap.Pos.Y,
+							VX:         snap.Vel.X,
+							VY:         snap.Vel.Y,
+							T:          snap.T,
+							AgroRadius: missile.AgroRadius,
+							Lifetime:   missile.Lifetime,
+							LaunchTime: missile.LaunchTime,
+							ExpiresAt:  missile.LaunchTime + missile.Lifetime,
+							TargetID:   targetID,
+						})
 					})
 				}
 

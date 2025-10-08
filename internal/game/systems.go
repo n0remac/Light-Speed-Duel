@@ -69,17 +69,18 @@ func updateMissiles(r *Room, dt float64) {
 		}
 
 		chasing := false
-		var targetTransform *Transform
+		var perceivedTargetPos Vec2
 
 		if missile.Target != 0 {
 			if world.Exists(missile.Target) {
 				if targetOwner := world.Owner(missile.Target); targetOwner != nil && targetOwner.PlayerID != owner.PlayerID {
-					tt := world.Transform(missile.Target)
-					if tt != nil {
-						dist := tt.Pos.Sub(tr.Pos).Len()
-						if dist <= missile.AgroRadius {
+					// Use perceived distance to check if target still in agro radius
+					perceivedDist := PerceivedDistance(tr.Pos, missile.Target, world, r.Now)
+					if perceivedDist <= missile.AgroRadius {
+						// Get perceived position of target
+						if snap, ok := PerceiveEntity(tr.Pos, missile.Target, world, r.Now); ok {
 							chasing = true
-							targetTransform = tt
+							perceivedTargetPos = snap.Pos
 						} else {
 							missile.Target = 0
 							missile.WaypointIdx = missile.ReturnIdx
@@ -107,28 +108,29 @@ func updateMissiles(r *Room, dt float64) {
 				if shipOwner == nil || shipOwner.PlayerID == owner.PlayerID {
 					return
 				}
-				shipTransform := world.Transform(shipID)
-				if shipTransform == nil {
-					return
-				}
-				dist := shipTransform.Pos.Sub(tr.Pos).Len()
-				if dist <= missile.AgroRadius {
-					chasing = true
-					targetTransform = shipTransform
-					missile.Target = shipID
-					missile.ReturnIdx = missile.WaypointIdx
+				// Use perceived distance for agro detection
+				perceivedDist := PerceivedDistance(tr.Pos, shipID, world, r.Now)
+				if perceivedDist <= missile.AgroRadius {
+					// Get perceived position of target
+					if snap, ok := PerceiveEntity(tr.Pos, shipID, world, r.Now); ok {
+						chasing = true
+						perceivedTargetPos = snap.Pos
+						missile.Target = shipID
+						missile.ReturnIdx = missile.WaypointIdx
+					}
 				}
 			})
 		}
 
 		tr.Vel = Vec2{}
 
-		if chasing && targetTransform != nil {
-			toTarget := targetTransform.Pos.Sub(tr.Pos)
+		if chasing {
+			// Navigate toward perceived target position
+			toTarget := perceivedTargetPos.Sub(tr.Pos)
 			dist := toTarget.Len()
 			speed := mov.MaxSpeed
 			if dist <= ShipStopEps || speed <= 1e-3 || dist <= speed*dt {
-				tr.Pos = targetTransform.Pos
+				tr.Pos = perceivedTargetPos
 				tr.Vel = Vec2{}
 			} else {
 				direction := toTarget.Scale(1.0 / dist)
@@ -177,11 +179,13 @@ func updateMissiles(r *Room, dt float64) {
 			if shipOwner == nil || shipOwner.PlayerID == owner.PlayerID {
 				return
 			}
-			shipTransform := world.Transform(shipID)
-			if shipTransform == nil {
+			// Collision based on missile's perception of ship
+			snap, ok := PerceiveEntity(tr.Pos, shipID, world, r.Now)
+			if !ok {
 				return
 			}
-			if shipTransform.Pos.Sub(tr.Pos).Len() <= MissileHitRadius {
+			// Check if missile's actual position overlaps with perceived ship position
+			if snap.Pos.Sub(tr.Pos).Len() <= MissileHitRadius {
 				hitShip = shipID
 			}
 		})
