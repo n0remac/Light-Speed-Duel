@@ -1,0 +1,38 @@
+# Binaries
+LightSpeedDuel
+*.exe
+*.dll
+*.so
+*.dylib
+lsd-dev
+*.tmp
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Build artifacts
+build/
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Compiled JavaScript (generated from TypeScript)
+internal/server/web/client.js
+internal/server/web/lobby.js
+
+# Node modules (if any)
+node_modules/

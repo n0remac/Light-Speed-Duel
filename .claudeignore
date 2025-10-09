@@ -1,0 +1,17 @@
+# Compiled JavaScript files (generated from TypeScript - DO NOT EDIT)
+# Always edit the .ts source files instead
+internal/server/web/client.js
+internal/server/web/lobby.js
+
+# Build artifacts
+build/
+LightSpeedDuel
+*.exe
+lsd-dev
+
+# Logs
+*.log
+
+# Large binary files
+*.wasm
+*.bin
