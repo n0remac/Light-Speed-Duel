@@ -27,24 +27,28 @@ type Player struct {
 }
 
 type Room struct {
-	ID       string
-	Now      float64
-	World    *World
-	Players  map[string]*Player
-	Mu       sync.Mutex
-	Bots     map[string]*AIAgent
-	stopChan chan struct{}
-	stopped  bool
+	ID          string
+	Now         float64
+	World       *World
+	Players     map[string]*Player
+	Mu          sync.Mutex
+	Bots        map[string]*AIAgent
+	stopChan    chan struct{}
+	stopped     bool
+	WorldWidth  float64
+	WorldHeight float64
 }
 
 func newRoom(id string) *Room {
 	return &Room{
-		ID:       id,
-		World:    newWorld(),
-		Players:  map[string]*Player{},
-		Bots:     map[string]*AIAgent{},
-		stopChan: make(chan struct{}),
-		stopped:  false,
+		ID:          id,
+		World:       newWorld(),
+		Players:     map[string]*Player{},
+		Bots:        map[string]*AIAgent{},
+		stopChan:    make(chan struct{}),
+		stopped:     false,
+		WorldWidth:  WorldW,
+		WorldHeight: WorldH,
 	}
 }
 
@@ -75,6 +79,15 @@ func (h *Hub) CleanupEmptyRooms() {
 			r.Stop()
 			delete(h.Rooms, id)
 		}
+	}
+}
+
+func (r *Room) SetWorldSize(w, h float64) {
+	if w > 0 {
+		r.WorldWidth = w
+	}
+	if h > 0 {
+		r.WorldHeight = h
 	}
 }
 
@@ -286,8 +299,8 @@ func (r *Room) handleShipDestruction(shipID EntityID, attackerID string) {
 		r.World.SetComponent(shipID, CompDestroyed, &DestroyedComponent{DestroyedAt: r.Now})
 
 		// Spawn new bot at random location
-		randX := WorldW * (0.2 + 0.6*rand.Float64())
-		randY := WorldH * (0.2 + 0.6*rand.Float64())
+		randX := r.WorldWidth * (0.2 + 0.6*rand.Float64())
+		randY := r.WorldHeight * (0.2 + 0.6*rand.Float64())
 		r.addBotUnlocked(player.Name, NewDefensiveBehavior(), Vec2{X: randX, Y: randY})
 	} else {
 		// Player: respawn at center
@@ -296,7 +309,7 @@ func (r *Room) handleShipDestruction(shipID EntityID, attackerID string) {
 }
 
 func (r *Room) reSpawnShip(id EntityID) {
-	respawnPos := Vec2{X: WorldW * 0.5, Y: WorldH * 0.5}
+	respawnPos := Vec2{X: r.WorldWidth * 0.5, Y: r.WorldHeight * 0.5}
 
 	if tr := r.World.Transform(id); tr != nil {
 		tr.Pos = respawnPos

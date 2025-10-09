@@ -67,6 +67,8 @@ interface ConnectOptions {
   bus: EventBus;
   onStateUpdated?: () => void;
   onOpen?: (socket: WebSocket) => void;
+  mapW?: number;
+  mapH?: number;
 }
 
 let ws: WebSocket | null = null;
@@ -77,9 +79,16 @@ export function sendMessage(payload: unknown): void {
   ws.send(data);
 }
 
-export function connectWebSocket({ room, state, bus, onStateUpdated, onOpen }: ConnectOptions): void {
+export function connectWebSocket({ room, state, bus, onStateUpdated, onOpen, mapW, mapH }: ConnectOptions): void {
   const protocol = window.location.protocol === "https:" ? "wss://" : "ws://";
-  ws = new WebSocket(`${protocol}${window.location.host}/ws?room=${encodeURIComponent(room)}`);
+  let wsUrl = `${protocol}${window.location.host}/ws?room=${encodeURIComponent(room)}`;
+  if (mapW && mapW > 0) {
+    wsUrl += `&mapW=${mapW}`;
+  }
+  if (mapH && mapH > 0) {
+    wsUrl += `&mapH=${mapH}`;
+  }
+  ws = new WebSocket(wsUrl);
   ws.addEventListener("open", () => {
     console.log("[ws] open");
     const socket = ws;

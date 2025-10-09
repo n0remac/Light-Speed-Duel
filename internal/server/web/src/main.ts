@@ -20,6 +20,8 @@ const CALL_SIGN_STORAGE_KEY = "lsd:callsign";
   const nameParam = sanitizeCallSign(qs.get("name"));
   const storedName = sanitizeCallSign(readStoredCallSign());
   const callSign = nameParam || storedName;
+  const mapW = parseFloat(qs.get("mapW") || "8000");
+  const mapH = parseFloat(qs.get("mapH") || "4500");
 
   if (nameParam && nameParam !== storedName) {
     persistCallSign(nameParam);
@@ -94,6 +96,8 @@ const CALL_SIGN_STORAGE_KEY = "lsd:callsign";
     room,
     state,
     bus,
+    mapW,
+    mapH,
     onStateUpdated: () => game.onStateUpdated(),
     onOpen: () => {
       const nameToSend = callSign || sanitizeCallSign(readStoredCallSign());

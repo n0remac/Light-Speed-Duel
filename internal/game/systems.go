@@ -40,11 +40,11 @@ func updateShips(r *Room, dt float64) {
 		if tr.Pos.Y < 0 {
 			tr.Pos.Y = 0
 		}
-		if tr.Pos.X > WorldW {
-			tr.Pos.X = WorldW
+		if tr.Pos.X > r.WorldWidth {
+			tr.Pos.X = r.WorldWidth
 		}
-		if tr.Pos.Y > WorldH {
-			tr.Pos.Y = WorldH
+		if tr.Pos.Y > r.WorldHeight {
+			tr.Pos.Y = r.WorldHeight
 		}
 
 		if hist := world.HistoryComponent(id); hist != nil {
@@ -169,11 +169,11 @@ func updateMissiles(r *Room, dt float64) {
 		if tr.Pos.Y < 0 {
 			tr.Pos.Y = 0
 		}
-		if tr.Pos.X > WorldW {
-			tr.Pos.X = WorldW
+		if tr.Pos.X > r.WorldWidth {
+			tr.Pos.X = r.WorldWidth
 		}
-		if tr.Pos.Y > WorldH {
-			tr.Pos.Y = WorldH
+		if tr.Pos.Y > r.WorldHeight {
+			tr.Pos.Y = r.WorldHeight
 		}
 
 		if !chasing && route != nil && missile.WaypointIdx >= len(route.Waypoints) {

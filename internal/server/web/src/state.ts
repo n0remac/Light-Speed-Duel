@@ -108,6 +108,9 @@ export interface UIState {
   activeTool: ActiveTool;
   showShipRoute: boolean;
   helpVisible: boolean;
+  zoom: number;
+  panX: number;
+  panY: number;
 }
 
 export function createInitialUIState(): UIState {
@@ -118,6 +121,9 @@ export function createInitialUIState(): UIState {
     activeTool: "ship-set",
     showShipRoute: true,
     helpVisible: false,
+    zoom: 1.0,
+    panX: 0,
+    panY: 0,
   };
 }
 

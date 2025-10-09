@@ -86,6 +86,10 @@ let lastMissileConfigSent: { speed: number; agroRadius: number } | null = null;
 const legDashOffsets = new Map<number, number>();
 let lastMissileLaunchTextHTML = "";
 let lastMissileLaunchInfoHTML = "";
+let lastTouchDistance: number | null = null;
+
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 3.0;
 
 const HELP_TEXT = [
   "Primary Modes",
@@ -109,6 +113,12 @@ const HELP_TEXT = [
   "  ; / ' – Adjust missile speed",
   "  Shift+slider keys – Coarse adjust",
   "  Delete – Delete selected missile waypoint",
+  "",
+  "Map Controls",
+  "  +/- – Zoom in/out",
+  "  Ctrl+0 – Reset zoom",
+  "  Mouse wheel – Zoom at cursor",
+  "  Pinch – Zoom on touch devices",
   "",
   "General",
   "  ? – Toggle this overlay",
@@ -203,6 +213,10 @@ function cacheDom(): void {
 function bindListeners(): void {
   if (!cv) return;
   cv.addEventListener("pointerdown", onCanvasPointerDown);
+  cv.addEventListener("wheel", onCanvasWheel, { passive: false });
+  cv.addEventListener("touchstart", onCanvasTouchStart, { passive: false });
+  cv.addEventListener("touchmove", onCanvasTouchMove, { passive: false });
+  cv.addEventListener("touchend", onCanvasTouchEnd, { passive: false });
 
   spawnBotBtn?.addEventListener("click", () => {
     if (spawnBotBtn.disabled) return;
@@ -377,9 +391,90 @@ function bindListeners(): void {
   window.addEventListener("keydown", onWindowKeyDown, { capture: false });
 }
 
+function setZoom(newZoom: number, centerX?: number, centerY?: number): void {
+  uiStateRef.zoom = clamp(newZoom, MIN_ZOOM, MAX_ZOOM);
+}
+
+function onCanvasWheel(event: WheelEvent): void {
+  if (!cv) return;
+  event.preventDefault();
+
+  const rect = cv.getBoundingClientRect();
+  const centerX = event.clientX - rect.left;
+  const centerY = event.clientY - rect.top;
+
+  const delta = event.deltaY;
+  const zoomFactor = delta > 0 ? 0.9 : 1.1;
+  const newZoom = uiStateRef.zoom * zoomFactor;
+
+  const scaleX = cv.width / rect.width;
+  const scaleY = cv.height / rect.height;
+  const canvasCenterX = centerX * scaleX;
+  const canvasCenterY = centerY * scaleY;
+
+  setZoom(newZoom, canvasCenterX, canvasCenterY);
+}
+
+function getTouchDistance(touches: TouchList): number | null {
+  if (touches.length < 2) return null;
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.hypot(dx, dy);
+}
+
+function getTouchCenter(touches: TouchList): { x: number; y: number } | null {
+  if (touches.length < 2) return null;
+  return {
+    x: (touches[0].clientX + touches[1].clientX) / 2,
+    y: (touches[0].clientY + touches[1].clientY) / 2
+  };
+}
+
+function onCanvasTouchStart(event: TouchEvent): void {
+  if (event.touches.length === 2) {
+    event.preventDefault();
+    lastTouchDistance = getTouchDistance(event.touches);
+  }
+}
+
+function onCanvasTouchMove(event: TouchEvent): void {
+  if (!cv || event.touches.length !== 2) {
+    lastTouchDistance = null;
+    return;
+  }
+
+  event.preventDefault();
+  const currentDistance = getTouchDistance(event.touches);
+  if (currentDistance === null || lastTouchDistance === null) return;
+
+  const rect = cv.getBoundingClientRect();
+  const center = getTouchCenter(event.touches);
+  if (!center) return;
+
+  const scaleX = cv.width / rect.width;
+  const scaleY = cv.height / rect.height;
+  const canvasCenterX = (center.x - rect.left) * scaleX;
+  const canvasCenterY = (center.y - rect.top) * scaleY;
+
+  const zoomFactor = currentDistance / lastTouchDistance;
+  const newZoom = uiStateRef.zoom * zoomFactor;
+
+  setZoom(newZoom, canvasCenterX, canvasCenterY);
+  lastTouchDistance = currentDistance;
+}
+
+function onCanvasTouchEnd(event: TouchEvent): void {
+  if (event.touches.length < 2) {
+    lastTouchDistance = null;
+  }
+}
+
 function onCanvasPointerDown(event: PointerEvent): void {
   if (!cv || !ctx) return;
   if (helpOverlay?.classList.contains("visible")) {
+    return;
+  }
+  if (lastTouchDistance !== null) {
     return;
   }
   const rect = cv.getBoundingClientRect();
@@ -957,6 +1052,25 @@ function onWindowKeyDown(event: KeyboardEvent): void {
       }
       event.preventDefault();
       return;
+    case "Equal":
+    case "NumpadAdd":
+      if (!cv) return;
+      setZoom(uiStateRef.zoom * 1.2, cv.width / 2, cv.height / 2);
+      event.preventDefault();
+      return;
+    case "Minus":
+    case "NumpadSubtract":
+      if (!cv) return;
+      setZoom(uiStateRef.zoom / 1.2, cv.width / 2, cv.height / 2);
+      event.preventDefault();
+      return;
+    case "Digit0":
+    case "Numpad0":
+      if (event.ctrlKey || event.metaKey) {
+        uiStateRef.zoom = 1.0;
+        event.preventDefault();
+      }
+      return;
     default:
       break;
   }
@@ -967,18 +1081,85 @@ function onWindowKeyDown(event: KeyboardEvent): void {
   }
 }
 
+function getCameraPosition(): { x: number; y: number } {
+  if (!cv) return { x: world.w / 2, y: world.h / 2 };
+
+  const zoom = uiStateRef.zoom;
+
+  // Camera follows ship, or defaults to world center
+  let cameraX = stateRef.me ? stateRef.me.x : world.w / 2;
+  let cameraY = stateRef.me ? stateRef.me.y : world.h / 2;
+
+  // Calculate visible world area at current zoom using uniform scale
+  const scaleX = cv.width / world.w;
+  const scaleY = cv.height / world.h;
+  const scale = Math.min(scaleX, scaleY) * zoom;
+
+  // World units visible on screen
+  const viewportWidth = cv.width / scale;
+  const viewportHeight = cv.height / scale;
+
+  // Clamp camera to prevent zooming past world boundaries
+  // When zoomed out, camera can't get closer to edges than half viewport
+  const minCameraX = viewportWidth / 2;
+  const maxCameraX = world.w - viewportWidth / 2;
+  const minCameraY = viewportHeight / 2;
+  const maxCameraY = world.h - viewportHeight / 2;
+
+  // Only clamp if the viewport is smaller than the world
+  if (viewportWidth < world.w) {
+    cameraX = clamp(cameraX, minCameraX, maxCameraX);
+  }
+  if (viewportHeight < world.h) {
+    cameraY = clamp(cameraY, minCameraY, maxCameraY);
+  }
+
+  return { x: cameraX, y: cameraY };
+}
+
 function worldToCanvas(p: { x: number; y: number }): { x: number; y: number } {
   if (!cv) return { x: p.x, y: p.y };
-  const sx = cv.width / world.w;
-  const sy = cv.height / world.h;
-  return { x: p.x * sx, y: p.y * sy };
+
+  const zoom = uiStateRef.zoom;
+  const camera = getCameraPosition();
+
+  // World position relative to camera
+  const worldX = p.x - camera.x;
+  const worldY = p.y - camera.y;
+
+  // Use uniform scale to maintain aspect ratio
+  // Scale is pixels per world unit - choose the dimension that fits
+  const scaleX = cv.width / world.w;
+  const scaleY = cv.height / world.h;
+  const scale = Math.min(scaleX, scaleY) * zoom;
+
+  // Convert to canvas coordinates (centered on screen)
+  return {
+    x: worldX * scale + cv.width / 2,
+    y: worldY * scale + cv.height / 2
+  };
 }
 
 function canvasToWorld(p: { x: number; y: number }): { x: number; y: number } {
   if (!cv) return { x: p.x, y: p.y };
-  const sx = world.w / cv.width;
-  const sy = world.h / cv.height;
-  return { x: p.x * sx, y: p.y * sy };
+
+  const zoom = uiStateRef.zoom;
+  const camera = getCameraPosition();
+
+  // Canvas position relative to center
+  const canvasX = p.x - cv.width / 2;
+  const canvasY = p.y - cv.height / 2;
+
+  // Use uniform scale to maintain aspect ratio
+  const scaleX = cv.width / world.w;
+  const scaleY = cv.height / world.h;
+  const scale = Math.min(scaleX, scaleY) * zoom;
+
+  // Convert to world coordinates (inverse of worldToCanvas)
+  return {
+    x: canvasX / scale + camera.x,
+    y: canvasY / scale + camera.y
+  };
 }
 
 function computeRoutePoints() {
@@ -1284,20 +1465,55 @@ function drawMissiles(): void {
 }
 
 function drawGrid(): void {
-  if (!ctx) return;
+  if (!ctx || !cv) return;
   ctx.save();
   ctx.strokeStyle = "#234";
   ctx.lineWidth = 1;
-  const step = 1000;
-  for (let x = 0; x <= world.w; x += step) {
-    const a = worldToCanvas({ x, y: 0 });
-    const b = worldToCanvas({ x, y: world.h });
-    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+
+  const zoom = uiStateRef.zoom;
+  let step = 1000;
+  if (zoom < 0.7) {
+    step = 2000;
+  } else if (zoom > 1.5) {
+    step = 500;
+  } else if (zoom > 2.5) {
+    step = 250;
   }
-  for (let y = 0; y <= world.h; y += step) {
-    const a = worldToCanvas({ x: 0, y });
-    const b = worldToCanvas({ x: world.w, y });
-    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+
+  const camera = getCameraPosition();
+
+  // Calculate viewport using uniform scale (same as coordinate transforms)
+  const scaleX = cv.width / world.w;
+  const scaleY = cv.height / world.h;
+  const scale = Math.min(scaleX, scaleY) * zoom;
+  const viewportWidth = cv.width / scale;
+  const viewportHeight = cv.height / scale;
+
+  const minX = Math.max(0, camera.x - viewportWidth / 2);
+  const maxX = Math.min(world.w, camera.x + viewportWidth / 2);
+  const minY = Math.max(0, camera.y - viewportHeight / 2);
+  const maxY = Math.min(world.h, camera.y + viewportHeight / 2);
+
+  const startX = Math.floor(minX / step) * step;
+  const endX = Math.ceil(maxX / step) * step;
+  const startY = Math.floor(minY / step) * step;
+  const endY = Math.ceil(maxY / step) * step;
+
+  for (let x = startX; x <= endX; x += step) {
+    const a = worldToCanvas({ x, y: Math.max(0, minY) });
+    const b = worldToCanvas({ x, y: Math.min(world.h, maxY) });
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+  for (let y = startY; y <= endY; y += step) {
+    const a = worldToCanvas({ x: Math.max(0, minX), y });
+    const b = worldToCanvas({ x: Math.min(world.w, maxX), y });
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
   }
   ctx.restore();
 }

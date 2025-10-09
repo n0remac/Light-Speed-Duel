@@ -244,6 +244,21 @@
           <p class="muted">Your call sign is stored locally and sent to the server when you join a room.</p>
         </form>
       </section>
+      <section>
+        <h2>Map Size</h2>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div>
+            <label for="map-size-select">Battle arena dimensions</label>
+            <select id="map-size-select" style="width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(96, 165, 250, 0.32); background: rgba(8, 15, 30, 0.9); color: var(--text); font-size: 13px; margin-top: 6px;">
+              <option value="small">Small (4000 × 2250)</option>
+              <option value="medium" selected>Medium (8000 × 4500)</option>
+              <option value="large">Large (16000 × 9000)</option>
+              <option value="huge">Huge (32000 × 18000)</option>
+            </select>
+          </div>
+          <p class="muted">Larger maps allow for more strategic gameplay and longer battles. Use zoom controls (+/- or mouse wheel) to navigate.</p>
+        </div>
+      </section>
     </main>
   </div>
   <script src="lobby.js"></script>

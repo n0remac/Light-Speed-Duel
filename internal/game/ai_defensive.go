@@ -106,17 +106,19 @@ func (b *DefensiveBehavior) Plan(ctx *AIContext) []AICommand {
 
 	// Boundary avoidance keeps the ship inside safe zone
 	margin := 400.0
+	worldW := ctx.Room.WorldWidth
+	worldH := ctx.Room.WorldHeight
 	if pos.X < margin {
 		steer = steer.Add(Vec2{X: (margin - pos.X) / margin})
 	}
-	if pos.X > WorldW-margin {
-		steer = steer.Add(Vec2{X: -((pos.X - (WorldW - margin)) / margin)})
+	if pos.X > worldW-margin {
+		steer = steer.Add(Vec2{X: -((pos.X - (worldW - margin)) / margin)})
 	}
 	if pos.Y < margin {
 		steer = steer.Add(Vec2{Y: (margin - pos.Y) / margin})
 	}
-	if pos.Y > WorldH-margin {
-		steer = steer.Add(Vec2{Y: -((pos.Y - (WorldH - margin)) / margin)})
+	if pos.Y > worldH-margin {
+		steer = steer.Add(Vec2{Y: -((pos.Y - (worldH - margin)) / margin)})
 	}
 
 	direction := unitOrZero(steer)
@@ -132,7 +134,7 @@ func (b *DefensiveBehavior) Plan(ctx *AIContext) []AICommand {
 	}
 
 	distance := shipSpeed * 0.6
-	destination := clampPointToWorld(pos.Add(direction.Scale(distance)))
+	destination := clampPointToWorldBounds(pos.Add(direction.Scale(distance)), worldW, worldH)
 
 	commands := []AICommand{CommandSetShipRoute([]ShipWaypoint{{Pos: destination, Speed: shipSpeed}})}
 
@@ -166,9 +168,9 @@ func (b *DefensiveBehavior) Plan(ctx *AIContext) []AICommand {
 		tail := leadPoint.Add(oppVel.Scale(0.5 * leadTime))
 
 		waypoints := []Vec2{
-			clampPointToWorld(startAccel),
-			clampPointToWorld(leadPoint),
-			clampPointToWorld(tail),
+			clampPointToWorldBounds(startAccel, worldW, worldH),
+			clampPointToWorldBounds(leadPoint, worldW, worldH),
+			clampPointToWorldBounds(tail, worldW, worldH),
 		}
 
 		commands = append(commands, CommandLaunchMissile(cfg, waypoints))

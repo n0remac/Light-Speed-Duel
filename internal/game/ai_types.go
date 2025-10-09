@@ -216,6 +216,10 @@ func clampPointToWorld(p Vec2) Vec2 {
 	return Vec2{X: Clamp(p.X, 0, WorldW), Y: Clamp(p.Y, 0, WorldH)}
 }
 
+func clampPointToWorldBounds(p Vec2, worldW, worldH float64) Vec2 {
+	return Vec2{X: Clamp(p.X, 0, worldW), Y: Clamp(p.Y, 0, worldH)}
+}
+
 func unitOrZero(v Vec2) Vec2 {
 	len := v.Len()
 	if len <= 1e-6 {

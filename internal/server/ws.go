@@ -23,6 +23,8 @@ type wsMsg struct {
 	// join
 	Name string `json:"name,omitempty"`
 	Room string `json:"room,omitempty"`
+	MapW float64 `json:"map_w,omitempty"`
+	MapH float64 `json:"map_h,omitempty"`
 	// waypoint
 	X     float64 `json:"x,omitempty"`
 	Y     float64 `json:"y,omitempty"`
@@ -78,6 +80,24 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 	if roomID == "" {
 		roomID = "default"
 	}
+
+	mapW := WorldW
+	mapH := WorldH
+	if mapWStr := r.URL.Query().Get("mapW"); mapWStr != "" {
+		if parsed, err := fmt.Sscanf(mapWStr, "%f", &mapW); err == nil && parsed == 1 && mapW > 0 {
+			// Successfully parsed mapW
+		} else {
+			mapW = WorldW
+		}
+	}
+	if mapHStr := r.URL.Query().Get("mapH"); mapHStr != "" {
+		if parsed, err := fmt.Sscanf(mapHStr, "%f", &mapH); err == nil && parsed == 1 && mapH > 0 {
+			// Successfully parsed mapH
+		} else {
+			mapH = WorldH
+		}
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println("upgrade:", err)
@@ -100,6 +120,11 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Set world size if this is the first player (room is empty)
+	if room.HumanPlayerCountLocked() == 0 && len(room.Players) == 0 {
+		room.SetWorldSize(mapW, mapH)
+	}
+
 	defaultMissileSpeed := ShipMaxSpeed * 0.75
 	player.MissileConfig = SanitizeMissileConfig(MissileConfig{
 		Speed:      defaultMissileSpeed,
@@ -109,8 +134,8 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 
 	existingHumans := room.HumanPlayerCountLocked()
 	startPos := Vec2{
-		X: (WorldW * 0.25) + float64(existingHumans)*200.0,
-		Y: (WorldH * 0.5) + float64(existingHumans)*-200.0,
+		X: (room.WorldWidth * 0.25) + float64(existingHumans)*200.0,
+		Y: (room.WorldHeight * 0.5) + float64(existingHumans)*-200.0,
 	}
 
 	shipEntity := room.SpawnShip(playerID, startPos)
@@ -147,12 +172,12 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 				room.Mu.Lock()
 				if p := room.Players[playerID]; p != nil {
 					// Spawn bot at random location on opposite side from player
-					spawnPos := Vec2{X: WorldW * 0.75, Y: WorldH * 0.5}
+					spawnPos := Vec2{X: room.WorldWidth * 0.75, Y: room.WorldHeight * 0.5}
 					if tr := room.World.Transform(p.Ship); tr != nil {
 						// Spawn on opposite side with some randomness
 						spawnPos = Vec2{
-							X: Clamp(WorldW-tr.Pos.X, 0, WorldW),
-							Y: Clamp(WorldH-tr.Pos.Y, 0, WorldH),
+							X: Clamp(room.WorldWidth-tr.Pos.X, 0, room.WorldWidth),
+							Y: Clamp(room.WorldHeight-tr.Pos.Y, 0, room.WorldHeight),
 						}
 					}
 					room.AddBotLocked("Sentinel AI", NewDefensiveBehavior(), spawnPos)
@@ -162,7 +187,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 				room.Mu.Lock()
 				if p := room.Players[playerID]; p != nil {
 					wp := ShipWaypoint{
-						Pos:   Vec2{X: Clamp(m.X, 0, WorldW), Y: Clamp(m.Y, 0, WorldH)},
+						Pos:   Vec2{X: Clamp(m.X, 0, room.WorldWidth), Y: Clamp(m.Y, 0, room.WorldHeight)},
 						Speed: Clamp(m.Speed, 0, ShipMaxSpeed),
 					}
 					room.AppendShipWaypoint(p.Ship, wp)
@@ -207,7 +232,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 					if routeID == "" {
 						routeID = p.ActiveMissileRouteID
 					}
-					point := Vec2{X: Clamp(m.X, 0, WorldW), Y: Clamp(m.Y, 0, WorldH)}
+					point := Vec2{X: Clamp(m.X, 0, room.WorldWidth), Y: Clamp(m.Y, 0, room.WorldHeight)}
 					p.AddWaypointToRoute(routeID, point)
 				}
 				room.Mu.Unlock()
@@ -473,7 +498,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 					Now:                now,
 					Me:                 meGhost,
 					Ghosts:             ghosts,
-					Meta:               roomMeta{C: C, W: WorldW, H: WorldH},
+					Meta:               roomMeta{C: C, W: room.WorldWidth, H: room.WorldHeight},
 					Missiles:           missiles,
 					MissileConfig:      missileCfg,
 					MissileWaypoints:   missileWaypoints,

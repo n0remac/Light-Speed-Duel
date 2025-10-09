@@ -9,6 +9,7 @@ const saveStatus = document.getElementById("save-status");
 const campaignButton = document.getElementById("campaign-button");
 const tutorialButton = document.getElementById("tutorial-button");
 const freeplayButton = document.getElementById("freeplay-button");
+const mapSizeSelect = document.querySelector<HTMLSelectElement>("#map-size-select");
 
 bootstrap();
 
@@ -30,24 +31,43 @@ function bootstrap(): void {
 
   campaignButton?.addEventListener("click", () => {
     const name = ensureCallSign();
+    const mapSize = getSelectedMapSize();
     const roomId = generateRoomId("campaign");
-    const url = buildRoomUrl(roomId, name, "campaign");
+    const url = buildRoomUrl(roomId, name, "campaign", mapSize);
     window.location.href = url;
   });
 
   tutorialButton?.addEventListener("click", () => {
     const name = ensureCallSign();
+    const mapSize = getSelectedMapSize();
     const roomId = generateRoomId("tutorial");
-    const url = buildRoomUrl(roomId, name, "tutorial");
+    const url = buildRoomUrl(roomId, name, "tutorial", mapSize);
     window.location.href = url;
   });
 
   freeplayButton?.addEventListener("click", () => {
     const name = ensureCallSign();
+    const mapSize = getSelectedMapSize();
     const roomId = generateRoomId("freeplay");
-    const url = buildRoomUrl(roomId, name, "freeplay");
+    const url = buildRoomUrl(roomId, name, "freeplay", mapSize);
     window.location.href = url;
   });
+}
+
+function getSelectedMapSize(): { w: number; h: number } {
+  const selected = mapSizeSelect?.value || "medium";
+  switch (selected) {
+    case "small":
+      return { w: 4000, h: 2250 };
+    case "medium":
+      return { w: 8000, h: 4500 };
+    case "large":
+      return { w: 16000, h: 9000 };
+    case "huge":
+      return { w: 32000, h: 18000 };
+    default:
+      return { w: 8000, h: 4500 };
+  }
 }
 
 function ensureCallSign(): string {
@@ -103,13 +123,16 @@ function readStoredCallSign(): string {
   }
 }
 
-function buildRoomUrl(roomId: string, callSign: string, mode?: string): string {
+function buildRoomUrl(roomId: string, callSign: string, mode?: string, mapSize?: { w: number; h: number }): string {
   let url = `${window.location.origin}/?room=${encodeURIComponent(roomId)}`;
   if (mode) {
     url += `&mode=${encodeURIComponent(mode)}`;
   }
   if (callSign) {
     url += `&name=${encodeURIComponent(callSign)}`;
+  }
+  if (mapSize) {
+    url += `&mapW=${mapSize.w}&mapH=${mapSize.h}`;
   }
   return url;
 }
