@@ -88,7 +88,7 @@ let lastMissileLaunchTextHTML = "";
 let lastMissileLaunchInfoHTML = "";
 let lastTouchDistance: number | null = null;
 
-const MIN_ZOOM = 0.5;
+const MIN_ZOOM = 1.0; 
 const MAX_ZOOM = 3.0;
 
 const HELP_TEXT = [
@@ -1106,12 +1106,18 @@ function getCameraPosition(): { x: number; y: number } {
   const minCameraY = viewportHeight / 2;
   const maxCameraY = world.h - viewportHeight / 2;
 
-  // Only clamp if the viewport is smaller than the world
+  // Always clamp camera to world boundaries
+  // When viewport >= world dimensions, center the world on screen
   if (viewportWidth < world.w) {
     cameraX = clamp(cameraX, minCameraX, maxCameraX);
+  } else {
+    cameraX = world.w / 2;
   }
+
   if (viewportHeight < world.h) {
     cameraY = clamp(cameraY, minCameraY, maxCameraY);
+  } else {
+    cameraY = world.h / 2;
   }
 
   return { x: cameraX, y: cameraY };
