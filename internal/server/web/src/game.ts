@@ -87,6 +87,8 @@ const legDashOffsets = new Map<number, number>();
 let lastMissileLaunchTextHTML = "";
 let lastMissileLaunchInfoHTML = "";
 let lastTouchDistance: number | null = null;
+let pendingTouchTimeout: ReturnType<typeof setTimeout> | null = null;
+let isPinching = false;
 
 const MIN_ZOOM = 1.0; 
 const MAX_ZOOM = 3.0;
@@ -433,7 +435,14 @@ function getTouchCenter(touches: TouchList): { x: number; y: number } | null {
 function onCanvasTouchStart(event: TouchEvent): void {
   if (event.touches.length === 2) {
     event.preventDefault();
+    isPinching = true;
     lastTouchDistance = getTouchDistance(event.touches);
+
+    // Cancel any pending waypoint placement
+    if (pendingTouchTimeout !== null) {
+      clearTimeout(pendingTouchTimeout);
+      pendingTouchTimeout = null;
+    }
   }
 }
 
@@ -466,6 +475,10 @@ function onCanvasTouchMove(event: TouchEvent): void {
 function onCanvasTouchEnd(event: TouchEvent): void {
   if (event.touches.length < 2) {
     lastTouchDistance = null;
+    // Reset pinching flag after a short delay to prevent waypoint placement
+    setTimeout(() => {
+      isPinching = false;
+    }, 100);
   }
 }
 
@@ -474,9 +487,10 @@ function onCanvasPointerDown(event: PointerEvent): void {
   if (helpOverlay?.classList.contains("visible")) {
     return;
   }
-  if (lastTouchDistance !== null) {
+  if (lastTouchDistance !== null || isPinching) {
     return;
   }
+
   const rect = cv.getBoundingClientRect();
   const scaleX = rect.width !== 0 ? cv.width / rect.width : 1;
   const scaleY = rect.height !== 0 ? cv.height / rect.height : 1;
@@ -486,11 +500,33 @@ function onCanvasPointerDown(event: PointerEvent): void {
   const worldPoint = canvasToWorld(canvasPoint);
 
   const context = uiStateRef.inputContext === "missile" ? "missile" : "ship";
-  if (context === "missile") {
-    handleMissilePointer(canvasPoint, worldPoint);
+
+  // For touch events, delay waypoint placement to allow for pinch gesture detection
+  // For mouse events, place immediately
+  if (event.pointerType === "touch") {
+    if (pendingTouchTimeout !== null) {
+      clearTimeout(pendingTouchTimeout);
+    }
+
+    pendingTouchTimeout = setTimeout(() => {
+      if (isPinching) return; // Double-check we're not pinching
+
+      if (context === "missile") {
+        handleMissilePointer(canvasPoint, worldPoint);
+      } else {
+        handleShipPointer(canvasPoint, worldPoint);
+      }
+      pendingTouchTimeout = null;
+    }, 150); // 150ms delay to detect pinch gesture
   } else {
-    handleShipPointer(canvasPoint, worldPoint);
+    // Mouse/pen: immediate placement
+    if (context === "missile") {
+      handleMissilePointer(canvasPoint, worldPoint);
+    } else {
+      handleShipPointer(canvasPoint, worldPoint);
+    }
   }
+
   event.preventDefault();
 }
 
