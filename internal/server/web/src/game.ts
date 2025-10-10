@@ -749,10 +749,8 @@ function handleShipPointer(canvasPoint: { x: number; y: number }, worldPoint: { 
   const wps = Array.isArray(stateRef.me.waypoints) ? stateRef.me.waypoints.slice() : [];
   wps.push(wp);
   stateRef.me.waypoints = wps;
-  if (wps.length > 0) {
-    setSelection({ type: "leg", index: wps.length - 1 });
-    busRef.emit("ship:waypointAdded", { index: wps.length - 1 });
-  }
+  busRef.emit("ship:waypointAdded", { index: wps.length - 1 });
+  setSelection(null);
   updatePlannedHeatBar();
 }
 
