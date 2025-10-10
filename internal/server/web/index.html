@@ -469,6 +469,124 @@
       color: #f8fafc;
     }
 
+    /* Heat Bar */
+    .heat-bar-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .heat-bar-bg {
+      width: 120px;
+      height: 18px;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .heat-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, rgba(34, 197, 94, 0.8) 0%, rgba(234, 179, 8, 0.9) 70%, rgba(239, 68, 68, 1) 100%);
+      transition: width 0.15s ease-out, background-color 0.2s ease-out;
+      position: relative;
+    }
+
+    .heat-bar-fill.warn {
+      background: linear-gradient(90deg, rgba(234, 179, 8, 0.9) 0%, rgba(249, 115, 22, 1) 50%, rgba(239, 68, 68, 1) 100%);
+    }
+
+    .heat-bar-fill.overheat {
+      background: rgba(239, 68, 68, 1);
+      animation: heat-pulse 0.5s ease-in-out infinite alternate;
+    }
+
+    @keyframes heat-pulse {
+      from { opacity: 0.9; }
+      to { opacity: 1; }
+    }
+
+    .heat-value-text {
+      font-size: 11px;
+      color: var(--text-muted);
+      min-width: 50px;
+    }
+
+    /* Speed Marker */
+    .slider-with-marker {
+      position: relative;
+      display: inline-block;
+    }
+
+    .speed-marker {
+      position: absolute;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 3px;
+      height: 20px;
+      background: rgba(59, 130, 246, 0.7);
+      pointer-events: none;
+      z-index: 10;
+      border-radius: 1px;
+      box-shadow: 0 0 4px rgba(59, 130, 246, 0.6);
+    }
+
+    /* Stall Overlay */
+    .stall-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      pointer-events: none;
+      animation: stall-fade-in 0.2s ease-out;
+    }
+
+    .stall-overlay.visible {
+      display: flex;
+    }
+
+    @keyframes stall-fade-in {
+      from {
+        opacity: 0;
+        backdrop-filter: blur(0px);
+      }
+      to {
+        opacity: 1;
+        backdrop-filter: blur(4px);
+      }
+    }
+
+    .stall-content {
+      text-align: center;
+      animation: stall-pulse 1s ease-in-out infinite;
+    }
+
+    @keyframes stall-pulse {
+      0%, 100% { opacity: 0.9; transform: scale(1); }
+      50% { opacity: 1; transform: scale(1.05); }
+    }
+
+    .stall-text {
+      font-size: 32px;
+      font-weight: bold;
+      color: #ef4444;
+      text-shadow: 0 0 20px rgba(239, 68, 68, 0.8), 0 2px 4px rgba(0, 0, 0, 0.8);
+      letter-spacing: 2px;
+      margin-bottom: 12px;
+    }
+
+    .stall-subtext {
+      font-size: 16px;
+      color: #f59e0b;
+      text-shadow: 0 0 10px rgba(245, 158, 11, 0.6), 0 1px 2px rgba(0, 0, 0, 0.8);
+    }
+
     @media (max-width: 960px) {
       :root {
         --frame-edge: 82px;
@@ -515,6 +633,12 @@
         <div id="status-group">
           <span class="status-chip">HP <span id="ship-hp">–</span></span>
           <span class="status-chip">Kills <span id="ship-kills">0</span></span>
+          <div id="heat-bar-container" class="heat-bar-container">
+            <div id="heat-bar-bg" class="heat-bar-bg">
+              <div id="heat-bar-fill" class="heat-bar-fill"></div>
+            </div>
+            <span id="heat-value-text" class="heat-value-text">Heat</span>
+          </div>
         </div>
         <div id="top-right">
           <button id="spawn-bot" class="ghost-btn"><span id="spawn-bot-text">Bot</span></button>
@@ -590,7 +714,10 @@
         <div id="bottom-sliders">
           <div id="ship-speed-card" class="slider-card">
             <label for="ship-speed-slider">Ship Speed</label>
-            <input id="ship-speed-slider" type="range" min="20" max="250" value="150" step="5" />
+            <div class="slider-with-marker">
+              <input id="ship-speed-slider" type="range" min="20" max="250" value="150" step="5" />
+              <div id="speed-marker" class="speed-marker" title="Heat neutral speed"></div>
+            </div>
             <span id="ship-speed-value">150</span>
           </div>
           <div id="missile-slider-group">
@@ -619,6 +746,13 @@
           <h2>Controls</h2>
           <pre id="help-text"></pre>
           <button id="help-close">Back to battle</button>
+        </div>
+      </div>
+
+      <div id="stall-overlay" class="stall-overlay">
+        <div class="stall-content">
+          <div class="stall-text">⚠ SYSTEMS OVERHEATED ⚠</div>
+          <div class="stall-subtext">Cooling down...</div>
         </div>
       </div>
     </div>

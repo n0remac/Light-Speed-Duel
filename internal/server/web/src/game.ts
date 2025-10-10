@@ -78,6 +78,11 @@ let helpOverlay: HTMLElement | null = null;
 let helpCloseBtn: HTMLButtonElement | null = null;
 let helpText: HTMLElement | null = null;
 
+let heatBarFill: HTMLElement | null = null;
+let heatValueText: HTMLElement | null = null;
+let speedMarker: HTMLElement | null = null;
+let stallOverlay: HTMLElement | null = null;
+
 let selection: Selection | null = null;
 let missileSelection: MissileSelection | null = null;
 let defaultSpeed = 150;
@@ -208,6 +213,11 @@ function cacheDom(): void {
   helpOverlay = document.getElementById("help-overlay");
   helpCloseBtn = document.getElementById("help-close") as HTMLButtonElement | null;
   helpText = document.getElementById("help-text");
+
+  heatBarFill = document.getElementById("heat-bar-fill");
+  heatValueText = document.getElementById("heat-value-text");
+  speedMarker = document.getElementById("speed-marker");
+  stallOverlay = document.getElementById("stall-overlay");
 
   defaultSpeed = parseFloat(shipSpeedSlider?.value ?? "150");
 }
@@ -1624,6 +1634,63 @@ function updateStatusIndicators(): void {
     } else {
       killsSpan.textContent = "0";
     }
+  }
+
+  // Update heat bar
+  updateHeatBar();
+  // Update speed marker position
+  updateSpeedMarker();
+  // Update stall overlay
+  updateStallOverlay();
+}
+
+function updateHeatBar(): void {
+  const heat = stateRef.me?.heat;
+  if (!heat || !heatBarFill || !heatValueText) return;
+
+  const percent = (heat.value / heat.max) * 100;
+  heatBarFill.style.width = `${percent}%`;
+
+  // Update text
+  heatValueText.textContent = `Heat ${Math.round(heat.value)}`;
+
+  // Update color classes
+  heatBarFill.classList.remove("warn", "overheat");
+  if (heat.value >= heat.overheatAt) {
+    heatBarFill.classList.add("overheat");
+  } else if (heat.value >= heat.warnAt) {
+    heatBarFill.classList.add("warn");
+  }
+}
+
+function updateSpeedMarker(): void {
+  const heat = stateRef.me?.heat;
+  if (!heat || !speedMarker || !shipSpeedSlider) return;
+
+  const min = parseFloat(shipSpeedSlider.min);
+  const max = parseFloat(shipSpeedSlider.max);
+  const markerSpeed = heat.markerSpeed;
+
+  // Calculate position as percentage
+  const percent = ((markerSpeed - min) / (max - min)) * 100;
+  speedMarker.style.left = `${percent}%`;
+  speedMarker.title = `Heat neutral: ${Math.round(markerSpeed)} units/s`;
+}
+
+function updateStallOverlay(): void {
+  const heat = stateRef.me?.heat;
+  if (!heat || !stallOverlay) return;
+
+  const now = typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+
+  const isStalled = now < heat.stallUntilMs;
+
+  if (isStalled) {
+    stallOverlay.classList.add("visible");
+  } else {
+    stallOverlay.classList.remove("visible");
   }
 }
 
