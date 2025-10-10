@@ -58,16 +58,17 @@ type roomMeta struct {
 }
 
 type ghost struct {
-	ID        string        `json:"id"`
-	X         float64       `json:"x"`
-	Y         float64       `json:"y"`
-	VX        float64       `json:"vx"`
-	VY        float64       `json:"vy"`
-	T         float64       `json:"t"`
-	Self      bool          `json:"self"`
-	Waypoints []waypointDTO `json:"waypoints,omitempty"`
-	HP        int           `json:"hp"`
-	Kills     int           `json:"kills"`
+	ID        string           `json:"id"`
+	X         float64          `json:"x"`
+	Y         float64          `json:"y"`
+	VX        float64          `json:"vx"`
+	VY        float64          `json:"vy"`
+	T         float64          `json:"t"`
+	Self      bool             `json:"self"`
+	Waypoints []waypointDTO    `json:"waypoints,omitempty"`
+	HP        int              `json:"hp"`
+	Kills     int              `json:"kills"`
+	Heat      *shipHeatViewDTO `json:"heat,omitempty"`
 }
 
 type liveConn struct {
@@ -387,6 +388,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 						shipData := room.World.ShipData(meEntity)
 						history := room.World.HistoryComponent(meEntity)
 						route := room.World.ShipRoute(meEntity)
+						heat := room.World.HeatData(meEntity)
 						meGhost = ghost{
 							ID:   fmt.Sprintf("ship-%s", p.ID),
 							X:    tr.Pos.X,
@@ -408,6 +410,17 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 						}
 						if history != nil {
 							meGhost.T = now
+						}
+						// Include heat data for player's own ship
+						if heat != nil {
+							meGhost.Heat = &shipHeatViewDTO{
+								V:  heat.S.Value,
+								M:  heat.P.Max,
+								W:  heat.P.WarnAt,
+								O:  heat.P.OverheatAt,
+								MS: heat.P.MarkerSpeed,
+								SU: heat.S.StallUntil,
+							}
 						}
 					}
 				}

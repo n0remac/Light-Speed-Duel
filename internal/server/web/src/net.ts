@@ -18,6 +18,15 @@ interface ServerMissileRoute {
   waypoints?: ServerMissileWaypoint[];
 }
 
+interface ServerHeatView {
+  v: number;  // current heat value
+  m: number;  // max
+  w: number;  // warnAt
+  o: number;  // overheatAt
+  ms: number; // markerSpeed
+  su: number; // stallUntil (server time seconds)
+}
+
 interface ServerShipState {
   x: number;
   y: number;
@@ -26,6 +35,7 @@ interface ServerShipState {
   hp?: number;
   kills?: number;
   waypoints?: Array<{ x: number; y: number; speed?: number }>;
+  heat?: ServerHeatView;
 }
 
 interface ServerMissileState {
@@ -137,6 +147,7 @@ function handleStateMessage(
     waypoints: Array.isArray(msg.me.waypoints)
       ? msg.me.waypoints.map((wp) => ({ x: wp.x, y: wp.y, speed: Number.isFinite(wp.speed) ? wp.speed! : 180 }))
       : [],
+    heat: msg.me.heat ? convertHeatView(msg.me.heat, state.nowSyncedAt, state.now) : undefined,
   } : null;
   state.ghosts = Array.isArray(msg.ghosts) ? msg.ghosts.slice() : [];
   state.missiles = Array.isArray(msg.missiles) ? msg.missiles.slice() : [];
@@ -263,4 +274,28 @@ export function getApproxServerNow(state: AppState): number {
     return state.now;
   }
   return state.now + elapsedMs / 1000;
+}
+
+function convertHeatView(serverHeat: ServerHeatView, nowSyncedAtMs: number, serverNowSec: number): import("./state").HeatView {
+  // Convert server time (stallUntil in seconds) to client time (milliseconds)
+  // stallUntil is absolute server time, so we need to convert it to client time
+  const serverStallUntilSec = serverHeat.su;
+  const offsetFromNowSec = serverStallUntilSec - serverNowSec;
+  const stallUntilMs = nowSyncedAtMs + (offsetFromNowSec * 1000);
+
+  const heatView = {
+    value: serverHeat.v,
+    max: serverHeat.m,
+    warnAt: serverHeat.w,
+    overheatAt: serverHeat.o,
+    markerSpeed: serverHeat.ms,
+    stallUntilMs: stallUntilMs,
+  };
+
+  // Debug logging (can be removed after verification)
+  if (serverHeat.v > 0) {
+    console.log("[heat] Received heat data:", heatView);
+  }
+
+  return heatView;
 }

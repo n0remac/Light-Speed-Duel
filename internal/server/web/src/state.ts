@@ -26,6 +26,15 @@ export interface MissileWaypoint {
   y: number;
 }
 
+export interface HeatView {
+  value: number;
+  max: number;
+  warnAt: number;
+  overheatAt: number;
+  markerSpeed: number;
+  stallUntilMs: number; // client-synced time in milliseconds
+}
+
 export interface ShipSnapshot {
   x: number;
   y: number;
@@ -34,6 +43,7 @@ export interface ShipSnapshot {
   hp?: number;
   kills?: number;
   waypoints: Waypoint[];
+  heat?: HeatView;
 }
 
 export interface GhostSnapshot {

@@ -37,3 +37,12 @@ type waypointDTO struct {
 	Y     float64 `json:"y"`
 	Speed float64 `json:"speed"`
 }
+
+type shipHeatViewDTO struct {
+	V  float64 `json:"v"`  // current heat value
+	M  float64 `json:"m"`  // max heat
+	W  float64 `json:"w"`  // warnAt threshold
+	O  float64 `json:"o"`  // overheatAt threshold
+	MS float64 `json:"ms"` // markerSpeed
+	SU float64 `json:"su"` // stallUntil (server time seconds)
+}
