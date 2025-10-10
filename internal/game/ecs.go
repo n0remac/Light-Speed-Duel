@@ -72,6 +72,7 @@ const (
 	CompOwner        ComponentKey = "owner"
 	CompHistory      ComponentKey = "history"
 	CompDestroyed    ComponentKey = "destroyed"
+	CompHeat         ComponentKey = "heat"
 )
 
 func SanitizeMissileConfig(cfg MissileConfig) MissileConfig {
@@ -178,6 +179,15 @@ func (w *World) HistoryComponent(id EntityID) *HistoryComponent {
 func (w *World) DestroyedData(id EntityID) *DestroyedComponent {
 	if v, ok := w.GetComponent(id, CompDestroyed); ok {
 		if t, ok := v.(*DestroyedComponent); ok {
+			return t
+		}
+	}
+	return nil
+}
+
+func (w *World) HeatData(id EntityID) *HeatComponent {
+	if v, ok := w.GetComponent(id, CompHeat); ok {
+		if t, ok := v.(*HeatComponent); ok {
 			return t
 		}
 	}

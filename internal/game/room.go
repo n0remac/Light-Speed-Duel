@@ -240,6 +240,26 @@ func (r *Room) SpawnShip(owner string, startPos Vec2) EntityID {
 	history := newHistory(HistoryKeepS, SimHz)
 	history.push(Snapshot{T: r.Now, Pos: startPos})
 	r.World.SetComponent(id, CompHistory, &HistoryComponent{History: history})
+	// Initialize heat component with default parameters
+	r.World.SetComponent(id, CompHeat, &HeatComponent{
+		P: HeatParams{
+			Max:                HeatMax,
+			WarnAt:             HeatWarnAt,
+			OverheatAt:         HeatOverheatAt,
+			StallSeconds:       HeatStallSeconds,
+			MarkerSpeed:        HeatMarkerSpeed,
+			Exp:                HeatExp,
+			KUp:                HeatKUp,
+			KDown:              HeatKDown,
+			MissileSpikeChance: HeatMissileSpikeChance,
+			MissileSpikeMin:    HeatMissileSpikeMin,
+			MissileSpikeMax:    HeatMissileSpikeMax,
+		},
+		S: HeatState{
+			Value:      0,
+			StallUntil: 0,
+		},
+	})
 	return id
 }
 
@@ -320,6 +340,11 @@ func (r *Room) reSpawnShip(id EntityID) {
 	}
 	if ship := r.World.ShipData(id); ship != nil {
 		ship.HP = ShipMaxHP
+	}
+	// Reset heat on respawn
+	if heat := r.World.HeatData(id); heat != nil {
+		heat.S.Value = 0
+		heat.S.StallUntil = 0
 	}
 	// Clear old history and start fresh from respawn position
 	// This prevents missiles from tracking/colliding with old positions

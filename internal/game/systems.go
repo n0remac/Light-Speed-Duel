@@ -12,7 +12,25 @@ func updateShips(r *Room, dt float64) {
 		mov := world.Movement(id)
 		ship := world.ShipData(id)
 		route := world.ShipRoute(id)
+		heat := world.HeatData(id)
 		if tr == nil || mov == nil || ship == nil {
+			return
+		}
+
+		// Update heat based on current speed
+		if heat != nil {
+			speed := tr.Vel.Len()
+			UpdateHeat(heat, speed, dt, r.Now)
+		}
+
+		// Check if ship is stalled - if so, skip waypoint navigation
+		if heat != nil && heat.IsStalled(r.Now) {
+			// Ship is stalled - cannot move, but sensors still work
+			tr.Vel = Vec2{}
+			// History still updates so other entities can perceive the stalled ship
+			if hist := world.HistoryComponent(id); hist != nil {
+				hist.History.push(Snapshot{T: r.Now, Pos: tr.Pos, Vel: tr.Vel})
+			}
 			return
 		}
 

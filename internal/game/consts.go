@@ -20,7 +20,20 @@ const (
 	MissileLifetimeSpeedPenalty = 80.0
 	MissileLifetimeAgroPenalty  = 40.0
 	MissileLifetimeAgroRef      = 2000.0
-	MissileHitRadius     = 50.0
-	MissileBaseCooldown  = 2.0
-	MissileCooldownScale = 8.0
+	MissileHitRadius            = 50.0
+	MissileBaseCooldown         = 2.0
+	MissileCooldownScale        = 8.0
+
+	// Heat system defaults
+	HeatMax                = 100.0
+	HeatWarnAt             = 70.0
+	HeatOverheatAt         = 100.0
+	HeatStallSeconds       = 2.5
+	HeatMarkerSpeed        = 150.0 // Comfortable cruise (60% of ShipMaxSpeed)
+	HeatExp                = 1.5
+	HeatKUp                = 22.0
+	HeatKDown              = 16.0
+	HeatMissileSpikeChance = 0.35
+	HeatMissileSpikeMin    = 6.0
+	HeatMissileSpikeMax    = 18.0
 )
