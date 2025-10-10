@@ -75,17 +75,18 @@ func UpdateHeat(h *HeatComponent, speed float64, dt, now float64) {
 
 // DefaultHeatParams returns sensible default heat parameters.
 func DefaultHeatParams() HeatParams {
-	return HeatParams{
-		Max:                100.0,
-		WarnAt:             70.0,
-		OverheatAt:         100.0,
-		StallSeconds:       2.5,
-		MarkerSpeed:        150.0, // Comfortable cruise speed (ShipMaxSpeed is 250)
-		Exp:                1.5,
-		KUp:                22.0,
-		KDown:              16.0,
-		MissileSpikeChance: 0.35,
-		MissileSpikeMin:    6.0,
-		MissileSpikeMax:    18.0,
-	}
+    // Default values sourced from consts.go to avoid drift
+    return HeatParams{
+        Max:                HeatMax,
+        WarnAt:             HeatWarnAt,
+        OverheatAt:         HeatOverheatAt,
+        StallSeconds:       HeatStallSeconds,
+        MarkerSpeed:        HeatMarkerSpeed,
+        Exp:                HeatExp,
+        KUp:                HeatKUp,
+        KDown:              HeatKDown,
+        MissileSpikeChance: HeatMissileSpikeChance,
+        MissileSpikeMin:    HeatMissileSpikeMin,
+        MissileSpikeMax:    HeatMissileSpikeMax,
+    }
 }

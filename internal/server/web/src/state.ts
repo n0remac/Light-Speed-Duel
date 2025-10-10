@@ -33,6 +33,9 @@ export interface HeatView {
   overheatAt: number;
   markerSpeed: number;
   stallUntilMs: number; // client-synced time in milliseconds
+  kUp: number;
+  kDown: number;
+  exp: number;
 }
 
 export interface ShipSnapshot {

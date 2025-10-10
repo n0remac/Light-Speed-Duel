@@ -25,6 +25,9 @@ interface ServerHeatView {
   o: number;  // overheatAt
   ms: number; // markerSpeed
   su: number; // stallUntil (server time seconds)
+  ku: number; // kUp
+  kd: number; // kDown
+  ex: number; // exp
 }
 
 interface ServerShipState {
@@ -290,12 +293,9 @@ function convertHeatView(serverHeat: ServerHeatView, nowSyncedAtMs: number, serv
     overheatAt: serverHeat.o,
     markerSpeed: serverHeat.ms,
     stallUntilMs: stallUntilMs,
+    kUp: serverHeat.ku,
+    kDown: serverHeat.kd,
+    exp: serverHeat.ex,
   };
-
-  // Debug logging (can be removed after verification)
-  if (serverHeat.v > 0) {
-    console.log("[heat] Received heat data:", heatView);
-  }
-
   return heatView;
 }

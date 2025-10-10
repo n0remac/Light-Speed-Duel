@@ -486,7 +486,19 @@
       position: relative;
     }
 
+    .heat-bar-planned {
+      position: absolute;
+      inset: 0 auto 0 0;
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, rgba(248, 113, 113, 0.35) 0%, rgba(239, 68, 68, 0.45) 100%);
+      transition: width 0.15s ease-out;
+      pointer-events: none;
+    }
+
     .heat-bar-fill {
+      position: absolute;
+      inset: 0 auto 0 0;
       height: 100%;
       width: 0%;
       background: linear-gradient(90deg, rgba(34, 197, 94, 0.8) 0%, rgba(234, 179, 8, 0.9) 70%, rgba(239, 68, 68, 1) 100%);
@@ -635,7 +647,8 @@
           <span class="status-chip">Kills <span id="ship-kills">0</span></span>
           <div id="heat-bar-container" class="heat-bar-container">
             <div id="heat-bar-bg" class="heat-bar-bg">
-              <div id="heat-bar-fill" class="heat-bar-fill"></div>
+              <div id="heat-bar-planned" class="heat-bar-planned" title="Planned heat"></div>
+              <div id="heat-bar-fill" class="heat-bar-fill" title="Actual heat"></div>
             </div>
             <span id="heat-value-text" class="heat-value-text">Heat</span>
           </div>

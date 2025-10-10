@@ -79,6 +79,7 @@ let helpCloseBtn: HTMLButtonElement | null = null;
 let helpText: HTMLElement | null = null;
 
 let heatBarFill: HTMLElement | null = null;
+let heatBarPlanned: HTMLElement | null = null;
 let heatValueText: HTMLElement | null = null;
 let speedMarker: HTMLElement | null = null;
 let stallOverlay: HTMLElement | null = null;
@@ -215,6 +216,7 @@ function cacheDom(): void {
   helpText = document.getElementById("help-text");
 
   heatBarFill = document.getElementById("heat-bar-fill");
+  heatBarPlanned = document.getElementById("heat-bar-planned");
   heatValueText = document.getElementById("heat-value-text");
   speedMarker = document.getElementById("speed-marker");
   stallOverlay = document.getElementById("stall-overlay");
@@ -276,6 +278,7 @@ function bindListeners(): void {
       sendMessage({ type: "update_waypoint", index: selection.index, speed: value });
       stateRef.me.waypoints[selection.index].speed = value;
       refreshShipSelectionUI();
+      updatePlannedHeatBar();
     }
     busRef.emit("ship:speedChanged", { value });
   });
@@ -750,6 +753,7 @@ function handleShipPointer(canvasPoint: { x: number; y: number }, worldPoint: { 
     setSelection({ type: "leg", index: wps.length - 1 });
     busRef.emit("ship:waypointAdded", { index: wps.length - 1 });
   }
+  updatePlannedHeatBar();
 }
 
 function handleMissilePointer(canvasPoint: { x: number; y: number }, worldPoint: { x: number; y: number }): void {
@@ -786,6 +790,7 @@ function clearShipRoute(): void {
   }
   setSelection(null);
   busRef.emit("ship:waypointsCleared");
+  updatePlannedHeatBar();
 }
 
 function deleteSelectedShipWaypoint(): void {
@@ -796,6 +801,7 @@ function deleteSelectedShipWaypoint(): void {
   }
   busRef.emit("ship:waypointDeleted", { index: selection.index });
   setSelection(null);
+  updatePlannedHeatBar();
 }
 
 function deleteSelectedMissileWaypoint(): void {
@@ -1638,6 +1644,8 @@ function updateStatusIndicators(): void {
 
   // Update heat bar
   updateHeatBar();
+  // Update planned heat bar
+  updatePlannedHeatBar();
   // Update speed marker position
   updateSpeedMarker();
   // Update stall overlay
@@ -1663,6 +1671,45 @@ function updateHeatBar(): void {
   }
 }
 
+function updatePlannedHeatBar(): void {
+  const ship = stateRef.me;
+  const plannedEl = heatBarPlanned;
+  if (!ship || !ship.heat || !plannedEl) return;
+
+  const planned = projectPlannedHeat(ship);
+  const percent = (planned / ship.heat.max) * 100;
+  plannedEl.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+}
+
+function projectPlannedHeat(ship: { x: number; y: number; waypoints: { x: number; y: number; speed?: number }[]; heat?: { value: number; max: number; markerSpeed: number; kUp: number; kDown: number; exp: number } }): number {
+  const heat = ship.heat!;
+  let h = Math.max(0, Math.min(heat.max, heat.value));
+  let maxH = h;
+  // Simple constant-speed per-leg projection (server currently sets vel to leg speed instantly)
+  let posX = ship.x;
+  let posY = ship.y;
+  for (const wp of ship.waypoints) {
+    const dx = wp.x - posX;
+    const dy = wp.y - posY;
+    const dist = Math.hypot(dx, dy);
+    const v = Math.max(1e-6, Number.isFinite(wp.speed) ? (wp.speed as number) : 0);
+    if (v <= 1e-6 || dist <= 1e-6) {
+      posX = wp.x; posY = wp.y;
+      continue;
+    }
+    const duration = dist / v;
+    // Heat differential at constant speed
+    const dev = v - heat.markerSpeed;
+    const Vn = Math.max(heat.markerSpeed, 1e-6);
+    const p = heat.exp;
+    const rate = dev >= 0 ? heat.kUp * Math.pow(dev / Vn, p) : -heat.kDown * Math.pow(Math.abs(dev) / Vn, p);
+    h = Math.max(0, Math.min(heat.max, h + rate * duration));
+    if (h > maxH) maxH = h;
+    posX = wp.x; posY = wp.y;
+  }
+  return maxH;
+}
+
 function updateSpeedMarker(): void {
   const heat = stateRef.me?.heat;
   if (!heat || !speedMarker || !shipSpeedSlider) return;
@@ -1673,7 +1720,8 @@ function updateSpeedMarker(): void {
 
   // Calculate position as percentage
   const percent = ((markerSpeed - min) / (max - min)) * 100;
-  speedMarker.style.left = `${percent}%`;
+  const clamped = Math.max(0, Math.min(100, percent));
+  speedMarker.style.left = `${clamped}%`;
   speedMarker.title = `Heat neutral: ${Math.round(markerSpeed)} units/s`;
 }
 

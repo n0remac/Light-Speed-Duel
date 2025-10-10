@@ -412,16 +412,19 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 							meGhost.T = now
 						}
 						// Include heat data for player's own ship
-						if heat != nil {
-							meGhost.Heat = &shipHeatViewDTO{
-								V:  heat.S.Value,
-								M:  heat.P.Max,
-								W:  heat.P.WarnAt,
-								O:  heat.P.OverheatAt,
-								MS: heat.P.MarkerSpeed,
-								SU: heat.S.StallUntil,
-							}
-						}
+                        if heat != nil {
+                            meGhost.Heat = &shipHeatViewDTO{
+                                V:  heat.S.Value,
+                                M:  heat.P.Max,
+                                W:  heat.P.WarnAt,
+                                O:  heat.P.OverheatAt,
+                                MS: heat.P.MarkerSpeed,
+                                SU: heat.S.StallUntil,
+                                KU: heat.P.KUp,
+                                KD: heat.P.KDown,
+                                EX: heat.P.Exp,
+                            }
+                        }
 					}
 				}
 

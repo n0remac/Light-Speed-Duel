@@ -1,44 +1,66 @@
 # Light Speed Duel
 
-**Light Speed Duel** is a 2D top-down prototype about dueling starships at near-light speeds. The twist: players never see each other’s *true* position in real time. Instead, you see opponents only as they were, delayed by the time it takes light to travel the distance between ships.
+Light Speed Duel is a 2D top‑down space duel where you never see anyone’s true real‑time position. Every ship and missile is rendered at its light‑delayed position, so combat is all about prediction, timing, and route planning.
 
-The result is a prediction-heavy cat-and-mouse game where speed, timing, and foresight matter as much as accuracy.
+## Play
 
-## Play the game  
-[lightspeedduel.com](www.lightspeedduel.com)
+- Website: https://lightspeedduel.com
+- Local quick play (auto room): http://localhost:8080/play
+- Lobby and room picker: http://localhost:8080 or http://localhost:8080/lobby
 
+## What’s in the game
 
-## Current Features
+- Light‑time rendering: you and opponents are visible only at delayed positions.
+- Route planning: click to lay out multi‑leg paths; the ship accelerates, cruises, and decelerates to stop cleanly at each leg.
+- Heat system: sprint above the marker speed to build heat; hitting overheat triggers a short stall (no thrust). UI shows warn/overheat and recovery.
+- Missiles: configurable speed/aggro, pursue within aggro radius. Multiple missile routes supported.
+- Game modes: tutorial, story, and freeplay (use /play for a quick freeplay room).
+- Map and zoom: multiple map sizes, smooth zoom; mobile pinch‑zoom fixes.
+- AI opponent: optional bot for solo testing.
+- Audio: music and sound effects, with a mute toggle.
 
-* Two players can join the same room simply by visiting the game link.
-* Click anywhere in space to set a waypoint — your ship will accelerate, cruise, and decelerate to hit the point, stopping cleanly at each leg.
-* You see:
+## Run locally
 
-  * **Your ship** only at its delayed position, just like opponents. No instant knowledge of where anything is *right now*.
-  * **Opponent ships** also at their delayed positions — interception relies on prediction.
-* Launch configurable missiles that inherit the same light-time rules, pursue enemies that wander into their aggro radius, and detonate after three successful hits.
+Prereqs: Go 1.25+ (go toolchain auto‑fetch is supported).
 
+1) Install deps
 
-## Running the Game
+```bash
+go mod tidy
+```
 
-1. Clone the repo and install Go 1.21+.
-2. Install dependencies:
+2) Build web assets (optional for development; rerun after editing TS)
 
-   ```bash
-   go mod tidy
-   ```
-3. Run the server:
+```bash
+go generate ./internal/server
+```
 
-   ```bash
-   go run .
-   ```
-4. Open [http://localhost:8080](http://localhost:8080) in two browser tabs.
+3) Start the server
 
-   * Each tab spawns a ship in the same room.
-   * Click to set waypoints and try to intercept your opponent!
+```bash
+go run .
+```
 
+The server listens on :8080 by default. You can override with:
 
-## Tech Stack
+```bash
+go run . -addr 127.0.0.1:8080
+```
 
-* **Go** — simulation loop and WebSocket server (authoritative state, per-player delayed views).
-* **JavaScript/Canvas** — browser client for rendering and input.
+Then open one of:
+
+- http://localhost:8080/play — instant freeplay room
+- http://localhost:8080 — lobby with room selector
+
+Tip: There’s a developer script `restart-dev.sh` that builds a trimmed binary and runs it on 127.0.0.1:8082. It’s optional and may require adjusting paths for your environment.
+
+## Tech stack
+
+- Go (authoritative ECS‑style sim, per‑player light‑delayed views) with Gorilla WebSocket
+- TypeScript + Canvas (bundled with esbuild via `go generate` and embedded into the Go binary)
+
+## How it plays
+
+- Neither player has instant information; you have to predict where the enemy will be by the time your shots or intercepts arrive.
+- Sprinting raises heat; plan cool‑down legs or short waits to avoid stalls.
+- Missiles and light‑delay make baiting and timing windows central to duels.

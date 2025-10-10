@@ -1,80 +1,58 @@
-# Sub‑Plan 4 — Route Planner & Preview Simulation
+# Sub‑Plan 4 — Route Planner & Preview
 
-**Goal:** Add strategic planning tools: dual‑line heat bar (planned vs actual), local preview sim, and quick actions.
+Goal: Add a forward projection of heat that updates as the user edits the route, and visualize it alongside actual heat. Keep the UI minimal and performant.
 
 ---
 
 ## Scope
-- **Dual‑line heat bar** under the speed slider:
-  - **Planned heat** (lighter red): cumulative projection across the full planned route.
-  - **Actual heat** (darker red): live server value.
-- Local forward **preview simulator** using current kinematics & heat formula.
-- Quick actions: **Insert cool‑down** and **Slow this leg**.
-- Optional waypoint metadata: `speedBand`, `waitMs` (server tolerant).
+- Dual‑meter heat UI under the speed slider:
+  - Planned heat (lighter red): projected maximum heat over the current route.
+  - Actual heat (darker): live server heat.
+- Client‑side projection using the server’s heat constants:
+  - current model is constant‑speed per leg (matches server movement today).
+  - integrate the existing formula to estimate final/max heat across legs.
+- Optional: later, replace with a time‑sparkline when acceleration/advanced preview is introduced.
 
 ---
 
 ## Files & Touch Points
-- `web/src/planner/preview.ts` — deterministic preview integrator (dt≈50–100ms).
-- `web/src/ui/planner/HeatTimeline.tsx` — dual‑line sparkline aligned to legs & waits.
-- `web/src/ui/planner/QuickActions.tsx` — buttons to insert waits / lower band.
-- `web/src/net/messages.ts` — optional waypoint metadata (client‑only for now).
-- Server parser: safely ignore unknown fields or record them for later.
+- `internal/server/dto.go` `shipHeatViewDTO`: include `ku`, `kd`, `ex` so the client can project heat correctly.
+- `internal/server/ws.go`: populate the new fields in the heat view.
+- `web/src/state.ts`: extend `HeatView` with `kUp`, `kDown`, `exp`.
+- `web/src/net.ts`: parse new constants; remove debug logging.
+- `web/src/game.ts`: compute projected max heat for the current route and render a planned underlay bar.
+- `web/index.html` & CSS: add a planned underlay element to the heat bar.
 
 ---
 
-## Preview Integrator (pseudo)
-```ts
-function simulatePreview(state, route, constants, dt=0.1) {
-  let pos = state.pos.clone(), vel = state.vel.clone();
-  let heat = state.heat.value;
-  const samples: number[] = [];
-  let t = 0;
+## Projection (constant‑speed per leg)
+Assumptions: server movement applies leg speed immediately; no accel.
 
-  for (const leg of expandRoute(route)) {
-    const targetSpeed = speedForBandOrGlobal(leg, constants);
-    const accel = accelToward(vel, targetSpeed, constants.maxAccel);
-    for (let i=0; i<leg.duration/dt; i++) {
-      vel = stepVelocity(vel, accel, dt, constants);
-      const v = mag(vel);
-      const dev = v - constants.markerSpeed;
-      const hdot = dev >= 0
-        ? constants.kUp * Math.pow(dev/Math.max(constants.markerSpeed, 1e-6), constants.exp)
-        : -constants.kDown * Math.pow(Math.abs(dev)/Math.max(constants.markerSpeed, 1e-6), constants.exp);
-      heat = clamp(heat + hdot*dt, 0, constants.max);
-      samples.push(heat);
-      t += dt;
-    }
-    // waits (cooling windows)
-    const wait = leg.waitSec ?? 0;
-    for (let i=0; i<wait/dt; i++) {
-      const dev = 0 - constants.markerSpeed; // assume v≈0 → strong cooling
-      const hdot = -constants.kDown * Math.pow(1, constants.exp);
-      heat = clamp(heat + hdot*dt, 0, constants.max);
-      samples.push(heat);
-      t += dt;
-    }
-  }
-  return samples;
-}
-```
+For each leg from current pos → wp[i]:
+- `duration = distance / speed`
+- `dev = speed - markerSpeed`
+- `Ḣ = dev >= 0 ? kUp*(dev/Vn)^exp : -kDown*(|dev|/Vn)^exp` with `Vn=max(markerSpeed,1e-6)`
+- `heat = clamp(heat + Ḣ*duration, 0, max)`
+- Track `maxHeat` encountered across all legs
+
+UI uses `maxHeat` as the planned meter value. It increases as legs are added; may cap at Max/Overheat.
 
 ---
 
 ## UI Behavior
-- The **planned** line updates **immediately** when legs are added/removed (cumulative).
-- If the planned trace crosses Overheat, show **“Will Stall”** on that segment.
-- Clicking **Insert cool‑down** adds `waitMs` to the hottest segment until safe.
-- Clicking **Slow this leg** reduces that leg’s `speedBand` (sprint→cruise→eco).
+- The planned underlay expands immediately on route edits (add/update/clear). Slower routes will lessen the planned heat.
+- Actual heat overlays on top; as the ship moves/fights, it grows and can catch up/surpass if plan changes mid‑flight.
+- Stall: if actual reaches Overheat, overlay appears as in Sub‑Plan 3; planned may already indicate risk.
 
 ---
 
 ## Acceptance Criteria
-- Dual‑line timeline renders; planned updates instantly on edits.
-- Preview trends roughly match actual in flight (not exact).
-- Quick actions produce safe plans in common cases.
+- Planned underlay appears and updates as waypoints change.
+- Underlay respects heat constants and uses the same formula.
+- Actual meter remains smooth and accurate.
+- Marker tick remains visible and clamped to slider bounds.
 
 ---
 
 ## Rollback Plan
-Feature flag `plannerHeatPreview`. If disabled, hide timeline and quick actions.
+Feature flag or graceful degradation: if `heat` view/fields are missing, hide planned underlay and keep actual heat bar only.
