@@ -50,11 +50,13 @@ World
   │   ├── Transform (position, velocity, angle)
   │   ├── History (circular buffer of past states)
   │   ├── Missile (homing behavior, agro radius)
-  │   ├── Ship (heat, waypoints, cooldowns)
+  │   ├── Ship (waypoints, cooldowns)
+  │   ├── Heat (value, stall state, parameters)
   │   └── Player (connection, perception)
   └── Systems
       ├── MovementSystem (waypoint navigation)
       ├── MissileSystem (homing, lifetime)
+      ├── HeatSystem (thermal accumulation, stalls)
       ├── PerceptionSystem (light-delay calculations)
       └── AISystem (bot behaviors)
 ```
@@ -155,14 +157,16 @@ The build process is integrated into Go tooling, making deployment a single stat
 - **ECS**: Entity-component-system for scalable entity management
 - **Movement**: Waypoint-based navigation with automatic speed curves
 - **Missile System**: Homing missiles with configurable speed/agro radius
-- **Heat System**: Overheat mechanics with time dilation effects on cooldowns
+- **Heat System**: Speed-based heat accumulation with overheat stalls and time dilation effects
 
 **Key Files:**
 - `core.go`: Vec2 math, History circular buffer
 - `ecs.go`: Entity component system implementation
 - `systems.go`: Movement, missile, and physics systems
+- `heat.go`: Heat accumulation physics and stall mechanics
 - `perception.go`: Light-time delay calculations
 - `room.go`: Game room/lobby management
+- `consts.go`: Game constants including heat parameters
 
 ### 2. Perception System (Relativistic Delays)
 
@@ -214,7 +218,7 @@ func PerceiveEntity(observerPos Vec2, target EntityID, world *World, now float64
    - Ships (delayed positions)
    - Missiles (with trails)
    - Waypoints and routes
-   - UI overlays (heat bar, crosshair, warnings)
+   - UI overlays (dual heat bars, speed marker, stall warning, crosshair)
 
 **Input Handling:**
 - Click to add waypoints
@@ -302,16 +306,63 @@ Where C = 299 units/second (speed of light in game units).
 - **Causality**: Strategic positioning to maximize your information while minimizing theirs
 - **No Instant Feedback**: Even your own actions have delayed confirmation
 
-### 2. Heat and Time Dilation
+### 2. Heat Management System
 
-**Mechanic**: Ships moving faster than the "marker speed" accumulate heat.
+**Core Mechanic**: Ships accumulate heat based on speed relative to a neutral "marker speed" threshold.
+
+**Implementation**:
+
+The heat system is implemented as an ECS component (`HeatComponent`) with physics-based accumulation:
+
+```go
+// Heat rate formula
+dev = speed - MarkerSpeed
+if dev >= 0:
+    Ḣ = +KUp * (dev / MarkerSpeed)^Exp     // Heating
+else:
+    Ḣ = -KDown * (|dev| / MarkerSpeed)^Exp // Cooling
+```
+
+**Parameters** (from `internal/game/consts.go`):
+- **Max**: 100 heat units (capacity)
+- **MarkerSpeed**: 150 units/s (60% of max ship speed - neutral point)
+- **WarnAt**: 70 (yellow warning threshold)
+- **OverheatAt**: 100 (triggers stall)
+- **StallSeconds**: 2.5s (overheat penalty duration)
+- **KUp**: 22.0 (heating rate multiplier)
+- **KDown**: 16.0 (cooling rate multiplier)
+- **Exp**: 1.5 (nonlinear response curve)
 
 **Consequences:**
-- Heat bars show planned vs actual heat
-- Overheat triggers a stall (no thrust)
-- **Time dilation**: Faster ships experience slower cooldowns (relativistic effect simulation)
 
-This forces players to balance speed (tactical advantage) with heat management (operational risk).
+1. **Overheat Stall**: Reaching 100 heat triggers a 2.5-second stall where the ship loses thrust completely
+2. **Heat Spikes**: Missile hits have a 35% chance to add 6-18 heat units
+3. **Time Dilation**: Faster ships experience slower cooldowns for missile reloads (relativistic effect simulation)
+
+**UI Features** (`internal/server/web/src/game.ts`):
+
+- **Dual Heat Bars**:
+  - Current heat bar (green → yellow → red)
+  - Planned heat projection (shows predicted heat based on waypoint route)
+- **Speed Marker**: Visual indicator showing the neutral speed on the speed slider
+- **Stall Overlay**: Warning screen when overheated
+- **Color Coding**:
+  - Green: Normal (< 70)
+  - Yellow: Warning (70-99)
+  - Red: Overheat (100)
+
+**Route Planning Integration**:
+
+The frontend calculates projected heat for the entire waypoint route using the same physics formula, allowing players to plan routes that avoid overheating. The `projectPlannedHeat()` function simulates heat accumulation across all waypoints.
+
+**Strategic Implications:**
+
+- **Speed vs Safety**: High-speed maneuvering provides tactical advantage but risks stall
+- **Route Optimization**: Players must balance speed and distance to manage heat over long routes
+- **Combat Pressure**: Missile hits can push ships over the heat limit at critical moments
+- **Recovery Planning**: Slowing below marker speed allows heat dissipation for sustained operations
+
+This system creates a resource management layer on top of the movement system, forcing players to balance aggressive maneuvering with thermal discipline.
 
 ### 3. Configurable Missile System
 
@@ -325,7 +376,19 @@ This forces players to balance speed (tactical advantage) with heat management (
 
 **Homing Behavior**: Missiles pursue targets within agro radius, creating tactical depth.
 
-### 4. Multi-Mode Gameplay
+### 4. Integrated Route Planning with Heat Projection
+
+**Feature**: The frontend provides live heat projection across the entire planned route.
+
+**Implementation Details**:
+- `projectPlannedHeat()` in `game.ts` simulates the full waypoint path
+- Uses the same physics formula as the server for accurate prediction
+- Updates in real-time as waypoints are added/modified
+- Displays as a secondary "planned" heat bar overlay
+
+**Player Benefit**: Players can see if their planned route will cause overheating before committing, enabling strategic route optimization.
+
+### 5. Multi-Mode Gameplay
 
 **Modes:**
 - **Tutorial**: Teaches mechanics step-by-step
@@ -334,7 +397,7 @@ This forces players to balance speed (tactical advantage) with heat management (
 
 **Seamless Integration**: All modes share the same engine, just different initial conditions and objectives.
 
-### 5. Single-Binary Deployment
+### 6. Single-Binary Deployment
 
 **Build Process:**
 1. esbuild compiles TypeScript → JavaScript
