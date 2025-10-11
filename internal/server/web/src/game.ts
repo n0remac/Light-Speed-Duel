@@ -100,8 +100,13 @@ let lastTouchDistance: number | null = null;
 let pendingTouchTimeout: ReturnType<typeof setTimeout> | null = null;
 let isPinching = false;
 
-const MIN_ZOOM = 1.0; 
+// Waypoint dragging state
+let draggedWaypoint: number | null = null;
+let dragStartPos: { x: number; y: number } | null = null;
+
+const MIN_ZOOM = 1.0;
 const MAX_ZOOM = 3.0;
+const WAYPOINT_HITBOX_RADIUS = 12; // pixels
 
 const HELP_TEXT = [
   "Primary Modes",
@@ -111,6 +116,7 @@ const HELP_TEXT = [
   "Ship Navigation",
   "  T – Switch between set/select",
   "  C – Clear all waypoints",
+  "  H – Hold (clear waypoints & stop)",
   "  R – Toggle show route",
   "  [ / ] – Adjust waypoint speed",
   "  Shift+[ / ] – Coarse speed adjust",
@@ -231,6 +237,9 @@ function cacheDom(): void {
 function bindListeners(): void {
   if (!cv) return;
   cv.addEventListener("pointerdown", onCanvasPointerDown);
+  cv.addEventListener("pointermove", onCanvasPointerMove);
+  cv.addEventListener("pointerup", onCanvasPointerUp);
+  cv.addEventListener("pointercancel", onCanvasPointerUp);
   cv.addEventListener("wheel", onCanvasWheel, { passive: false });
   cv.addEventListener("touchstart", onCanvasTouchStart, { passive: false });
   cv.addEventListener("touchmove", onCanvasTouchMove, { passive: false });
@@ -532,6 +541,18 @@ function onCanvasPointerDown(event: PointerEvent): void {
 
   const context = uiStateRef.inputContext === "missile" ? "missile" : "ship";
 
+  // Check if clicking on waypoint for dragging (ship mode + select tool)
+  if (context === "ship" && uiStateRef.shipTool === "select" && stateRef.me?.waypoints) {
+    const wpIndex = findWaypointAtPosition(canvasPoint);
+    if (wpIndex !== null) {
+      draggedWaypoint = wpIndex;
+      dragStartPos = { x: canvasPoint.x, y: canvasPoint.y };
+      cv.setPointerCapture(event.pointerId);
+      event.preventDefault();
+      return;
+    }
+  }
+
   // For touch events, delay waypoint placement to allow for pinch gesture detection
   // For mouse events, place immediately
   if (event.pointerType === "touch") {
@@ -559,6 +580,63 @@ function onCanvasPointerDown(event: PointerEvent): void {
   }
 
   event.preventDefault();
+}
+
+function onCanvasPointerMove(event: PointerEvent): void {
+  if (!cv || !ctx) return;
+
+  // Handle waypoint dragging
+  if (draggedWaypoint !== null && dragStartPos) {
+    const rect = cv.getBoundingClientRect();
+    const scaleX = rect.width !== 0 ? cv.width / rect.width : 1;
+    const scaleY = rect.height !== 0 ? cv.height / rect.height : 1;
+    const x = (event.clientX - rect.left) * scaleX;
+    const y = (event.clientY - rect.top) * scaleY;
+    const canvasPoint = { x, y };
+    const worldPoint = canvasToWorld(canvasPoint);
+
+    // Clamp to world bounds
+    const worldW = stateRef.worldMeta.w ?? 4000;
+    const worldH = stateRef.worldMeta.h ?? 4000;
+    const clampedX = clamp(worldPoint.x, 0, worldW);
+    const clampedY = clamp(worldPoint.y, 0, worldH);
+
+    // Send update to server
+    sendMessage({
+      type: "move_waypoint",
+      index: draggedWaypoint,
+      x: clampedX,
+      y: clampedY
+    });
+
+    // Optimistic update for smooth dragging
+    if (stateRef.me && stateRef.me.waypoints && draggedWaypoint < stateRef.me.waypoints.length) {
+      stateRef.me.waypoints[draggedWaypoint].x = clampedX;
+      stateRef.me.waypoints[draggedWaypoint].y = clampedY;
+    }
+
+    event.preventDefault();
+  }
+}
+
+function onCanvasPointerUp(event: PointerEvent): void {
+  if (draggedWaypoint !== null && stateRef.me?.waypoints) {
+    const wp = stateRef.me.waypoints[draggedWaypoint];
+    if (wp) {
+      busRef.emit("ship:waypointMoved", {
+        index: draggedWaypoint,
+        x: wp.x,
+        y: wp.y
+      });
+    }
+
+    draggedWaypoint = null;
+    dragStartPos = null;
+
+    if (cv) {
+      cv.releasePointerCapture(event.pointerId);
+    }
+  }
 }
 
 function updateSpeedLabel(value: number): void {
@@ -1044,6 +1122,12 @@ function onWindowKeyDown(event: KeyboardEvent): void {
       clearShipRoute();
       event.preventDefault();
       return;
+    case "KeyH":
+      // H key: Hold position (clear all waypoints, stop ship)
+      setInputContext("ship");
+      clearShipRoute();
+      event.preventDefault();
+      return;
     case "BracketLeft":
       setInputContext("ship");
       adjustSliderValue(shipSpeedSlider, -1, event.shiftKey);
@@ -1259,6 +1343,29 @@ function computeMissileRoutePoints() {
   return { waypoints: wps, worldPoints, canvasPoints };
 }
 
+// Helper: Find waypoint at canvas position
+function findWaypointAtPosition(canvasPoint: { x: number; y: number }): number | null {
+  if (!stateRef.me?.waypoints) return null;
+
+  const route = computeRoutePoints();
+  if (!route || route.waypoints.length === 0) return null;
+
+  // Check waypoints in reverse order (top to bottom visually)
+  // Skip the first canvas point (ship position)
+  for (let i = route.waypoints.length - 1; i >= 0; i--) {
+    const waypointCanvas = route.canvasPoints[i + 1]; // +1 because first point is ship position
+    const dx = canvasPoint.x - waypointCanvas.x;
+    const dy = canvasPoint.y - waypointCanvas.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist <= WAYPOINT_HITBOX_RADIUS) {
+      return i;
+    }
+  }
+
+  return null;
+}
+
 function updateLegDashOffsets(dtSeconds: number): void {
   if (!uiStateRef.showShipRoute || !stateRef.me) {
     legDashOffsets.clear();
@@ -1403,62 +1510,126 @@ function drawGhostDot(x: number, y: number): void {
   ctx.fill();
 }
 
+// Estimate heat after traveling from pos1 to pos2 at waypoint speed
+function estimateHeatChange(
+  pos1: { x: number; y: number },
+  wp: { x: number; y: number; speed: number },
+  currentHeat: number,
+  heatParams: { markerSpeed: number; kUp: number; kDown: number; exp: number; max: number }
+): number {
+  const dx = wp.x - pos1.x;
+  const dy = wp.y - pos1.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+
+  if (distance < 1e-6 || wp.speed < 1) {
+    return currentHeat;
+  }
+
+  const estimatedTime = distance / wp.speed;
+
+  // Calculate heat rate using the same formula as backend
+  const Vn = Math.max(heatParams.markerSpeed, 1e-6);
+  const dev = wp.speed - heatParams.markerSpeed;
+  const p = heatParams.exp;
+
+  let hdot: number;
+  if (dev >= 0) {
+    // Above marker: heat accumulates
+    hdot = heatParams.kUp * Math.pow(dev / Vn, p);
+  } else {
+    // Below marker: heat dissipates
+    hdot = -heatParams.kDown * Math.pow(Math.abs(dev) / Vn, p);
+  }
+
+  // Integrate heat change
+  const newHeat = currentHeat + hdot * estimatedTime;
+
+  // Clamp to valid range
+  return clamp(newHeat, 0, heatParams.max);
+}
+
+// Linear color interpolation
+function interpolateColor(
+  color1: [number, number, number],
+  color2: [number, number, number],
+  t: number
+): [number, number, number] {
+  return [
+    Math.round(color1[0] + (color2[0] - color1[0]) * t),
+    Math.round(color1[1] + (color2[1] - color1[1]) * t),
+    Math.round(color1[2] + (color2[2] - color1[2]) * t),
+  ];
+}
+
 function drawRoute(): void {
   if (!ctx || !stateRef.me) return;
   const route = computeRoutePoints();
   if (!route || route.waypoints.length === 0) return;
-  const { canvasPoints } = route;
+  const { canvasPoints, worldPoints } = route;
   const legCount = canvasPoints.length - 1;
+  const heat = stateRef.me.heat;
 
+  // Draw route segments with heat-based coloring if heat data available
   if (uiStateRef.showShipRoute && legCount > 0) {
-    ctx.save();
-    ctx.setLineDash([8, 8]);
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = "#38bdf866";
+    let currentHeat = heat?.value ?? 0;
+
     for (let i = 0; i < legCount; i++) {
+      const isFirstLeg = i === 0;
+      const isSelected = selection && selection.index === i;
+
+      // Estimate heat at end of this segment
+      let segmentHeat = currentHeat;
+      if (heat && i < route.waypoints.length) {
+        const wp = route.waypoints[i];
+        segmentHeat = estimateHeatChange(worldPoints[i], { ...worldPoints[i + 1], speed: wp.speed ?? defaultSpeed }, currentHeat, heat);
+      }
+
+      // Calculate heat ratio and color
+      const heatRatio = heat ? clamp(segmentHeat / heat.overheatAt, 0, 1) : 0;
+      const color = heat
+        ? interpolateColor([100, 150, 255], [255, 50, 50], heatRatio)
+        : [56, 189, 248]; // Default blue
+
+      // Line thickness based on heat (thicker = hotter)
+      const baseWidth = isFirstLeg ? 3 : 1.5;
+      const lineWidth = heat ? baseWidth + (heatRatio * 4) : baseWidth;
+
+      ctx.save();
+      ctx.setLineDash(isFirstLeg ? [6, 6] : [8, 8]);
+      ctx.lineWidth = lineWidth;
+
+      if (isSelected) {
+        ctx.strokeStyle = "#f97316";
+        ctx.lineWidth = 3.5;
+        ctx.setLineDash([4, 4]);
+      } else {
+        ctx.strokeStyle = heat
+          ? `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${isFirstLeg ? 1 : 0.4})`
+          : (isFirstLeg ? "#38bdf8" : "#38bdf866");
+      }
+
       ctx.beginPath();
       ctx.moveTo(canvasPoints[i].x, canvasPoints[i].y);
       ctx.lineTo(canvasPoints[i + 1].x, canvasPoints[i + 1].y);
       ctx.lineDashOffset = legDashOffsets.get(i) ?? 0;
       ctx.stroke();
+      ctx.restore();
+
+      currentHeat = segmentHeat;
     }
-    ctx.restore();
   }
 
-  if (uiStateRef.showShipRoute && legCount > 0) {
-    ctx.save();
-    ctx.setLineDash([6, 6]);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "#38bdf8";
-    ctx.beginPath();
-    ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y);
-    ctx.lineTo(canvasPoints[1].x, canvasPoints[1].y);
-    ctx.lineDashOffset = legDashOffsets.get(0) ?? 0;
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  if (uiStateRef.showShipRoute && selection && selection.index < legCount) {
-    ctx.save();
-    ctx.setLineDash([4, 4]);
-    ctx.lineWidth = 3.5;
-    ctx.strokeStyle = "#f97316";
-    ctx.beginPath();
-    ctx.moveTo(canvasPoints[selection.index].x, canvasPoints[selection.index].y);
-    ctx.lineTo(canvasPoints[selection.index + 1].x, canvasPoints[selection.index + 1].y);
-    ctx.lineDashOffset = legDashOffsets.get(selection.index) ?? 0;
-    ctx.stroke();
-    ctx.restore();
-  }
-
+  // Draw waypoint markers
   for (let i = 0; i < route.waypoints.length; i++) {
     const pt = canvasPoints[i + 1];
     const isSelected = selection && selection.index === i;
+    const isDragging = draggedWaypoint === i;
+
     ctx.save();
     ctx.beginPath();
-    ctx.arc(pt.x, pt.y, isSelected ? 7 : 5, 0, Math.PI * 2);
-    ctx.fillStyle = isSelected ? "#f97316" : "#38bdf8";
-    ctx.globalAlpha = isSelected ? 0.95 : 0.8;
+    ctx.arc(pt.x, pt.y, (isSelected || isDragging) ? 7 : 5, 0, Math.PI * 2);
+    ctx.fillStyle = isSelected ? "#f97316" : isDragging ? "#facc15" : "#38bdf8";
+    ctx.globalAlpha = (isSelected || isDragging) ? 0.95 : 0.8;
     ctx.fill();
     ctx.globalAlpha = 1;
     ctx.lineWidth = 2;

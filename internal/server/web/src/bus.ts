@@ -6,17 +6,21 @@ export interface EventMap {
   "context:changed": { context: ShipContext };
   "ship:toolChanged": { tool: ShipTool };
   "ship:waypointAdded": { index: number };
+  "ship:waypointMoved": { index: number; x: number; y: number };
   "ship:legSelected": { index: number | null };
   "ship:waypointDeleted": { index: number };
   "ship:waypointsCleared": void;
   "ship:clearInvoked": void;
   "ship:speedChanged": { value: number };
+  "ship:heatProjectionUpdated": { heatValues: number[] };
   "heat:markerAligned": { value: number; marker: number };
   "heat:warnEntered": { value: number; warnAt: number };
   "heat:cooledBelowWarn": { value: number; warnAt: number };
   "heat:stallTriggered": { stallUntil: number };
   "heat:stallRecovered": { value: number };
   "heat:dualMeterDiverged": { planned: number; actual: number };
+  "ui:waypointHoverStart": { index: number };
+  "ui:waypointHoverEnd": { index: number };
   "missile:routeAdded": { routeId: string };
   "missile:routeDeleted": { routeId: string };
   "missile:routeRenamed": { routeId: string; name: string };
@@ -49,7 +53,7 @@ export interface EventMap {
   "audio:set-master-gain": { gain: number };
   "audio:sfx": { name: "ui" | "laser" | "thrust" | "explosion" | "lock" | "dialogue"; velocity?: number; pan?: number };
   "audio:music:set-scene": { scene: "ambient" | "combat" | "lobby"; seed?: number };
-  "audio:music:param": { key: string; value: number };               
+  "audio:music:param": { key: string; value: number };
   "audio:music:transport": { cmd: "start" | "stop" | "pause" };
 }
 

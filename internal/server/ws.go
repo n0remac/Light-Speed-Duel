@@ -275,6 +275,13 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 					room.UpdateShipWaypoint(p.Ship, m.Index, m.Speed)
 				}
 				room.Mu.Unlock()
+			case "move_waypoint":
+				room.Mu.Lock()
+				if p := room.Players[playerID]; p != nil {
+					newPos := Vec2{X: Clamp(m.X, 0, room.WorldWidth), Y: Clamp(m.Y, 0, room.WorldHeight)}
+					room.MoveShipWaypoint(p.Ship, m.Index, newPos)
+				}
+				room.Mu.Unlock()
 			case "delete_waypoint":
 				room.Mu.Lock()
 				if p := room.Players[playerID]; p != nil {

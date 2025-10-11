@@ -180,3 +180,71 @@ func DefaultHeatParams() HeatParams {
 		MissileSpikeMax:    HeatMissileSpikeMax,
 	})
 }
+
+// ProjectHeatForRoute simulates heat changes along a planned route
+// Returns array of projected heat values at each waypoint
+// projected[0] = current heat, projected[i] = heat after waypoint i-1
+//
+// Phase 1a implementation: Simple projection based on waypoint speed and distance
+func ProjectHeatForRoute(currentHeat float64, params HeatParams, currentPos Vec2, currentSpeed float64, waypoints []ShipWaypoint) []float64 {
+	projected := make([]float64, len(waypoints)+1)
+	projected[0] = currentHeat
+
+	heat := currentHeat
+	pos := currentPos
+	speed := currentSpeed
+
+	for i, wp := range waypoints {
+		targetSpeed := wp.Speed
+		targetPos := wp.Pos
+
+		// Calculate distance to waypoint
+		distance := targetPos.Sub(pos).Len()
+		if distance < 1e-6 {
+			// Already at waypoint
+			projected[i+1] = heat
+			continue
+		}
+
+		// Estimate average speed during segment
+		// Simple approximation: average of current and target speed
+		avgSpeed := (speed + targetSpeed) * 0.5
+
+		// Estimate time to reach waypoint
+		// This is simplified - actual physics includes acceleration curves
+		segmentTime := distance / math.Max(avgSpeed, 1.0)
+
+		// Calculate heat rate at average speed
+		Vn := math.Max(params.MarkerSpeed, 1e-6)
+		dev := avgSpeed - params.MarkerSpeed
+		p := params.Exp
+
+		var hdot float64
+		if dev >= 0 {
+			// Above marker: heat accumulates
+			hdot = params.KUp * math.Pow(dev/Vn, p)
+		} else {
+			// Below marker: heat dissipates
+			hdot = -params.KDown * math.Pow(math.Abs(dev)/Vn, p)
+		}
+
+		// Integrate heat change over segment
+		heat += hdot * segmentTime
+
+		// Clamp to valid range
+		if heat < 0 {
+			heat = 0
+		}
+		if heat > params.Max {
+			heat = params.Max
+		}
+
+		projected[i+1] = heat
+
+		// Update position and speed for next segment
+		pos = targetPos
+		speed = targetSpeed
+	}
+
+	return projected
+}

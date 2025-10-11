@@ -27,3 +27,13 @@ func (r *Room) ClearShipWaypoints(shipID EntityID) {
 		route.Waypoints = route.Waypoints[:0]
 	}
 }
+
+// MoveShipWaypoint updates an existing waypoint position
+// This allows drag-and-drop waypoint editing from the client
+func (r *Room) MoveShipWaypoint(shipID EntityID, index int, newPos Vec2) {
+	if route := r.World.ShipRoute(shipID); route != nil {
+		if index >= 0 && index < len(route.Waypoints) {
+			route.Waypoints[index].Pos = newPos
+		}
+	}
+}
