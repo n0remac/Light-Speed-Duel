@@ -5,6 +5,8 @@ export type RoleId =
   | "shipDelete"
   | "shipClear"
   | "shipSpeedSlider"
+  | "heatBar"
+  | "speedMarker"
   | "missileSet"
   | "missileSelect"
   | "missileDelete"
@@ -30,6 +32,8 @@ export function createRoles(): RolesMap {
     shipDelete: () => document.getElementById("ship-delete"),
     shipClear: () => document.getElementById("ship-clear"),
     shipSpeedSlider: () => document.getElementById("ship-speed-slider"),
+    heatBar: () => document.getElementById("heat-bar-container"),
+    speedMarker: () => document.getElementById("speed-marker"),
     missileSet: () => document.getElementById("missile-set"),
     missileSelect: () => document.getElementById("missile-select"),
     missileDelete: () => document.getElementById("missile-delete"),

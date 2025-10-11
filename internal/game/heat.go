@@ -5,14 +5,14 @@ import "math"
 // HeatParams defines the parameters for the heat system.
 // Heat rises when flying above MarkerSpeed and dissipates below it.
 type HeatParams struct {
-	Max            float64 // Maximum heat capacity (e.g., 100)
-	WarnAt         float64 // Warning threshold for UI (e.g., 70)
-	OverheatAt     float64 // Overheat threshold triggers stall (e.g., 100)
-	StallSeconds   float64 // Duration of stall when overheated (e.g., 2.5)
-	MarkerSpeed    float64 // Neutral speed where net heat change = 0
-	Exp            float64 // Response exponent for heat curve (e.g., 1.5)
-	KUp            float64 // Heating rate scale above marker (e.g., 22.0)
-	KDown          float64 // Cooling rate scale below marker (e.g., 16.0)
+	Max                float64 // Maximum heat capacity (e.g., 100)
+	WarnAt             float64 // Warning threshold for UI (e.g., 70)
+	OverheatAt         float64 // Overheat threshold triggers stall (e.g., 100)
+	StallSeconds       float64 // Duration of stall when overheated (e.g., 2.5)
+	MarkerSpeed        float64 // Neutral speed where net heat change = 0
+	Exp                float64 // Response exponent for heat curve (e.g., 1.5)
+	KUp                float64 // Heating rate scale above marker (e.g., 22.0)
+	KDown              float64 // Cooling rate scale below marker (e.g., 16.0)
 	MissileSpikeChance float64 // Probability of heat spike on missile hit (0..1)
 	MissileSpikeMin    float64 // Minimum heat spike amount
 	MissileSpikeMax    float64 // Maximum heat spike amount
@@ -39,9 +39,10 @@ func (h *HeatComponent) IsStalled(now float64) bool {
 // Uses marker-based model: heat rises above MarkerSpeed, dissipates below.
 //
 // Formula:
-//   dev = speed - MarkerSpeed
-//   if dev >= 0: Ḣ = +KUp * (dev/MarkerSpeed)^Exp
-//   else:        Ḣ = -KDown * (|dev|/MarkerSpeed)^Exp
+//
+//	dev = speed - MarkerSpeed
+//	if dev >= 0: Ḣ = +KUp * (dev/MarkerSpeed)^Exp
+//	else:        Ḣ = -KDown * (|dev|/MarkerSpeed)^Exp
 func UpdateHeat(h *HeatComponent, speed float64, dt, now float64) {
 	Vn := math.Max(h.P.MarkerSpeed, 1e-6) // Avoid division by zero
 	dev := speed - h.P.MarkerSpeed
@@ -73,20 +74,109 @@ func UpdateHeat(h *HeatComponent, speed float64, dt, now float64) {
 	}
 }
 
+// ApplyMissileHeatSpike adds a stochastic heat spike when a missile impacts the ship.
+// Returns true if a spike was applied.
+func ApplyMissileHeatSpike(h *HeatComponent, now float64, rng func() float64) bool {
+	if h == nil || rng == nil {
+		return false
+	}
+	if h.P.MissileSpikeChance <= 0 || h.P.MissileSpikeMax <= 0 {
+		return false
+	}
+	chance := rng()
+	if chance >= h.P.MissileSpikeChance {
+		return false
+	}
+	span := h.P.MissileSpikeMax - h.P.MissileSpikeMin
+	if span < 0 {
+		span = 0
+	}
+	spike := h.P.MissileSpikeMin
+	if span > 0 {
+		spike += rng() * span
+	}
+	h.S.Value += spike
+	if h.S.Value > h.P.Max {
+		h.S.Value = h.P.Max
+	}
+	if h.S.Value >= h.P.OverheatAt && now >= h.S.StallUntil {
+		h.S.StallUntil = now + h.P.StallSeconds
+	}
+	return true
+}
+
+// SanitizeHeatParams clamps and normalizes heat parameters to safe defaults.
+func SanitizeHeatParams(p HeatParams) HeatParams {
+	defaults := HeatParams{
+		Max:                HeatMax,
+		WarnAt:             HeatWarnAt,
+		OverheatAt:         HeatOverheatAt,
+		StallSeconds:       HeatStallSeconds,
+		MarkerSpeed:        HeatMarkerSpeed,
+		Exp:                HeatExp,
+		KUp:                HeatKUp,
+		KDown:              HeatKDown,
+		MissileSpikeChance: HeatMissileSpikeChance,
+		MissileSpikeMin:    HeatMissileSpikeMin,
+		MissileSpikeMax:    HeatMissileSpikeMax,
+	}
+
+	if !(p.Max > 0) {
+		p.Max = defaults.Max
+	}
+	if !(p.WarnAt > 0 && p.WarnAt <= p.Max) {
+		p.WarnAt = defaults.WarnAt
+	}
+	if !(p.OverheatAt > 0 && p.OverheatAt <= p.Max && p.OverheatAt >= p.WarnAt) {
+		p.OverheatAt = math.Max(p.WarnAt, defaults.OverheatAt)
+		if p.OverheatAt > p.Max {
+			p.OverheatAt = p.Max
+		}
+	}
+	if !(p.StallSeconds >= 0) {
+		p.StallSeconds = defaults.StallSeconds
+	}
+	if !(p.MarkerSpeed > 0) {
+		p.MarkerSpeed = defaults.MarkerSpeed
+	}
+	if !(p.Exp > 0) {
+		p.Exp = defaults.Exp
+	}
+	if !(p.KUp >= 0) {
+		p.KUp = defaults.KUp
+	}
+	if !(p.KDown >= 0) {
+		p.KDown = defaults.KDown
+	}
+	if p.MissileSpikeChance < 0 {
+		p.MissileSpikeChance = 0
+	}
+	if p.MissileSpikeChance > 1 {
+		p.MissileSpikeChance = 1
+	}
+	if !(p.MissileSpikeMin >= 0) {
+		p.MissileSpikeMin = defaults.MissileSpikeMin
+	}
+	if !(p.MissileSpikeMax >= p.MissileSpikeMin) {
+		p.MissileSpikeMax = math.Max(p.MissileSpikeMin, defaults.MissileSpikeMax)
+	}
+	return p
+}
+
 // DefaultHeatParams returns sensible default heat parameters.
 func DefaultHeatParams() HeatParams {
-    // Default values sourced from consts.go to avoid drift
-    return HeatParams{
-        Max:                HeatMax,
-        WarnAt:             HeatWarnAt,
-        OverheatAt:         HeatOverheatAt,
-        StallSeconds:       HeatStallSeconds,
-        MarkerSpeed:        HeatMarkerSpeed,
-        Exp:                HeatExp,
-        KUp:                HeatKUp,
-        KDown:              HeatKDown,
-        MissileSpikeChance: HeatMissileSpikeChance,
-        MissileSpikeMin:    HeatMissileSpikeMin,
-        MissileSpikeMax:    HeatMissileSpikeMax,
-    }
+	// Default values sourced from consts.go to avoid drift
+	return SanitizeHeatParams(HeatParams{
+		Max:                HeatMax,
+		WarnAt:             HeatWarnAt,
+		OverheatAt:         HeatOverheatAt,
+		StallSeconds:       HeatStallSeconds,
+		MarkerSpeed:        HeatMarkerSpeed,
+		Exp:                HeatExp,
+		KUp:                HeatKUp,
+		KDown:              HeatKDown,
+		MissileSpikeChance: HeatMissileSpikeChance,
+		MissileSpikeMin:    HeatMissileSpikeMin,
+		MissileSpikeMax:    HeatMissileSpikeMax,
+	})
 }

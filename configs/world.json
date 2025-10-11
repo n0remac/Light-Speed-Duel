@@ -1,0 +1,15 @@
+{
+  "heat": {
+    "max": 100.0,
+    "warnAt": 70.0,
+    "overheatAt": 100.0,
+    "stallSeconds": 2.5,
+    "markerSpeed": 150.0,
+    "exp": 1.5,
+    "kUp": 22.0,
+    "kDown": 16.0,
+    "missileSpikeChance": 0.35,
+    "missileSpikeMin": 6.0,
+    "missileSpikeMax": 18.0
+  }
+}

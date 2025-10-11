@@ -83,6 +83,10 @@ let heatBarPlanned: HTMLElement | null = null;
 let heatValueText: HTMLElement | null = null;
 let speedMarker: HTMLElement | null = null;
 let stallOverlay: HTMLElement | null = null;
+let markerAligned = false;
+let heatWarnActive = false;
+let stallActive = false;
+let dualMeterAlert = false;
 
 let selection: Selection | null = null;
 let missileSelection: MissileSelection | null = null;
@@ -279,6 +283,20 @@ function bindListeners(): void {
       stateRef.me.waypoints[selection.index].speed = value;
       refreshShipSelectionUI();
       updatePlannedHeatBar();
+    }
+    const heat = stateRef.me?.heat;
+    if (heat) {
+      const tolerance = Math.max(5, heat.markerSpeed * 0.02);
+      const diff = Math.abs(value - heat.markerSpeed);
+      const inRange = diff <= tolerance;
+      if (inRange && !markerAligned) {
+        markerAligned = true;
+        busRef.emit("heat:markerAligned", { value, marker: heat.markerSpeed });
+      } else if (!inRange && markerAligned) {
+        markerAligned = false;
+      }
+    } else {
+      markerAligned = false;
     }
     busRef.emit("ship:speedChanged", { value });
   });
@@ -1652,7 +1670,10 @@ function updateStatusIndicators(): void {
 
 function updateHeatBar(): void {
   const heat = stateRef.me?.heat;
-  if (!heat || !heatBarFill || !heatValueText) return;
+  if (!heat || !heatBarFill || !heatValueText) {
+    heatWarnActive = false;
+    return;
+  }
 
   const percent = (heat.value / heat.max) * 100;
   heatBarFill.style.width = `${percent}%`;
@@ -1667,16 +1688,41 @@ function updateHeatBar(): void {
   } else if (heat.value >= heat.warnAt) {
     heatBarFill.classList.add("warn");
   }
+
+  const nowWarn = heat.value >= heat.warnAt;
+  if (nowWarn && !heatWarnActive) {
+    heatWarnActive = true;
+    busRef.emit("heat:warnEntered", { value: heat.value, warnAt: heat.warnAt });
+  } else if (!nowWarn && heatWarnActive) {
+    const coolThreshold = Math.max(0, heat.warnAt - 5);
+    if (heat.value <= coolThreshold) {
+      heatWarnActive = false;
+      busRef.emit("heat:cooledBelowWarn", { value: heat.value, warnAt: heat.warnAt });
+    }
+  }
 }
 
 function updatePlannedHeatBar(): void {
   const ship = stateRef.me;
   const plannedEl = heatBarPlanned;
-  if (!ship || !ship.heat || !plannedEl) return;
+  if (!ship || !ship.heat || !plannedEl) {
+    dualMeterAlert = false;
+    return;
+  }
 
   const planned = projectPlannedHeat(ship);
+  const actual = ship.heat.value;
   const percent = (planned / ship.heat.max) * 100;
   plannedEl.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+
+  const diff = planned - actual;
+  const threshold = Math.max(8, ship.heat.warnAt * 0.1);
+  if (diff >= threshold && !dualMeterAlert) {
+    dualMeterAlert = true;
+    busRef.emit("heat:dualMeterDiverged", { planned, actual });
+  } else if (diff < threshold * 0.6 && dualMeterAlert) {
+    dualMeterAlert = false;
+  }
 }
 
 function projectPlannedHeat(ship: { x: number; y: number; waypoints: { x: number; y: number; speed?: number }[]; heat?: { value: number; max: number; markerSpeed: number; kUp: number; kDown: number; exp: number } }): number {
@@ -1725,7 +1771,10 @@ function updateSpeedMarker(): void {
 
 function updateStallOverlay(): void {
   const heat = stateRef.me?.heat;
-  if (!heat || !stallOverlay) return;
+  if (!heat || !stallOverlay) {
+    stallActive = false;
+    return;
+  }
 
   const now = typeof performance !== "undefined" && typeof performance.now === "function"
     ? performance.now()
@@ -1735,8 +1784,16 @@ function updateStallOverlay(): void {
 
   if (isStalled) {
     stallOverlay.classList.add("visible");
+    if (!stallActive) {
+      stallActive = true;
+      busRef.emit("heat:stallTriggered", { stallUntil: heat.stallUntilMs });
+    }
   } else {
     stallOverlay.classList.remove("visible");
+    if (stallActive) {
+      stallActive = false;
+      busRef.emit("heat:stallRecovered", { value: heat.value });
+    }
   }
 }
 

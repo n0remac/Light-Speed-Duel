@@ -7,8 +7,32 @@ import (
 	. "LightSpeedDuel/internal/game"
 )
 
-func StartApp(addr string) {
-	hub := NewHub()
+type AppConfig struct {
+	HeatConfigPath string
+	HeatOverrides  HeatParamOverrides
+}
+
+func DefaultAppConfig() AppConfig {
+	return AppConfig{
+		HeatConfigPath: "configs/world.json",
+	}
+}
+
+func resolveHeatParams(cfg AppConfig) HeatParams {
+	params := DefaultHeatParams()
+	loaded, err := loadHeatParamsFromFile(cfg.HeatConfigPath, params)
+	if err != nil {
+		log.Printf("heat config: %v (using defaults)", err)
+	} else {
+		params = loaded
+	}
+	params = applyHeatOverrides(params, cfg.HeatOverrides)
+	return SanitizeHeatParams(params)
+}
+
+func StartApp(addr string, cfg AppConfig) {
+	heat := resolveHeatParams(cfg)
+	hub := NewHub(heat)
 
 	// Periodic cleanup of empty rooms (every 60 seconds)
 	go func() {
@@ -19,6 +43,7 @@ func StartApp(addr string) {
 		}
 	}()
 
-	log.Printf("starting web server on %s\n", addr)
+	log.Printf("starting web server on %s (heat marker %.1f, warn %.1f, overheat %.1f)\n",
+		addr, heat.MarkerSpeed, heat.WarnAt, heat.OverheatAt)
 	startServer(hub, addr)
 }

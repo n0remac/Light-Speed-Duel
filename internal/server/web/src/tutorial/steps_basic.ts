@@ -60,6 +60,72 @@ export function getBasicTutorialSteps(): TutorialStep[] {
       },
     },
     {
+      id: "heat-match-marker",
+      target: "speedMarker",
+      title: "Match the marker",
+      body: "Line up the Ship Speed slider with the tick to cruise at the neutral heat speed.",
+      advance: {
+        kind: "event",
+        event: "heat:markerAligned",
+      },
+      allowSkip: false,
+    },
+    {
+      id: "heat-push-hot",
+      target: "heatBar",
+      title: "Sprint into the red",
+      body: "Push the throttle above the marker and watch the heat bar reach the warning band.",
+      advance: {
+        kind: "event",
+        event: "heat:warnEntered",
+      },
+      allowSkip: false,
+    },
+    {
+      id: "heat-cool-down",
+      target: "heatBar",
+      title: "Cool it back down",
+      body: "Ease off below the marker until the bar drops out of the warning zone.",
+      advance: {
+        kind: "event",
+        event: "heat:cooledBelowWarn",
+      },
+      allowSkip: false,
+    },
+    {
+      id: "heat-trigger-stall",
+      target: "heatBar",
+      title: "Trigger a stall",
+      body: "Push well above the limit and hold it until the overheat stall overlay appears.",
+      advance: {
+        kind: "event",
+        event: "heat:stallTriggered",
+      },
+      allowSkip: false,
+    },
+    {
+      id: "heat-recover-stall",
+      target: "heatBar",
+      title: "Recover from the stall",
+      body: "Hold steady while systems cool. Once the overlay clears, you’re back online.",
+      advance: {
+        kind: "event",
+        event: "heat:stallRecovered",
+      },
+      allowSkip: false,
+    },
+    {
+      id: "heat-dual-bars",
+      target: "heatBar",
+      title: "Read both heat bars",
+      body: "Adjust a waypoint to make the planned bar extend past live heat. Use it to predict future overloads.",
+      advance: {
+        kind: "event",
+        event: "heat:dualMeterDiverged",
+      },
+      allowSkip: false,
+    },
+    {
       id: "ship-delete-leg",
       target: "shipDelete",
       title: "Delete a route leg",

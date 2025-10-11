@@ -2,17 +2,159 @@ package game
 
 import (
 	"math"
+	"math/rand"
 )
 
+func projectHeatAfterDuration(h *HeatComponent, speed, duration float64) float64 {
+	if h == nil || duration <= 0 {
+		if h != nil {
+			return Clamp(h.S.Value, 0, h.P.Max)
+		}
+		return 0
+	}
+	vn := math.Max(h.P.MarkerSpeed, 1e-6)
+	dev := speed - h.P.MarkerSpeed
+	p := h.P.Exp
+
+	var rate float64
+	if dev >= 0 {
+		rate = h.P.KUp * math.Pow(dev/vn, p)
+	} else {
+		rate = -h.P.KDown * math.Pow(math.Abs(dev)/vn, p)
+	}
+	projected := h.S.Value + rate*duration
+	if projected < 0 {
+		projected = 0
+	}
+	if projected > h.P.Max {
+		projected = h.P.Max
+	}
+	return projected
+}
+
+func estimateHeatAfterSegment(h *HeatComponent, speed, distance float64) float64 {
+	if h == nil {
+		return 0
+	}
+	if distance <= 0 || speed <= 1e-6 {
+		return Clamp(h.S.Value, 0, h.P.Max)
+	}
+	duration := distance / speed
+	return projectHeatAfterDuration(h, speed, duration)
+}
+
+func projectRouteHeat(h *HeatComponent, startPos Vec2, route *ShipRoute) float64 {
+	if h == nil {
+		return 0
+	}
+	current := Clamp(h.S.Value, 0, h.P.Max)
+	heatCopy := *h
+	heatCopy.S.Value = current
+
+	if route == nil || len(route.Waypoints) == 0 {
+		return current
+	}
+
+	maxHeat := current
+	pos := startPos
+	for _, wp := range route.Waypoints {
+		dist := wp.Pos.Sub(pos).Len()
+		speed := math.Max(wp.Speed, 1e-3)
+		if dist <= 1e-3 {
+			pos = wp.Pos
+			continue
+		}
+		duration := dist / speed
+		next := projectHeatAfterDuration(&heatCopy, speed, duration)
+		if next > maxHeat {
+			maxHeat = next
+		}
+		heatCopy.S.Value = next
+		pos = wp.Pos
+	}
+	return maxHeat
+}
+
+func clampPlanDestination(pos Vec2, direction Vec2, distance, worldW, worldH float64) Vec2 {
+	dest := pos.Add(direction.Scale(distance))
+	return clampPointToWorldBounds(dest, worldW, worldH)
+}
+
+func planHeatBuildRoute(pos Vec2, direction Vec2, worldW, worldH, shipSpeed float64) []ShipWaypoint {
+	direction = unitOrZero(direction)
+	if direction.Len() <= 1e-3 {
+		direction = Vec2{X: 1, Y: 0}
+	}
+	distance := Clamp(300+rand.Float64()*250, 200, 650)
+	dest := clampPlanDestination(pos, direction, distance, worldW, worldH)
+	speed := Clamp(shipSpeed*0.95, shipSpeed*0.8, shipSpeed)
+	return []ShipWaypoint{{Pos: dest, Speed: speed}}
+}
+
+func planHeatCooldownRoute(pos Vec2, direction Vec2, worldW, worldH, markerSpeed float64) []ShipWaypoint {
+	direction = unitOrZero(direction)
+	if direction.Len() <= 1e-3 {
+		direction = Vec2{X: 0, Y: 1}
+	}
+	distance := Clamp(900+rand.Float64()*500, 600, 1500)
+	speed := Clamp(markerSpeed*0.8, math.Max(markerSpeed*0.6, markerSpeed-20), markerSpeed)
+	if speed <= 5 {
+		speed = markerSpeed
+	}
+	dest := clampPlanDestination(pos, direction, distance, worldW, worldH)
+	return []ShipWaypoint{{Pos: dest, Speed: speed}}
+}
+
+func planDirectMissileRoute(pos Vec2, threat AIMissileThreat, worldW, worldH, shipSpeed float64) []ShipWaypoint {
+	toShip := unitOrZero(pos.Sub(threat.Pos))
+	if toShip.Len() <= 1e-3 {
+		toShip = Vec2{X: 1, Y: 0}
+	}
+	lateral := unitOrZero(orthogonal(toShip))
+	if lateral.Len() <= 1e-3 {
+		lateral = Vec2{X: -toShip.Y, Y: toShip.X}
+	}
+	if threat.Vel.Dot(lateral) > 0 {
+		lateral = lateral.Scale(-1)
+	}
+	sideDistance := Clamp(550+rand.Float64()*200, 400, 800)
+	sidePoint := clampPlanDestination(pos, lateral, sideDistance, worldW, worldH)
+	escapeDir := unitOrZero(lateral.Scale(0.6).Add(toShip.Scale(0.4)))
+	if escapeDir.Len() <= 1e-3 {
+		escapeDir = toShip
+	}
+	escapeDistance := Clamp(900+rand.Float64()*400, 700, 1400)
+	escapePoint := clampPlanDestination(sidePoint, escapeDir, escapeDistance, worldW, worldH)
+	speed := Clamp(shipSpeed, shipSpeed*0.8, shipSpeed)
+	return []ShipWaypoint{
+		{Pos: sidePoint, Speed: speed},
+		{Pos: escapePoint, Speed: speed},
+	}
+}
+
+func planGeneralThreatRoute(pos Vec2, threat AIMissileThreat, worldW, worldH, shipSpeed float64) []ShipWaypoint {
+	away := unitOrZero(pos.Sub(threat.Pos))
+	if away.Len() <= 1e-3 {
+		away = Vec2{X: 1, Y: 0}
+	}
+	distance := Clamp(800+rand.Float64()*400, 500, 1400)
+	dest := clampPlanDestination(pos, away, distance, worldW, worldH)
+	speed := Clamp(shipSpeed, shipSpeed*0.7, shipSpeed)
+	return []ShipWaypoint{{Pos: dest, Speed: speed}}
+}
+
 type DefensiveBehavior struct {
-	desiredMin float64
-	desiredMax float64
+	desiredMin  float64
+	desiredMax  float64
+	cooling     bool
+	lastPlanDir Vec2
 }
 
 func NewDefensiveBehavior() *DefensiveBehavior {
 	return &DefensiveBehavior{
-		desiredMin: 1200,
-		desiredMax: 2000,
+		desiredMin:  1200,
+		desiredMax:  2000,
+		lastPlanDir: Vec2{X: 1, Y: 0},
 	}
 }
 
@@ -29,7 +171,11 @@ func (b *DefensiveBehavior) Plan(ctx *AIContext) []AICommand {
 	steer := Vec2{}
 
 	// Missile avoidance takes precedence
-	for _, threat := range ctx.Threats {
+	var imminentThreat *AIMissileThreat
+	var closeThreat *AIMissileThreat
+	closestThreatDist := math.MaxFloat64
+	for i := range ctx.Threats {
+		threat := ctx.Threats[i]
 		dirAway := pos.Sub(threat.Pos)
 		if dirAway.Len() <= 1e-3 {
 			continue
@@ -66,6 +212,20 @@ func (b *DefensiveBehavior) Plan(ctx *AIContext) []AICommand {
 					sign = -1.0
 				}
 				steer = steer.Add(unitOrZero(lateral).Scale(0.5 * sign))
+			}
+		}
+
+		if dist < closestThreatDist {
+			closestThreatDist = dist
+			closeThreat = &ctx.Threats[i]
+		}
+		if threat.TargetingSelf {
+			toShip := unitOrZero(pos.Sub(threat.Pos))
+			missileDir := unitOrZero(threat.Vel)
+			if toShip.Len() > 1e-3 && missileDir.Len() > 1e-3 {
+				if toShip.Dot(missileDir) > 0.85 && dist <= 1500 && threat.DistanceAtClosest <= MissileHitRadius*3 {
+					imminentThreat = &ctx.Threats[i]
+				}
 			}
 		}
 	}
@@ -133,10 +293,75 @@ func (b *DefensiveBehavior) Plan(ctx *AIContext) []AICommand {
 		}
 	}
 
-	distance := shipSpeed * 0.6
-	destination := clampPointToWorldBounds(pos.Add(direction.Scale(distance)), worldW, worldH)
+	commands := []AICommand{}
+	if direction.Len() <= 1e-3 {
+		direction = unitOrZero(b.lastPlanDir)
+	}
+	if direction.Len() <= 1e-3 {
+		direction = Vec2{X: 1, Y: 0}
+	}
+	b.lastPlanDir = direction
 
-	commands := []AICommand{CommandSetShipRoute([]ShipWaypoint{{Pos: destination, Speed: shipSpeed}})}
+	if imminentThreat != nil {
+		route := planDirectMissileRoute(pos, *imminentThreat, worldW, worldH, shipSpeed)
+		commands = append(commands, CommandClearShipRoute())
+		commands = append(commands, CommandSetShipRoute(route))
+		b.cooling = true
+	} else if closeThreat != nil && closestThreatDist <= 1400 {
+		route := planGeneralThreatRoute(pos, *closeThreat, worldW, worldH, shipSpeed)
+		commands = append(commands, CommandSetShipRoute(route))
+		b.cooling = true
+	} else {
+		heat := ctx.SelfHeat
+		route := ctx.SelfRoute
+		needPlan := false
+		if route == nil || len(route.Waypoints) == 0 {
+			needPlan = true
+		} else {
+			distToFirst := route.Waypoints[0].Pos.Sub(pos).Len()
+			if distToFirst < 160 {
+				needPlan = true
+			}
+		}
+
+		if heat != nil {
+			plannedHeat := projectRouteHeat(heat, pos, route)
+			highTarget := math.Min(heat.P.Max, math.Max(heat.P.OverheatAt-3, heat.P.Max*0.92))
+			lowTarget := math.Max(0, math.Min(heat.P.WarnAt*0.6, heat.P.WarnAt-10))
+			currentHeat := heat.S.Value
+
+			if b.cooling {
+				if currentHeat <= lowTarget && plannedHeat <= lowTarget {
+					b.cooling = false
+					needPlan = true
+				}
+			} else {
+				if plannedHeat >= highTarget && currentHeat >= heat.P.WarnAt*0.9 {
+					b.cooling = true
+					needPlan = true
+				}
+			}
+
+			if !b.cooling && plannedHeat < highTarget*0.9 {
+				needPlan = true
+			}
+			if b.cooling && plannedHeat > lowTarget {
+				needPlan = true
+			}
+		} else {
+			needPlan = true
+		}
+
+		if needPlan {
+			if ctx.SelfHeat != nil && b.cooling {
+				newRoute := planHeatCooldownRoute(pos, direction, worldW, worldH, ctx.SelfHeat.P.MarkerSpeed)
+				commands = append(commands, CommandSetShipRoute(newRoute))
+			} else {
+				newRoute := planHeatBuildRoute(pos, direction, worldW, worldH, shipSpeed)
+				commands = append(commands, CommandSetShipRoute(newRoute))
+			}
+		}
+	}
 
 	if nearest != nil && ctx.MissileReady() && ctx.SelfTransform != nil {
 		oppPos := nearest.Transform.Pos

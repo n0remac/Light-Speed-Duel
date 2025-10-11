@@ -230,3 +230,126 @@ func TestStallDoesNotResetWhileStalled(t *testing.T) {
 		t.Errorf("Stall timer changed while already stalled: %.2f -> %.2f", initialStallEnd, heat.S.StallUntil)
 	}
 }
+
+func TestApplyMissileHeatSpikeTriggersWithinBounds(t *testing.T) {
+	params := DefaultHeatParams()
+	params.MissileSpikeChance = 1.0
+	params.MissileSpikeMin = 5
+	params.MissileSpikeMax = 10
+
+	heat := &HeatComponent{
+		P: params,
+		S: HeatState{Value: 40, StallUntil: 0},
+	}
+
+	rngCalls := []float64{0.2, 0.5}
+	callIdx := 0
+	spiked := ApplyMissileHeatSpike(heat, 0, func() float64 {
+		val := rngCalls[callIdx%len(rngCalls)]
+		callIdx++
+		return val
+	})
+
+	if !spiked {
+		t.Fatalf("expected spike to trigger with 100%% chance")
+	}
+	if heat.S.Value < 45 || heat.S.Value > 50 {
+		t.Fatalf("spike outside expected bounds: got %.2f", heat.S.Value)
+	}
+}
+
+func TestApplyMissileHeatSpikeRespectsChanceAndStall(t *testing.T) {
+	params := DefaultHeatParams()
+	params.MissileSpikeChance = 0.5
+	params.MissileSpikeMin = 50
+	params.MissileSpikeMax = 50
+	params.OverheatAt = 75
+	params.StallSeconds = 3
+
+	heat := &HeatComponent{
+		P: params,
+		S: HeatState{Value: 40, StallUntil: 0},
+	}
+
+	// First call: chance fails (rng returns 0.8)
+	spiked := ApplyMissileHeatSpike(heat, 1, func() float64 { return 0.8 })
+	if spiked {
+		t.Fatalf("spike should not have triggered when rng above chance")
+	}
+	if heat.S.Value != 40 {
+		t.Fatalf("heat should not change when spike fails: got %.2f", heat.S.Value)
+	}
+
+	// Second call: chance succeeds, spike places us over threshold, stall should start
+	call := 0
+	spiked = ApplyMissileHeatSpike(heat, 2, func() float64 {
+		if call == 0 {
+			call++
+			return 0.1
+		}
+		return 0.9
+	})
+	if !spiked {
+		t.Fatalf("expected spike to trigger on second call")
+	}
+	if heat.S.Value != 90 {
+		t.Fatalf("expected heat to jump to 90 got %.2f", heat.S.Value)
+	}
+	expectedStall := 2 + params.StallSeconds
+	if heat.S.StallUntil != expectedStall {
+		t.Fatalf("expected stall until %.2f got %.2f", expectedStall, heat.S.StallUntil)
+	}
+}
+
+func TestSanitizeHeatParamsUsesDefaultsForInvalidValues(t *testing.T) {
+	p := HeatParams{
+		Max:                -10,
+		WarnAt:             200,
+		OverheatAt:         50,
+		StallSeconds:       -1,
+		MarkerSpeed:        0,
+		Exp:                -2,
+		KUp:                -3,
+		KDown:              -4,
+		MissileSpikeChance: 2,
+		MissileSpikeMin:    -5,
+		MissileSpikeMax:    -1,
+	}
+
+	s := SanitizeHeatParams(p)
+	defaults := DefaultHeatParams()
+
+	if s.Max != defaults.Max {
+		t.Errorf("expected Max to fallback to default, got %.2f want %.2f", s.Max, defaults.Max)
+	}
+	if s.WarnAt != defaults.WarnAt {
+		t.Errorf("expected WarnAt default, got %.2f want %.2f", s.WarnAt, defaults.WarnAt)
+	}
+	if s.OverheatAt != defaults.OverheatAt {
+		t.Errorf("expected OverheatAt default, got %.2f want %.2f", s.OverheatAt, defaults.OverheatAt)
+	}
+	if s.StallSeconds != defaults.StallSeconds {
+		t.Errorf("expected StallSeconds default, got %.2f want %.2f", s.StallSeconds, defaults.StallSeconds)
+	}
+	if s.MarkerSpeed != defaults.MarkerSpeed {
+		t.Errorf("expected MarkerSpeed default, got %.2f want %.2f", s.MarkerSpeed, defaults.MarkerSpeed)
+	}
+	if s.Exp != defaults.Exp {
+		t.Errorf("expected Exp default, got %.2f want %.2f", s.Exp, defaults.Exp)
+	}
+	if s.KUp != defaults.KUp {
+		t.Errorf("expected KUp default, got %.2f want %.2f", s.KUp, defaults.KUp)
+	}
+	if s.KDown != defaults.KDown {
+		t.Errorf("expected KDown default, got %.2f want %.2f", s.KDown, defaults.KDown)
+	}
+	if s.MissileSpikeChance < 0 || s.MissileSpikeChance > 1 {
+		t.Errorf("expected spike chance clamped to [0,1], got %.2f", s.MissileSpikeChance)
+	}
+	if s.MissileSpikeMin < 0 {
+		t.Errorf("expected spike min >= 0, got %.2f", s.MissileSpikeMin)
+	}
+	if s.MissileSpikeMax < s.MissileSpikeMin {
+		t.Errorf("expected spike max >= spike min, got min %.2f max %.2f", s.MissileSpikeMin, s.MissileSpikeMax)
+	}
+}

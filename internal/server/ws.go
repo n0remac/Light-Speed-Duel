@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,11 +20,74 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
+func parseFloatOverride(values url.Values, key string) (*float64, bool) {
+	raw := values.Get(key)
+	if raw == "" {
+		return nil, false
+	}
+	val, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return nil, false
+	}
+	return &val, true
+}
+
+func parseHeatOverrides(values url.Values) (HeatParamOverrides, bool) {
+	var overrides HeatParamOverrides
+	var found bool
+
+	if v, ok := parseFloatOverride(values, "heatMax"); ok {
+		overrides.Max = v
+		found = true
+	}
+	if v, ok := parseFloatOverride(values, "heatWarn"); ok {
+		overrides.WarnAt = v
+		found = true
+	}
+	if v, ok := parseFloatOverride(values, "heatOverheat"); ok {
+		overrides.OverheatAt = v
+		found = true
+	}
+	if v, ok := parseFloatOverride(values, "heatStall"); ok {
+		overrides.StallSeconds = v
+		found = true
+	}
+	if v, ok := parseFloatOverride(values, "heatMarker"); ok {
+		overrides.MarkerSpeed = v
+		found = true
+	}
+	if v, ok := parseFloatOverride(values, "heatExp"); ok {
+		overrides.Exp = v
+		found = true
+	}
+	if v, ok := parseFloatOverride(values, "heatKUp"); ok {
+		overrides.KUp = v
+		found = true
+	}
+	if v, ok := parseFloatOverride(values, "heatKDown"); ok {
+		overrides.KDown = v
+		found = true
+	}
+	if v, ok := parseFloatOverride(values, "heatSpikeChance"); ok {
+		overrides.MissileSpikeChance = v
+		found = true
+	}
+	if v, ok := parseFloatOverride(values, "heatSpikeMin"); ok {
+		overrides.MissileSpikeMin = v
+		found = true
+	}
+	if v, ok := parseFloatOverride(values, "heatSpikeMax"); ok {
+		overrides.MissileSpikeMax = v
+		found = true
+	}
+	return overrides, found
+}
+
 type wsMsg struct {
 	Type string `json:"type"`
 	// join
-	Name string `json:"name,omitempty"`
-	Room string `json:"room,omitempty"`
+	Name string  `json:"name,omitempty"`
+	Room string  `json:"room,omitempty"`
 	MapW float64 `json:"map_w,omitempty"`
 	MapH float64 `json:"map_h,omitempty"`
 	// waypoint
@@ -77,27 +142,31 @@ type liveConn struct {
 }
 
 func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
-	roomID := r.URL.Query().Get("room")
+	query := r.URL.Query()
+
+	roomID := query.Get("room")
 	if roomID == "" {
 		roomID = "default"
 	}
 
 	mapW := WorldW
 	mapH := WorldH
-	if mapWStr := r.URL.Query().Get("mapW"); mapWStr != "" {
+	if mapWStr := query.Get("mapW"); mapWStr != "" {
 		if parsed, err := fmt.Sscanf(mapWStr, "%f", &mapW); err == nil && parsed == 1 && mapW > 0 {
 			// Successfully parsed mapW
 		} else {
 			mapW = WorldW
 		}
 	}
-	if mapHStr := r.URL.Query().Get("mapH"); mapHStr != "" {
+	if mapHStr := query.Get("mapH"); mapHStr != "" {
 		if parsed, err := fmt.Sscanf(mapHStr, "%f", &mapH); err == nil && parsed == 1 && mapH > 0 {
 			// Successfully parsed mapH
 		} else {
 			mapH = WorldH
 		}
 	}
+
+	heatOverrides, hasHeatOverrides := parseHeatOverrides(query)
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -124,6 +193,12 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 	// Set world size if this is the first player (room is empty)
 	if room.HumanPlayerCountLocked() == 0 && len(room.Players) == 0 {
 		room.SetWorldSize(mapW, mapH)
+		if hasHeatOverrides {
+			base := room.HeatParamsLocked()
+			newParams := applyHeatOverrides(base, heatOverrides)
+			room.SetHeatParamsLocked(newParams)
+			log.Printf("room %s heat overrides: marker %.1f warn %.1f overheat %.1f", room.ID, newParams.MarkerSpeed, newParams.WarnAt, newParams.OverheatAt)
+		}
 	}
 
 	defaultMissileSpeed := ShipMaxSpeed * 0.75
@@ -412,19 +487,19 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 							meGhost.T = now
 						}
 						// Include heat data for player's own ship
-                        if heat != nil {
-                            meGhost.Heat = &shipHeatViewDTO{
-                                V:  heat.S.Value,
-                                M:  heat.P.Max,
-                                W:  heat.P.WarnAt,
-                                O:  heat.P.OverheatAt,
-                                MS: heat.P.MarkerSpeed,
-                                SU: heat.S.StallUntil,
-                                KU: heat.P.KUp,
-                                KD: heat.P.KDown,
-                                EX: heat.P.Exp,
-                            }
-                        }
+						if heat != nil {
+							meGhost.Heat = &shipHeatViewDTO{
+								V:  heat.S.Value,
+								M:  heat.P.Max,
+								W:  heat.P.WarnAt,
+								O:  heat.P.OverheatAt,
+								MS: heat.P.MarkerSpeed,
+								SU: heat.S.StallUntil,
+								KU: heat.P.KUp,
+								KD: heat.P.KDown,
+								EX: heat.P.Exp,
+							}
+						}
 					}
 				}
 
@@ -458,15 +533,15 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 							kills = otherPlayer.Kills
 						}
 						ghosts = append(ghosts, ghost{
-							ID:   fmt.Sprintf("ship-%s", owner.PlayerID),
-							X:    snap.Pos.X,
-							Y:    snap.Pos.Y,
-							VX:   snap.Vel.X,
-							VY:   snap.Vel.Y,
-							T:    snap.T,
-							HP:   shipData.HP,
+							ID:    fmt.Sprintf("ship-%s", owner.PlayerID),
+							X:     snap.Pos.X,
+							Y:     snap.Pos.Y,
+							VX:    snap.Vel.X,
+							VY:    snap.Vel.Y,
+							T:     snap.T,
+							HP:    shipData.HP,
 							Kills: kills,
-							Self: false,
+							Self:  false,
 						})
 					})
 

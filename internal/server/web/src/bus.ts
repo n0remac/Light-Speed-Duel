@@ -11,6 +11,12 @@ export interface EventMap {
   "ship:waypointsCleared": void;
   "ship:clearInvoked": void;
   "ship:speedChanged": { value: number };
+  "heat:markerAligned": { value: number; marker: number };
+  "heat:warnEntered": { value: number; warnAt: number };
+  "heat:cooledBelowWarn": { value: number; warnAt: number };
+  "heat:stallTriggered": { stallUntil: number };
+  "heat:stallRecovered": { value: number };
+  "heat:dualMeterDiverged": { planned: number; actual: number };
   "missile:routeAdded": { routeId: string };
   "missile:routeDeleted": { routeId: string };
   "missile:routeRenamed": { routeId: string; name: string };

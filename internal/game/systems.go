@@ -1,5 +1,7 @@
 package game
 
+import "math/rand"
+
 func updateShips(r *Room, dt float64) {
 	world := r.World
 	world.ForEach([]ComponentKey{CompTransform, compMovement, CompShip}, func(id EntityID) {
@@ -224,6 +226,9 @@ func updateMissiles(r *Room, dt float64) {
 				if shipData.HP <= 0 {
 					r.handleShipDestruction(hitShip, owner.PlayerID)
 				}
+			}
+			if heat := world.HeatData(hitShip); heat != nil {
+				ApplyMissileHeatSpike(heat, r.Now, rand.Float64)
 			}
 			// Soft delete: mark as destroyed instead of removing
 			world.SetComponent(id, CompDestroyed, &DestroyedComponent{DestroyedAt: r.Now})

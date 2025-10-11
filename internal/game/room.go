@@ -27,44 +27,53 @@ type Player struct {
 }
 
 type Room struct {
-	ID          string
-	Now         float64
-	World       *World
-	Players     map[string]*Player
-	Mu          sync.Mutex
-	Bots        map[string]*AIAgent
-	stopChan    chan struct{}
-	stopped     bool
-	WorldWidth  float64
-	WorldHeight float64
+	ID           string
+	Now          float64
+	World        *World
+	Players      map[string]*Player
+	Mu           sync.Mutex
+	Bots         map[string]*AIAgent
+	stopChan     chan struct{}
+	stopped      bool
+	WorldWidth   float64
+	WorldHeight  float64
+	heatDefaults HeatParams
 }
 
-func newRoom(id string) *Room {
+func newRoom(id string, defaults HeatParams) *Room {
+	sanitized := SanitizeHeatParams(defaults)
 	return &Room{
-		ID:          id,
-		World:       newWorld(),
-		Players:     map[string]*Player{},
-		Bots:        map[string]*AIAgent{},
-		stopChan:    make(chan struct{}),
-		stopped:     false,
-		WorldWidth:  WorldW,
-		WorldHeight: WorldH,
+		ID:           id,
+		World:        newWorld(),
+		Players:      map[string]*Player{},
+		Bots:         map[string]*AIAgent{},
+		stopChan:     make(chan struct{}),
+		stopped:      false,
+		WorldWidth:   WorldW,
+		WorldHeight:  WorldH,
+		heatDefaults: sanitized,
 	}
 }
 
 type Hub struct {
-	Rooms map[string]*Room
-	Mu    sync.Mutex
+	Rooms        map[string]*Room
+	Mu           sync.Mutex
+	heatDefaults HeatParams
 }
 
-func NewHub() *Hub { return &Hub{Rooms: map[string]*Room{}} }
+func NewHub(defaultHeat HeatParams) *Hub {
+	return &Hub{
+		Rooms:        map[string]*Room{},
+		heatDefaults: SanitizeHeatParams(defaultHeat),
+	}
+}
 
 func (h *Hub) GetRoom(id string) *Room {
 	h.Mu.Lock()
 	defer h.Mu.Unlock()
 	r, ok := h.Rooms[id]
 	if !ok {
-		r = newRoom(id)
+		r = newRoom(id, h.heatDefaults)
 		h.Rooms[id] = r
 		r.Start()
 	}
@@ -89,6 +98,42 @@ func (r *Room) SetWorldSize(w, h float64) {
 	if h > 0 {
 		r.WorldHeight = h
 	}
+}
+
+func (r *Room) HeatParams() HeatParams {
+	r.Mu.Lock()
+	defer r.Mu.Unlock()
+	return r.heatDefaults
+}
+
+func (r *Room) HeatParamsLocked() HeatParams {
+	return r.heatDefaults
+}
+
+func (r *Room) applyHeatParams(params HeatParams) {
+	sanitized := SanitizeHeatParams(params)
+	r.heatDefaults = sanitized
+	r.World.ForEach([]ComponentKey{CompHeat}, func(id EntityID) {
+		if heat := r.World.HeatData(id); heat != nil {
+			heat.P = sanitized
+			if heat.S.Value > sanitized.Max {
+				heat.S.Value = sanitized.Max
+			}
+			if heat.S.Value < 0 {
+				heat.S.Value = 0
+			}
+		}
+	})
+}
+
+func (r *Room) SetHeatParams(params HeatParams) {
+	r.Mu.Lock()
+	defer r.Mu.Unlock()
+	r.applyHeatParams(params)
+}
+
+func (r *Room) SetHeatParamsLocked(params HeatParams) {
+	r.applyHeatParams(params)
 }
 
 func (r *Room) Tick() {
@@ -240,21 +285,10 @@ func (r *Room) SpawnShip(owner string, startPos Vec2) EntityID {
 	history := newHistory(HistoryKeepS, SimHz)
 	history.push(Snapshot{T: r.Now, Pos: startPos})
 	r.World.SetComponent(id, CompHistory, &HistoryComponent{History: history})
-	// Initialize heat component with default parameters
+	params := r.heatDefaults
+	// Initialize heat component with room default parameters
 	r.World.SetComponent(id, CompHeat, &HeatComponent{
-		P: HeatParams{
-			Max:                HeatMax,
-			WarnAt:             HeatWarnAt,
-			OverheatAt:         HeatOverheatAt,
-			StallSeconds:       HeatStallSeconds,
-			MarkerSpeed:        HeatMarkerSpeed,
-			Exp:                HeatExp,
-			KUp:                HeatKUp,
-			KDown:              HeatKDown,
-			MissileSpikeChance: HeatMissileSpikeChance,
-			MissileSpikeMin:    HeatMissileSpikeMin,
-			MissileSpikeMax:    HeatMissileSpikeMax,
-		},
+		P: params,
 		S: HeatState{
 			Value:      0,
 			StallUntil: 0,
@@ -343,6 +377,7 @@ func (r *Room) reSpawnShip(id EntityID) {
 	}
 	// Reset heat on respawn
 	if heat := r.World.HeatData(id); heat != nil {
+		heat.P = r.heatDefaults
 		heat.S.Value = 0
 		heat.S.StallUntil = 0
 	}

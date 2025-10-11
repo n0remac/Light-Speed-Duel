@@ -120,6 +120,7 @@ type AIContext struct {
 	SelfTransform *Transform
 	SelfMovement  *Movement
 	SelfRoute     *ShipRoute
+	SelfHeat      *HeatComponent
 	Opponents     []AIShipInfo
 	Threats       []AIMissileThreat
 }
@@ -139,6 +140,7 @@ func buildAIContext(r *Room, self *Player) *AIContext {
 			ctx.SelfTransform = r.World.Transform(self.Ship)
 			ctx.SelfMovement = r.World.Movement(self.Ship)
 			ctx.SelfRoute = r.World.ShipRoute(self.Ship)
+			ctx.SelfHeat = r.World.HeatData(self.Ship)
 		}
 	}
 
