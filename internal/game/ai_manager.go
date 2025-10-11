@@ -16,6 +16,9 @@ func (r *Room) updateAI() {
 		if player.Ship == 0 || !r.World.Exists(player.Ship) {
 			continue
 		}
+		if r.World.DestroyedData(player.Ship) != nil {
+			continue
+		}
 		if !agent.ready(now) {
 			continue
 		}

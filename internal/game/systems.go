@@ -209,6 +209,9 @@ func updateMissiles(r *Room, dt float64) {
 			if shipOwner == nil || shipOwner.PlayerID == owner.PlayerID {
 				return
 			}
+			if world.DestroyedData(shipID) != nil {
+				return
+			}
 			// Collision based on missile's perception of ship
 			snap, ok := PerceiveEntity(tr.Pos, shipID, world, r.Now)
 			if !ok {

@@ -349,13 +349,33 @@ func (r *Room) handleShipDestruction(shipID EntityID, attackerID string) {
 	}
 
 	if player.IsBot {
-		// Bot: mark as destroyed and spawn a new bot at random location
+		// Ignore repeat destruction events once the ship is already marked destroyed.
+		if r.World.DestroyedData(shipID) != nil {
+			return
+		}
+
+		// Mark the old ship as destroyed so its history persists for observers.
 		r.World.SetComponent(shipID, CompDestroyed, &DestroyedComponent{DestroyedAt: r.Now})
 
-		// Spawn new bot at random location
+		// Ensure we have an AI agent registered for this bot and reset its planning timer.
+		agent := r.Bots[owner.PlayerID]
+		if agent == nil {
+			agent = NewAIAgent(owner.PlayerID, NewDefensiveBehavior())
+			r.Bots[owner.PlayerID] = agent
+		} else {
+			agent.Behavior = NewDefensiveBehavior()
+		}
+		agent.nextPlanAt = 0
+
+		// Spawn a replacement ship for the same bot player at a new random location.
 		randX := r.WorldWidth * (0.2 + 0.6*rand.Float64())
 		randY := r.WorldHeight * (0.2 + 0.6*rand.Float64())
-		r.addBotUnlocked(player.Name, NewDefensiveBehavior(), Vec2{X: randX, Y: randY})
+		newShip := r.SpawnShip(owner.PlayerID, Vec2{X: randX, Y: randY})
+
+		player.Ship = newShip
+		player.MissileReadyAt = 0
+		player.EnsureMissileRoutes()
+		return
 	} else {
 		// Player: respawn at center
 		r.reSpawnShip(shipID)
