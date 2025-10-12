@@ -9,7 +9,6 @@ import {
   type UIState,
   clamp,
   sanitizeMissileConfig,
-  projectMissileHeat,
   MISSILE_PRESETS,
 } from "./state";
 import {
@@ -17,6 +16,18 @@ import {
   MISSILE_MAX_SPEED,
   MISSILE_MIN_AGRO,
 } from "./state";
+import {
+  buildRoutePoints,
+  hitTestRouteGeneric,
+  updateDashOffsetsForRoute,
+  projectRouteHeat,
+  drawPlannedRoute,
+  SHIP_PALETTE,
+  MISSILE_PALETTE,
+  WAYPOINT_HIT_RADIUS,
+  type RoutePoints,
+  type HeatProjectionParams,
+} from "./route";
 
 interface InitGameOptions {
   state: AppState;
@@ -112,7 +123,6 @@ let draggedMissileWaypoint: number | null = null;
 
 const MIN_ZOOM = 1.0;
 const MAX_ZOOM = 3.0;
-const WAYPOINT_HITBOX_RADIUS = 12; // pixels
 
 const HELP_TEXT = [
   "Primary Modes",
@@ -1498,27 +1508,31 @@ function canvasToWorld(p: { x: number; y: number }): { x: number; y: number } {
   };
 }
 
-function computeRoutePoints() {
+function computeRoutePoints(): RoutePoints | null {
   if (!stateRef.me) return null;
   const wps = Array.isArray(stateRef.me.waypoints) ? stateRef.me.waypoints : [];
-  const worldPoints = [{ x: stateRef.me.x, y: stateRef.me.y }];
-  for (const wp of wps) {
-    worldPoints.push({ x: wp.x, y: wp.y });
-  }
-  const canvasPoints = worldPoints.map((point) => worldToCanvas(point));
-  return { waypoints: wps, worldPoints, canvasPoints };
+  return buildRoutePoints(
+    { x: stateRef.me.x, y: stateRef.me.y },
+    wps,
+    world,
+    getCameraPosition,
+    () => uiStateRef.zoom,
+    worldToCanvas
+  );
 }
 
-function computeMissileRoutePoints() {
+function computeMissileRoutePoints(): RoutePoints | null {
   if (!stateRef.me) return null;
   const route = getActiveMissileRoute();
   const wps = route && Array.isArray(route.waypoints) ? route.waypoints : [];
-  const worldPoints = [{ x: stateRef.me.x, y: stateRef.me.y }];
-  for (const wp of wps) {
-    worldPoints.push({ x: wp.x, y: wp.y });
-  }
-  const canvasPoints = worldPoints.map((point) => worldToCanvas(point));
-  return { waypoints: wps, worldPoints, canvasPoints };
+  return buildRoutePoints(
+    { x: stateRef.me.x, y: stateRef.me.y },
+    wps,
+    world,
+    getCameraPosition,
+    () => uiStateRef.zoom,
+    worldToCanvas
+  );
 }
 
 // Helper: Find waypoint at canvas position
@@ -1536,64 +1550,12 @@ function findWaypointAtPosition(canvasPoint: { x: number; y: number }): number |
     const dy = canvasPoint.y - waypointCanvas.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
-    if (dist <= WAYPOINT_HITBOX_RADIUS) {
+    if (dist <= WAYPOINT_HIT_RADIUS) {
       return i;
     }
   }
 
   return null;
-}
-
-function updateDashOffsetsForRoute(
-  store: Map<number, number>,
-  waypoints: Array<{ speed?: number }>,
-  worldPoints: Array<{ x: number; y: number }>,
-  canvasPoints: Array<{ x: number; y: number }>,
-  fallbackSpeed: number,
-  dtSeconds: number,
-  cycle = 64,
-): void {
-  if (!Number.isFinite(dtSeconds) || dtSeconds < 0) {
-    dtSeconds = 0;
-  }
-
-  for (let i = 0; i < waypoints.length; i++) {
-    const wp = waypoints[i];
-    const speed = typeof wp.speed === "number" && wp.speed > 0 ? wp.speed : fallbackSpeed;
-    const aWorld = worldPoints[i];
-    const bWorld = worldPoints[i + 1];
-    const worldDist = Math.hypot(bWorld.x - aWorld.x, bWorld.y - aWorld.y);
-    const aCanvas = canvasPoints[i];
-    const bCanvas = canvasPoints[i + 1];
-    const canvasDist = Math.hypot(bCanvas.x - aCanvas.x, bCanvas.y - aCanvas.y);
-
-    if (!Number.isFinite(speed) || speed <= 1e-3 || !Number.isFinite(worldDist) || worldDist <= 1e-3 || canvasDist <= 1e-3) {
-      store.set(i, 0);
-      continue;
-    }
-
-    if (dtSeconds <= 0) {
-      if (!store.has(i)) {
-        store.set(i, 0);
-      }
-      continue;
-    }
-
-    const scale = canvasDist / worldDist;
-    const dashSpeed = speed * scale;
-    let next = (store.get(i) ?? 0) - dashSpeed * dtSeconds;
-    if (!Number.isFinite(next)) {
-      next = 0;
-    } else {
-      next = ((next % cycle) + cycle) % cycle;
-    }
-    store.set(i, next);
-  }
-  for (const key of Array.from(store.keys())) {
-    if (key >= waypoints.length) {
-      store.delete(key);
-    }
-  }
 }
 
 function updateRouteAnimations(dtSeconds: number): void {
@@ -1637,46 +1599,14 @@ function updateRouteAnimations(dtSeconds: number): void {
   }
 }
 
-function pointSegmentDistance(p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }): number {
-  const abx = b.x - a.x;
-  const aby = b.y - a.y;
-  const apx = p.x - a.x;
-  const apy = p.y - a.y;
-  const abLenSq = abx * abx + aby * aby;
-  const t = abLenSq === 0 ? 0 : clamp(apx * abx + apy * aby, 0, abLenSq) / abLenSq;
-  const projx = a.x + abx * t;
-  const projy = a.y + aby * t;
-  const dx = p.x - projx;
-  const dy = p.y - projy;
-  return Math.hypot(dx, dy);
-}
-
 function hitTestRoute(canvasPoint: { x: number; y: number }): Selection | null {
   const route = computeRoutePoints();
   if (!route || route.waypoints.length === 0) {
     return null;
   }
-  const { canvasPoints } = route;
-  const waypointHitRadius = 12;
-  for (let i = 0; i < route.waypoints.length; i++) {
-    const wpCanvas = canvasPoints[i + 1];
-    const dx = canvasPoint.x - wpCanvas.x;
-    const dy = canvasPoint.y - wpCanvas.y;
-    if (Math.hypot(dx, dy) <= waypointHitRadius) {
-      return { type: "waypoint", index: i };
-    }
-  }
-  if (!uiStateRef.showShipRoute) {
-    return null;
-  }
-  const legHitDistance = 10;
-  for (let i = 0; i < route.waypoints.length; i++) {
-    const dist = pointSegmentDistance(canvasPoint, canvasPoints[i], canvasPoints[i + 1]);
-    if (dist <= legHitDistance) {
-      return { type: "leg", index: i };
-    }
-  }
-  return null;
+  return hitTestRouteGeneric(canvasPoint, route, {
+    skipLegs: !uiStateRef.showShipRoute,
+  });
 }
 
 function hitTestMissileRoutes(canvasPoint: { x: number; y: number }): { route: MissileRoute; selection: MissileSelection } | null {
@@ -1685,8 +1615,6 @@ function hitTestMissileRoutes(canvasPoint: { x: number; y: number }): { route: M
   if (routes.length === 0) return null;
 
   const shipPos = { x: stateRef.me.x, y: stateRef.me.y };
-  const waypointHitRadius = 16;
-  const legHitDistance = 10;
 
   let best: { route: MissileRoute; selection: MissileSelection; pointerDist: number; shipDist: number } | null = null;
 
@@ -1696,55 +1624,65 @@ function hitTestMissileRoutes(canvasPoint: { x: number; y: number }): { route: M
       continue;
     }
 
-    const worldPoints = [shipPos, ...waypoints.map((wp) => ({ x: wp.x, y: wp.y }))];
-    const canvasPoints = worldPoints.map((point) => worldToCanvas(point));
+    const routePoints = buildRoutePoints(
+      shipPos,
+      waypoints,
+      world,
+      getCameraPosition,
+      () => uiStateRef.zoom,
+      worldToCanvas
+    );
 
-    // Check waypoint hits (skip ship position at index 0)
-    for (let i = 1; i < canvasPoints.length; i++) {
-      const wpCanvas = canvasPoints[i];
-      const dx = canvasPoint.x - wpCanvas.x;
-      const dy = canvasPoint.y - wpCanvas.y;
-      const pointerDist = Math.hypot(dx, dy);
-      if (pointerDist <= waypointHitRadius) {
-        const worldPoint = worldPoints[i];
-        const shipDist = Math.hypot(worldPoint.x - shipPos.x, worldPoint.y - shipPos.y);
-        if (
-          !best ||
-          pointerDist < best.pointerDist - 0.1 ||
-          (Math.abs(pointerDist - best.pointerDist) <= 0.5 && shipDist < best.shipDist)
-        ) {
-          best = {
-            route,
-            selection: { type: "waypoint", index: i - 1 },
-            pointerDist,
-            shipDist,
-          };
-        }
-      }
+    const hit = hitTestRouteGeneric(canvasPoint, routePoints, {
+      waypointHitRadius: 16,
+      legHitDistance: 10,
+    });
+
+    if (!hit) continue;
+
+    // Calculate distances for best selection
+    let pointerDist: number;
+    let shipDist: number;
+
+    if (hit.type === "waypoint") {
+      // Distance from pointer to waypoint
+      const wpCanvas = routePoints.canvasPoints[hit.index + 1];
+      pointerDist = Math.hypot(canvasPoint.x - wpCanvas.x, canvasPoint.y - wpCanvas.y);
+      // Distance from ship to waypoint
+      const wpWorld = routePoints.worldPoints[hit.index + 1];
+      shipDist = Math.hypot(wpWorld.x - shipPos.x, wpWorld.y - shipPos.y);
+    } else {
+      // hit.type === "leg"
+      // Distance from pointer to leg (already calculated in hitTest, recalc for consistency)
+      const { canvasPoints, worldPoints } = routePoints;
+      pointerDist = Math.hypot(
+        (canvasPoints[hit.index].x + canvasPoints[hit.index + 1].x) * 0.5 - canvasPoint.x,
+        (canvasPoints[hit.index].y + canvasPoints[hit.index + 1].y) * 0.5 - canvasPoint.y
+      );
+      // Distance from ship to leg midpoint
+      const midWorld = {
+        x: (worldPoints[hit.index].x + worldPoints[hit.index + 1].x) * 0.5,
+        y: (worldPoints[hit.index].y + worldPoints[hit.index + 1].y) * 0.5,
+      };
+      shipDist = Math.hypot(midWorld.x - shipPos.x, midWorld.y - shipPos.y);
     }
 
-    // Check leg hits
-    for (let i = 0; i < canvasPoints.length - 1; i++) {
-      const pointerDist = pointSegmentDistance(canvasPoint, canvasPoints[i], canvasPoints[i + 1]);
-      if (pointerDist <= legHitDistance) {
-        const midWorld = {
-          x: (worldPoints[i].x + worldPoints[i + 1].x) * 0.5,
-          y: (worldPoints[i].y + worldPoints[i + 1].y) * 0.5,
-        };
-        const shipDist = Math.hypot(midWorld.x - shipPos.x, midWorld.y - shipPos.y);
-        if (
-          !best ||
-          pointerDist < best.pointerDist - 0.1 ||
-          (Math.abs(pointerDist - best.pointerDist) <= 0.5 && shipDist < best.shipDist)
-        ) {
-          best = {
-            route,
-            selection: { type: "route", index: i },
-            pointerDist,
-            shipDist,
-          };
-        }
-      }
+    // Check if this is the best hit so far
+    if (
+      !best ||
+      pointerDist < best.pointerDist - 0.1 ||
+      (Math.abs(pointerDist - best.pointerDist) <= 0.5 && shipDist < best.shipDist)
+    ) {
+      const selection: MissileSelection = hit.type === "waypoint"
+        ? { type: "waypoint", index: hit.index }
+        : { type: "route", index: hit.index };
+
+      best = {
+        route,
+        selection,
+        pointerDist,
+        shipDist,
+      };
     }
   }
 
@@ -1787,133 +1725,36 @@ function drawGhostDot(x: number, y: number): void {
   ctx.fill();
 }
 
-// Estimate heat after traveling from pos1 to pos2 at waypoint speed
-function estimateHeatChange(
-  pos1: { x: number; y: number },
-  wp: { x: number; y: number; speed: number },
-  currentHeat: number,
-  heatParams: { markerSpeed: number; kUp: number; kDown: number; exp: number; max: number }
-): number {
-  const dx = wp.x - pos1.x;
-  const dy = wp.y - pos1.y;
-  const distance = Math.sqrt(dx * dx + dy * dy);
-
-  if (distance < 1e-6 || wp.speed < 1) {
-    return currentHeat;
-  }
-
-  const estimatedTime = distance / wp.speed;
-
-  // Calculate heat rate using the same formula as backend
-  const Vn = Math.max(heatParams.markerSpeed, 1e-6);
-  const dev = wp.speed - heatParams.markerSpeed;
-  const p = heatParams.exp;
-
-  let hdot: number;
-  if (dev >= 0) {
-    // Above marker: heat accumulates
-    hdot = heatParams.kUp * Math.pow(dev / Vn, p);
-  } else {
-    // Below marker: heat dissipates
-    hdot = -heatParams.kDown * Math.pow(Math.abs(dev) / Vn, p);
-  }
-
-  // Integrate heat change
-  const newHeat = currentHeat + hdot * estimatedTime;
-
-  // Clamp to valid range
-  return clamp(newHeat, 0, heatParams.max);
-}
-
-// Linear color interpolation
-function interpolateColor(
-  color1: [number, number, number],
-  color2: [number, number, number],
-  t: number
-): [number, number, number] {
-  return [
-    Math.round(color1[0] + (color2[0] - color1[0]) * t),
-    Math.round(color1[1] + (color2[1] - color1[1]) * t),
-    Math.round(color1[2] + (color2[2] - color1[2]) * t),
-  ];
-}
-
 function drawRoute(): void {
   if (!ctx || !stateRef.me) return;
   const route = computeRoutePoints();
   if (!route || route.waypoints.length === 0) return;
-  const { canvasPoints, worldPoints } = route;
-  const legCount = canvasPoints.length - 1;
+
   const heat = stateRef.me.heat;
-
-  // Draw route segments with heat-based coloring if heat data available
-  if (uiStateRef.showShipRoute && legCount > 0) {
-    let currentHeat = heat?.value ?? 0;
-
-    for (let i = 0; i < legCount; i++) {
-      const isFirstLeg = i === 0;
-      const isSelected = selection && selection.index === i;
-
-      // Estimate heat at end of this segment
-      let segmentHeat = currentHeat;
-      if (heat && i < route.waypoints.length) {
-        const wp = route.waypoints[i];
-        segmentHeat = estimateHeatChange(worldPoints[i], { ...worldPoints[i + 1], speed: wp.speed ?? defaultSpeed }, currentHeat, heat);
+  const heatParams: HeatProjectionParams | undefined = heat
+    ? {
+        markerSpeed: heat.markerSpeed,
+        kUp: heat.kUp,
+        kDown: heat.kDown,
+        exp: heat.exp,
+        max: heat.max,
+        overheatAt: heat.overheatAt,
+        warnAt: heat.warnAt,
       }
+    : undefined;
 
-      // Calculate heat ratio and color
-      const heatRatio = heat ? clamp(segmentHeat / heat.overheatAt, 0, 1) : 0;
-      const color = heat
-        ? interpolateColor([100, 150, 255], [255, 50, 50], heatRatio)
-        : [56, 189, 248]; // Default blue
-
-      // Line thickness based on heat (thicker = hotter)
-      const baseWidth = isFirstLeg ? 3 : 1.5;
-      const lineWidth = heat ? baseWidth + (heatRatio * 4) : baseWidth;
-
-      ctx.save();
-      ctx.setLineDash(isFirstLeg ? [6, 6] : [8, 8]);
-      ctx.lineWidth = lineWidth;
-
-      if (isSelected) {
-        ctx.strokeStyle = "#f97316";
-        ctx.lineWidth = 3.5;
-        ctx.setLineDash([4, 4]);
-      } else {
-        ctx.strokeStyle = heat
-          ? `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${isFirstLeg ? 1 : 0.4})`
-          : (isFirstLeg ? "#38bdf8" : "#38bdf866");
-      }
-
-      ctx.beginPath();
-      ctx.moveTo(canvasPoints[i].x, canvasPoints[i].y);
-      ctx.lineTo(canvasPoints[i + 1].x, canvasPoints[i + 1].y);
-      ctx.lineDashOffset = shipLegDashOffsets.get(i) ?? 0;
-      ctx.stroke();
-      ctx.restore();
-
-      currentHeat = segmentHeat;
-    }
-  }
-
-  // Draw waypoint markers
-  for (let i = 0; i < route.waypoints.length; i++) {
-    const pt = canvasPoints[i + 1];
-    const isSelected = selection && selection.index === i;
-    const isDragging = draggedWaypoint === i;
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(pt.x, pt.y, (isSelected || isDragging) ? 7 : 5, 0, Math.PI * 2);
-    ctx.fillStyle = isSelected ? "#f97316" : isDragging ? "#facc15" : "#38bdf8";
-    ctx.globalAlpha = (isSelected || isDragging) ? 0.95 : 0.8;
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "#0f172a";
-    ctx.stroke();
-    ctx.restore();
-  }
+  drawPlannedRoute(ctx, {
+    routePoints: route,
+    selection,
+    draggedWaypoint,
+    dashStore: shipLegDashOffsets,
+    palette: SHIP_PALETTE,
+    showLegs: uiStateRef.showShipRoute,
+    heatParams,
+    initialHeat: heat?.value ?? 0,
+    defaultSpeed,
+    worldPoints: route.worldPoints,
+  });
 }
 
 function drawMissileRoute(): void {
@@ -1921,103 +1762,28 @@ function drawMissileRoute(): void {
   if (uiStateRef.inputContext !== "missile") return;
   const route = computeMissileRoutePoints();
   if (!route || route.waypoints.length === 0) return;
-  const { canvasPoints } = route;
 
-  // Calculate heat projection if heat params available
-  const heatParams = stateRef.missileConfig.heatParams;
-  let heatProjection: import("./state").MissileRouteProjection | null = null;
-  if (heatParams && route.waypoints.length > 0) {
-    const startPoint = {
-      x: stateRef.me.x,
-      y: stateRef.me.y,
-      speed: stateRef.missileConfig.speed,
-    };
-    const routeForHeat = [startPoint, ...route.waypoints];
-    heatProjection = projectMissileHeat(routeForHeat, stateRef.missileConfig.speed, heatParams);
-  }
+  const heatParams: HeatProjectionParams | undefined = stateRef.missileConfig.heatParams;
 
-  // Draw route segments with heat-based coloring
-  ctx.save();
-  ctx.setLineDash([10, 6]);
-  ctx.lineWidth = 2.5;
+  // Map MissileSelection (uses "route" for legs) to generic Selection (uses "leg" for legs)
+  const genericSelection: { type: "waypoint" | "leg"; index: number } | null = missileSelection
+    ? missileSelection.type === "route"
+      ? { type: "leg", index: missileSelection.index }
+      : { type: "waypoint", index: missileSelection.index }
+    : null;
 
-  for (let i = 0; i < canvasPoints.length - 1; i++) {
-    const heat1 = heatProjection ? heatProjection.heatAtWaypoints[i] : 0;
-    const heat2 = heatProjection ? heatProjection.heatAtWaypoints[i + 1] : 0;
-    const maxHeat = Math.max(heat1, heat2);
-    const segmentSelected = missileSelection && missileSelection.type === "route" && missileSelection.index === i;
-
-    // Color based on heat level
-    let strokeColor = "#f87171aa"; // Default red
-    let lineWidth = 2.5;
-    if (segmentSelected) {
-      strokeColor = "#f97316";
-      lineWidth = 3.5;
-      ctx.setLineDash([6, 4]);
-    } else if (heatProjection && heatParams) {
-      const heatRatio = maxHeat / heatParams.max;
-      const warnRatio = heatParams.warnAt / heatParams.max;
-      const overheatRatio = heatParams.overheatAt / heatParams.max;
-
-      if (heatRatio < warnRatio) {
-        strokeColor = "rgba(51, 170, 51, 0.7)"; // Green
-      } else if (heatRatio < overheatRatio) {
-        strokeColor = "rgba(255, 170, 51, 0.7)"; // Orange
-      } else {
-        strokeColor = "rgba(255, 51, 51, 0.8)"; // Red
-      }
-    }
-
-    ctx.strokeStyle = strokeColor;
-    ctx.lineWidth = lineWidth;
-    ctx.beginPath();
-    ctx.lineDashOffset = missileLegDashOffsets.get(i) ?? 0;
-    ctx.moveTo(canvasPoints[i].x, canvasPoints[i].y);
-    ctx.lineTo(canvasPoints[i + 1].x, canvasPoints[i + 1].y);
-    ctx.stroke();
-    if (segmentSelected) {
-      ctx.setLineDash([10, 6]);
-      ctx.lineWidth = 2.5;
-    }
-  }
-  ctx.restore();
-
-  // Draw waypoints with heat indicators
-  for (let i = 1; i < canvasPoints.length; i++) {
-    const pt = canvasPoints[i];
-    const waypointIndex = i - 1;
-    const isSelected = missileSelection && missileSelection.index === waypointIndex;
-
-    // Get heat at this waypoint
-    const heat = heatProjection ? heatProjection.heatAtWaypoints[i] : 0;
-    let fillColor = isSelected ? "#facc15" : "#f87171";
-
-    if (heatProjection && heatParams) {
-      const heatRatio = heat / heatParams.max;
-      const warnRatio = heatParams.warnAt / heatParams.max;
-      const overheatRatio = heatParams.overheatAt / heatParams.max;
-
-      if (heatRatio < warnRatio) {
-        fillColor = isSelected ? "#facc15" : "#33aa33";
-      } else if (heatRatio < overheatRatio) {
-        fillColor = isSelected ? "#facc15" : "#ffaa33";
-      } else {
-        fillColor = isSelected ? "#facc15" : "#ff3333";
-      }
-    }
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(pt.x, pt.y, isSelected ? 7 : 5, 0, Math.PI * 2);
-    ctx.fillStyle = fillColor;
-    ctx.globalAlpha = isSelected ? 0.95 : 0.9;
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = isSelected ? "#854d0e" : "#7f1d1d";
-    ctx.stroke();
-    ctx.restore();
-  }
+  drawPlannedRoute(ctx, {
+    routePoints: route,
+    selection: genericSelection,
+    draggedWaypoint: null,
+    dashStore: missileLegDashOffsets,
+    palette: MISSILE_PALETTE,
+    showLegs: true,
+    heatParams,
+    initialHeat: 0, // Missiles start at zero heat
+    defaultSpeed: stateRef.missileConfig.speed,
+    worldPoints: route.worldPoints,
+  });
 }
 
 function drawMissiles(): void {
@@ -2281,33 +2047,27 @@ function updatePlannedHeatBar(): void {
   }
 }
 
-function projectPlannedHeat(ship: { x: number; y: number; waypoints: { x: number; y: number; speed?: number }[]; heat?: { value: number; max: number; markerSpeed: number; kUp: number; kDown: number; exp: number } }): number {
+function projectPlannedHeat(ship: { x: number; y: number; waypoints: { x: number; y: number; speed?: number }[]; heat?: { value: number; max: number; markerSpeed: number; kUp: number; kDown: number; exp: number; warnAt: number; overheatAt: number } }): number {
   const heat = ship.heat!;
-  let h = Math.max(0, Math.min(heat.max, heat.value));
-  let maxH = h;
-  // Simple constant-speed per-leg projection (server currently sets vel to leg speed instantly)
-  let posX = ship.x;
-  let posY = ship.y;
-  for (const wp of ship.waypoints) {
-    const dx = wp.x - posX;
-    const dy = wp.y - posY;
-    const dist = Math.hypot(dx, dy);
-    const v = Math.max(1e-6, Number.isFinite(wp.speed) ? (wp.speed as number) : 0);
-    if (v <= 1e-6 || dist <= 1e-6) {
-      posX = wp.x; posY = wp.y;
-      continue;
-    }
-    const duration = dist / v;
-    // Heat differential at constant speed
-    const dev = v - heat.markerSpeed;
-    const Vn = Math.max(heat.markerSpeed, 1e-6);
-    const p = heat.exp;
-    const rate = dev >= 0 ? heat.kUp * Math.pow(dev / Vn, p) : -heat.kDown * Math.pow(Math.abs(dev) / Vn, p);
-    h = Math.max(0, Math.min(heat.max, h + rate * duration));
-    if (h > maxH) maxH = h;
-    posX = wp.x; posY = wp.y;
-  }
-  return maxH;
+
+  // Build route from ship position and waypoints
+  const route = [{ x: ship.x, y: ship.y, speed: undefined }, ...ship.waypoints];
+
+  // Use shared heat projection
+  const heatParams: HeatProjectionParams = {
+    markerSpeed: heat.markerSpeed,
+    kUp: heat.kUp,
+    kDown: heat.kDown,
+    exp: heat.exp,
+    max: heat.max,
+    overheatAt: heat.overheatAt,
+    warnAt: heat.warnAt,
+  };
+
+  const projection = projectRouteHeat(route, heat.value, heatParams);
+
+  // Return maximum heat along route
+  return Math.max(...projection.heatAtWaypoints);
 }
 
 function updateSpeedMarker(): void {
