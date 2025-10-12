@@ -39,6 +39,7 @@ interface ServerShipState {
   hp?: number;
   kills?: number;
   waypoints?: Array<{ x: number; y: number; speed?: number }>;
+  current_waypoint_index?: number;
   heat?: ServerHeatView;
 }
 
@@ -160,6 +161,7 @@ function handleStateMessage(
     waypoints: Array.isArray(msg.me.waypoints)
       ? msg.me.waypoints.map((wp) => ({ x: wp.x, y: wp.y, speed: Number.isFinite(wp.speed) ? wp.speed! : 180 }))
       : [],
+    currentWaypointIndex: msg.me.current_waypoint_index ?? 0,
     heat: msg.me.heat ? convertHeatView(msg.me.heat, state.nowSyncedAt, state.now) : undefined,
   } : null;
   state.ghosts = Array.isArray(msg.ghosts) ? msg.ghosts.slice() : [];

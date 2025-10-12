@@ -538,15 +538,19 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 						}
 						meGhost.Kills = p.Kills
 						if route != nil && len(route.Waypoints) > 0 {
-						// Always send complete waypoints array for consistent indexing
-						meGhost.Waypoints = make([]waypointDTO, len(route.Waypoints))
-						for i, wp := range route.Waypoints {
-							meGhost.Waypoints[i] = waypointDTO{X: wp.Pos.X, Y: wp.Pos.Y, Speed: wp.Speed}
-						}
-						// Send current waypoint index so client knows which waypoints have been passed
-						if follower != nil {
-							meGhost.CurrentWaypointIndex = follower.Index
-						}
+							startIdx := 0
+							if follower != nil && follower.Index > 0 {
+								startIdx = follower.Index
+								if startIdx > len(route.Waypoints) {
+									startIdx = len(route.Waypoints)
+								}
+							}
+							if startIdx < len(route.Waypoints) {
+								meGhost.Waypoints = make([]waypointDTO, len(route.Waypoints)-startIdx)
+								for i, wp := range route.Waypoints[startIdx:] {
+									meGhost.Waypoints[i] = waypointDTO{X: wp.Pos.X, Y: wp.Pos.Y, Speed: wp.Speed}
+								}
+							}
 						}
 						if history != nil {
 							meGhost.T = now

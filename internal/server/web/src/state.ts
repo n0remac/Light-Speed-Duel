@@ -41,6 +41,7 @@ export interface ShipSnapshot {
   hp?: number;
   kills?: number;
   waypoints: Waypoint[];
+  currentWaypointIndex?: number;
   heat?: HeatView;
 }
 

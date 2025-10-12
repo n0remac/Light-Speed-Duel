@@ -1005,7 +1005,13 @@ function handleShipPointer(canvasPoint: { x: number; y: number }, worldPoint: { 
   if (!stateRef.me) return;
   if (uiStateRef.shipTool === "select") {
     const hit = hitTestRoute(canvasPoint);
-    setSelection(hit ?? null);
+    // Convert display index to actual waypoint index
+    if (hit) {
+      const actualIndex = displayIndexToActualIndex(hit.index);
+      setSelection({ type: hit.type, index: actualIndex });
+    } else {
+      setSelection(null);
+    }
     return;
   }
 
@@ -1508,12 +1514,31 @@ function canvasToWorld(p: { x: number; y: number }): { x: number; y: number } {
   };
 }
 
+// Get the offset for ship waypoint indices (how many waypoints have been passed)
+function getShipWaypointOffset(): number {
+  return stateRef.me?.currentWaypointIndex ?? 0;
+}
+
+// Convert a displayed waypoint index to the actual waypoint array index
+function displayIndexToActualIndex(displayIndex: number): number {
+  return displayIndex + getShipWaypointOffset();
+}
+
+// Convert an actual waypoint index to a displayed index (or -1 if waypoint has been passed)
+function actualIndexToDisplayIndex(actualIndex: number): number {
+  const offset = getShipWaypointOffset();
+  return actualIndex >= offset ? actualIndex - offset : -1;
+}
+
 function computeRoutePoints(): RoutePoints | null {
   if (!stateRef.me) return null;
   const wps = Array.isArray(stateRef.me.waypoints) ? stateRef.me.waypoints : [];
+  // Filter waypoints to only show those that haven't been passed yet
+  const currentIndex = getShipWaypointOffset();
+  const visibleWps = currentIndex > 0 ? wps.slice(currentIndex) : wps;
   return buildRoutePoints(
     { x: stateRef.me.x, y: stateRef.me.y },
-    wps,
+    visibleWps,
     world,
     getCameraPosition,
     () => uiStateRef.zoom,
@@ -1551,7 +1576,8 @@ function findWaypointAtPosition(canvasPoint: { x: number; y: number }): number |
     const dist = Math.sqrt(dx * dx + dy * dy);
 
     if (dist <= WAYPOINT_HIT_RADIUS) {
-      return i;
+      // Convert display index to actual waypoint index
+      return displayIndexToActualIndex(i);
     }
   }
 
@@ -1743,10 +1769,27 @@ function drawRoute(): void {
       }
     : undefined;
 
+  // Convert selection from actual index to display index for rendering
+  const displaySelection = selection ? {
+    type: selection.type,
+    index: actualIndexToDisplayIndex(selection.index)
+  } : null;
+
+  // Only show selection if the waypoint hasn't been passed
+  const validSelection = displaySelection && displaySelection.index >= 0 ? displaySelection : null;
+
+  // Convert draggedWaypoint index as well
+  const displayDraggedWaypoint = draggedWaypoint !== null
+    ? actualIndexToDisplayIndex(draggedWaypoint)
+    : null;
+  const validDraggedWaypoint = displayDraggedWaypoint !== null && displayDraggedWaypoint >= 0
+    ? displayDraggedWaypoint
+    : null;
+
   drawPlannedRoute(ctx, {
     routePoints: route,
-    selection,
-    draggedWaypoint,
+    selection: validSelection,
+    draggedWaypoint: validDraggedWaypoint,
     dashStore: shipLegDashOffsets,
     palette: SHIP_PALETTE,
     showLegs: uiStateRef.showShipRoute,
