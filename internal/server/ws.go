@@ -262,36 +262,36 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 			case "add_waypoint":
 				room.Mu.Lock()
 				if p := room.Players[playerID]; p != nil {
-					wp := ShipWaypoint{
+					wp := RouteWaypoint{
 						Pos:   Vec2{X: Clamp(m.X, 0, room.WorldWidth), Y: Clamp(m.Y, 0, room.WorldHeight)},
 						Speed: Clamp(m.Speed, 0, ShipMaxSpeed),
 					}
-					room.AppendShipWaypoint(p.Ship, wp)
+					room.AppendRouteWaypoint(p.Ship, wp)
 				}
 				room.Mu.Unlock()
 			case "update_waypoint":
 				room.Mu.Lock()
 				if p := room.Players[playerID]; p != nil {
-					room.UpdateShipWaypoint(p.Ship, m.Index, m.Speed)
+					room.UpdateRouteWaypointSpeed(p.Ship, m.Index, m.Speed)
 				}
 				room.Mu.Unlock()
 			case "move_waypoint":
 				room.Mu.Lock()
 				if p := room.Players[playerID]; p != nil {
 					newPos := Vec2{X: Clamp(m.X, 0, room.WorldWidth), Y: Clamp(m.Y, 0, room.WorldHeight)}
-					room.MoveShipWaypoint(p.Ship, m.Index, newPos)
+					room.MoveRouteWaypoint(p.Ship, m.Index, newPos)
 				}
 				room.Mu.Unlock()
 			case "delete_waypoint":
 				room.Mu.Lock()
 				if p := room.Players[playerID]; p != nil {
-					room.DeleteShipWaypointsFrom(p.Ship, m.Index)
+					room.DeleteRouteWaypointsFrom(p.Ship, m.Index)
 				}
 				room.Mu.Unlock()
 			case "clear_waypoints":
 				room.Mu.Lock()
 				if p := room.Players[playerID]; p != nil {
-					room.ClearShipWaypoints(p.Ship)
+					room.ClearRouteWaypoints(p.Ship)
 				}
 				room.Mu.Unlock()
 			case "configure_missile":
@@ -316,7 +316,49 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 						routeID = p.ActiveMissileRouteID
 					}
 					point := Vec2{X: Clamp(m.X, 0, room.WorldWidth), Y: Clamp(m.Y, 0, room.WorldHeight)}
-					p.AddWaypointToRoute(routeID, point)
+					defaultSpeed := Clamp(p.MissileConfig.Speed, MissileMinSpeed, MissileMaxSpeed)
+					speed := Clamp(m.Speed, MissileMinSpeed, MissileMaxSpeed)
+					if speed <= 0 {
+						speed = defaultSpeed
+					}
+					wp := RouteWaypoint{
+						Pos:   point,
+						Speed: speed,
+					}
+					p.AddWaypointToRoute(routeID, wp)
+				}
+				room.Mu.Unlock()
+			case "update_missile_waypoint_speed":
+				room.Mu.Lock()
+				if p := room.Players[playerID]; p != nil {
+					p.EnsureMissileRoutes()
+					routeID := m.RouteID
+					if routeID == "" {
+						routeID = p.ActiveMissileRouteID
+					}
+					speed := Clamp(m.Speed, MissileMinSpeed, MissileMaxSpeed)
+					if speed <= 0 {
+						speed = Clamp(p.MissileConfig.Speed, MissileMinSpeed, MissileMaxSpeed)
+					}
+					p.UpdateWaypointSpeedInRoute(routeID, m.Index, speed)
+				}
+				room.Mu.Unlock()
+			case "move_missile_waypoint":
+				room.Mu.Lock()
+				if p := room.Players[playerID]; p != nil {
+					p.EnsureMissileRoutes()
+					routeID := m.RouteID
+					if routeID == "" {
+						routeID = p.ActiveMissileRouteID
+					}
+					if route := p.MissileRouteByID(routeID); route != nil {
+						if m.Index >= 0 && m.Index < len(route.Waypoints) {
+							route.Waypoints[m.Index].Pos = Vec2{
+								X: Clamp(m.X, 0, room.WorldWidth),
+								Y: Clamp(m.Y, 0, room.WorldHeight),
+							}
+						}
+					}
 				}
 				room.Mu.Unlock()
 			case "delete_missile_waypoint":
@@ -383,9 +425,9 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 					if routeID == "" {
 						routeID = p.ActiveMissileRouteID
 					}
-					var waypoints []Vec2
+					var waypoints []RouteWaypoint
 					if route := p.MissileRouteByID(routeID); route != nil {
-						waypoints = append([]Vec2(nil), route.Waypoints...)
+						waypoints = append([]RouteWaypoint(nil), route.Waypoints...)
 					}
 					if len(waypoints) == 0 {
 						room.Mu.Unlock()
@@ -441,6 +483,15 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 					missileCfg.Speed = cfg.Speed
 					missileCfg.AgroRadius = cfg.AgroRadius
 					missileCfg.Lifetime = cfg.Lifetime
+					missileCfg.HeatConfig = &heatParamsDTO{
+						Max:         cfg.HeatParams.Max,
+						WarnAt:      cfg.HeatParams.WarnAt,
+						OverheatAt:  cfg.HeatParams.OverheatAt,
+						MarkerSpeed: cfg.HeatParams.MarkerSpeed,
+						KUp:         cfg.HeatParams.KUp,
+						KDown:       cfg.HeatParams.KDown,
+						Exp:         cfg.HeatParams.Exp,
+					}
 					activeRouteID = p.ActiveMissileRouteID
 					nextMissileReady = p.MissileReadyAt
 
@@ -448,7 +499,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 						if len(route.Waypoints) > 0 {
 							missileWaypoints = make([]waypointDTO, len(route.Waypoints))
 							for i, wp := range route.Waypoints {
-								missileWaypoints[i] = waypointDTO{X: wp.X, Y: wp.Y}
+								missileWaypoints[i] = waypointDTO{X: wp.Pos.X, Y: wp.Pos.Y, Speed: wp.Speed}
 							}
 						}
 					}
@@ -458,7 +509,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 						if len(route.Waypoints) > 0 {
 							dto.Waypoints = make([]waypointDTO, len(route.Waypoints))
 							for i, wp := range route.Waypoints {
-								dto.Waypoints[i] = waypointDTO{X: wp.X, Y: wp.Y}
+								dto.Waypoints[i] = waypointDTO{X: wp.Pos.X, Y: wp.Pos.Y, Speed: wp.Speed}
 							}
 						}
 						missileRoutesDTO = append(missileRoutesDTO, dto)
@@ -469,7 +520,8 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 						meTransform = tr
 						shipData := room.World.ShipData(meEntity)
 						history := room.World.HistoryComponent(meEntity)
-						route := room.World.ShipRoute(meEntity)
+						route := room.World.Route(meEntity)
+						follower := room.World.RouteFollower(meEntity)
 						heat := room.World.HeatData(meEntity)
 						meGhost = ghost{
 							ID:   fmt.Sprintf("ship-%s", p.ID),
@@ -485,9 +537,18 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 						}
 						meGhost.Kills = p.Kills
 						if route != nil && len(route.Waypoints) > 0 {
-							meGhost.Waypoints = make([]waypointDTO, len(route.Waypoints))
-							for i, wp := range route.Waypoints {
-								meGhost.Waypoints[i] = waypointDTO{X: wp.Pos.X, Y: wp.Pos.Y, Speed: wp.Speed}
+							startIdx := 0
+							if follower != nil && follower.Index > 0 {
+								startIdx = follower.Index
+								if startIdx > len(route.Waypoints) {
+									startIdx = len(route.Waypoints)
+								}
+							}
+							if startIdx < len(route.Waypoints) {
+								meGhost.Waypoints = make([]waypointDTO, len(route.Waypoints)-startIdx)
+								for i, wp := range route.Waypoints[startIdx:] {
+									meGhost.Waypoints[i] = waypointDTO{X: wp.Pos.X, Y: wp.Pos.Y, Speed: wp.Speed}
+								}
 							}
 						}
 						if history != nil {
@@ -571,6 +632,23 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 								targetID = fmt.Sprintf("ship-%s", targetOwner.PlayerID)
 							}
 						}
+
+						// Get heat component data for missile
+						var heatView *shipHeatViewDTO
+						if heat := room.World.HeatData(e); heat != nil {
+							heatView = &shipHeatViewDTO{
+								V:  heat.S.Value,
+								M:  heat.P.Max,
+								W:  heat.P.WarnAt,
+								O:  heat.P.OverheatAt,
+								MS: heat.P.MarkerSpeed,
+								SU: heat.S.StallUntil,
+								KU: heat.P.KUp,
+								KD: heat.P.KDown,
+								EX: heat.P.Exp,
+							}
+						}
+
 						missiles = append(missiles, missileDTO{
 							ID:         fmt.Sprintf("miss-%d", e),
 							Owner:      owner.PlayerID,
@@ -585,6 +663,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 							LaunchTime: missile.LaunchTime,
 							ExpiresAt:  missile.LaunchTime + missile.Lifetime,
 							TargetID:   targetID,
+							Heat:       heatView,
 						})
 					})
 				}

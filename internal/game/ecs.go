@@ -18,30 +18,32 @@ type Movement struct {
 	MaxSpeed float64
 }
 
-type ShipWaypoint struct {
-	Pos   Vec2
-	Speed float64
-}
-
-type ShipRoute struct {
-	Waypoints []ShipWaypoint
-}
-
 type ShipComponent struct {
 	HP int
 }
 
-type MissileRoute struct {
-	Waypoints []Vec2
+type RouteWaypoint struct {
+	Pos   Vec2
+	Speed float64
+}
+
+type RouteComponent struct {
+	Waypoints []RouteWaypoint
+}
+
+type RouteFollower struct {
+	Index       int
+	Hold        bool
+	hasOverride bool
+	override    RouteWaypoint
 }
 
 type MissileComponent struct {
 	AgroRadius  float64
 	LaunchTime  float64
 	Lifetime    float64
-	WaypointIdx int
-	ReturnIdx   int
 	Target      EntityID
+	ReturnIndex int
 }
 
 type OwnerComponent struct {
@@ -60,19 +62,20 @@ type MissileConfig struct {
 	Speed      float64
 	AgroRadius float64
 	Lifetime   float64
+	HeatParams HeatParams // Heat configuration for this missile
 }
 
 const (
-	CompTransform    ComponentKey = "transform"
-	compMovement     ComponentKey = "movement"
-	CompShip         ComponentKey = "ship"
-	compShipRoute    ComponentKey = "ship_route"
-	CompMissile      ComponentKey = "missile"
-	compMissileRoute ComponentKey = "missile_route"
-	CompOwner        ComponentKey = "owner"
-	CompHistory      ComponentKey = "history"
-	CompDestroyed    ComponentKey = "destroyed"
-	CompHeat         ComponentKey = "heat"
+	CompTransform     ComponentKey = "transform"
+	compMovement      ComponentKey = "movement"
+	CompShip          ComponentKey = "ship"
+	CompRoute         ComponentKey = "route"
+	CompRouteFollower ComponentKey = "route_follower"
+	CompMissile       ComponentKey = "missile"
+	CompOwner         ComponentKey = "owner"
+	CompHistory       ComponentKey = "history"
+	CompDestroyed     ComponentKey = "destroyed"
+	CompHeat          ComponentKey = "heat"
 )
 
 func SanitizeMissileConfig(cfg MissileConfig) MissileConfig {
@@ -82,10 +85,20 @@ func SanitizeMissileConfig(cfg MissileConfig) MissileConfig {
 		agro = MissileMinAgroRadius
 	}
 	lifetime := MissileLifetimeFor(speed, agro)
+
+	// Sanitize heat params or use defaults
+	heatParams := cfg.HeatParams
+	if heatParams.Max <= 0 {
+		heatParams = DefaultMissileHeatParams()
+	} else {
+		heatParams = SanitizeHeatParams(heatParams)
+	}
+
 	return MissileConfig{
 		Speed:      speed,
 		AgroRadius: agro,
 		Lifetime:   lifetime,
+		HeatParams: heatParams,
 	}
 }
 
@@ -131,9 +144,18 @@ func (w *World) ShipData(id EntityID) *ShipComponent {
 	return nil
 }
 
-func (w *World) ShipRoute(id EntityID) *ShipRoute {
-	if v, ok := w.GetComponent(id, compShipRoute); ok {
-		if t, ok := v.(*ShipRoute); ok {
+func (w *World) Route(id EntityID) *RouteComponent {
+	if v, ok := w.GetComponent(id, CompRoute); ok {
+		if t, ok := v.(*RouteComponent); ok {
+			return t
+		}
+	}
+	return nil
+}
+
+func (w *World) RouteFollower(id EntityID) *RouteFollower {
+	if v, ok := w.GetComponent(id, CompRouteFollower); ok {
+		if t, ok := v.(*RouteFollower); ok {
 			return t
 		}
 	}
@@ -143,15 +165,6 @@ func (w *World) ShipRoute(id EntityID) *ShipRoute {
 func (w *World) MissileData(id EntityID) *MissileComponent {
 	if v, ok := w.GetComponent(id, CompMissile); ok {
 		if t, ok := v.(*MissileComponent); ok {
-			return t
-		}
-	}
-	return nil
-}
-
-func (w *World) MissileRoute(id EntityID) *MissileRoute {
-	if v, ok := w.GetComponent(id, compMissileRoute); ok {
-		if t, ok := v.(*MissileRoute); ok {
 			return t
 		}
 	}

@@ -29,12 +29,15 @@ export interface EventMap {
   "missile:waypointAdded": { routeId: string; index: number };
   "missile:waypointDeleted": { routeId: string; index: number };
   "missile:waypointsCleared": { routeId: string };
-  "missile:speedChanged": { value: number };
+  "missile:speedChanged": { value: number; index: number };
   "missile:agroChanged": { value: number };
   "missile:launchRequested": { routeId: string };
   "missile:launched": { routeId: string };
   "missile:cooldownUpdated": { secondsRemaining: number };
   "missile:deleteInvoked": void;
+  "missile:presetSelected": { presetName: string };
+  "missile:heatProjectionUpdated": { willOverheat: boolean; overheatAt?: number };
+  "missile:overheated": { missileId: string; x: number; y: number };
   "help:visibleChanged": { visible: boolean };
   "state:updated": void;
   "tutorial:started": { id: string };

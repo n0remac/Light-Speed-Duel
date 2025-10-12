@@ -163,7 +163,7 @@ func SanitizeHeatParams(p HeatParams) HeatParams {
 	return p
 }
 
-// DefaultHeatParams returns sensible default heat parameters.
+// DefaultHeatParams returns sensible default heat parameters for ships.
 func DefaultHeatParams() HeatParams {
 	// Default values sourced from consts.go to avoid drift
 	return SanitizeHeatParams(HeatParams{
@@ -181,12 +181,34 @@ func DefaultHeatParams() HeatParams {
 	})
 }
 
+// DefaultMissileHeatParams returns default heat parameters for missiles.
+// Missiles use the same heat physics as ships but with different thresholds:
+// - Lower heat capacity (50 vs 100)
+// - Faster heating, slower cooling
+// - Lower marker speed for efficiency
+// - No stall time (missiles explode when overheated)
+func DefaultMissileHeatParams() HeatParams {
+	return SanitizeHeatParams(HeatParams{
+		Max:                MissileHeatMax,
+		WarnAt:             MissileHeatWarnAt,
+		OverheatAt:         MissileHeatOverheatAt,
+		StallSeconds:       0.0, // Missiles explode instead of stalling
+		MarkerSpeed:        MissileHeatMarkerSpeed,
+		Exp:                MissileHeatExp,
+		KUp:                MissileHeatKUp,
+		KDown:              MissileHeatKDown,
+		MissileSpikeChance: 0.0, // Missiles don't get heat spikes from hits
+		MissileSpikeMin:    0.0,
+		MissileSpikeMax:    0.0,
+	})
+}
+
 // ProjectHeatForRoute simulates heat changes along a planned route
 // Returns array of projected heat values at each waypoint
 // projected[0] = current heat, projected[i] = heat after waypoint i-1
 //
 // Phase 1a implementation: Simple projection based on waypoint speed and distance
-func ProjectHeatForRoute(currentHeat float64, params HeatParams, currentPos Vec2, currentSpeed float64, waypoints []ShipWaypoint) []float64 {
+func ProjectHeatForRoute(currentHeat float64, params HeatParams, currentPos Vec2, currentSpeed float64, waypoints []RouteWaypoint) []float64 {
 	projected := make([]float64, len(waypoints)+1)
 	projected[0] = currentHeat
 

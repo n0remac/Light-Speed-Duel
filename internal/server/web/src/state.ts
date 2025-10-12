@@ -21,11 +21,6 @@ export interface Waypoint {
   speed: number;
 }
 
-export interface MissileWaypoint {
-  x: number;
-  y: number;
-}
-
 export interface HeatView {
   value: number;
   max: number;
@@ -63,19 +58,88 @@ export interface MissileSnapshot {
   vy: number;
   self?: boolean;
   agro_radius: number;
+  heat?: HeatView; // Missile heat data
 }
 
 export interface MissileRoute {
   id: string;
   name: string;
-  waypoints: MissileWaypoint[];
+  waypoints: Waypoint[];
+}
+
+export interface HeatParams {
+  max: number;
+  warnAt: number;
+  overheatAt: number;
+  markerSpeed: number;
+  kUp: number;
+  kDown: number;
+  exp: number;
 }
 
 export interface MissileConfig {
   speed: number;
   agroRadius: number;
   lifetime: number;
+  heatParams?: HeatParams; // Optional custom heat configuration
 }
+
+export interface MissilePreset {
+  name: string;
+  description: string;
+  speed: number;
+  agroRadius: number;
+  heatParams: HeatParams;
+}
+
+// Missile preset definitions matching backend
+export const MISSILE_PRESETS: MissilePreset[] = [
+  {
+    name: "Scout",
+    description: "Slow, efficient, long-range. High heat capacity.",
+    speed: 80,
+    agroRadius: 1500,
+    heatParams: {
+      max: 60,
+      warnAt: 42,
+      overheatAt: 60,
+      markerSpeed: 70,
+      kUp: 20,
+      kDown: 15,
+      exp: 1.5,
+    },
+  },
+  {
+    name: "Hunter",
+    description: "Balanced speed and detection. Standard heat.",
+    speed: 150,
+    agroRadius: 800,
+    heatParams: {
+      max: 50,
+      warnAt: 35,
+      overheatAt: 50,
+      markerSpeed: 120,
+      kUp: 28,
+      kDown: 12,
+      exp: 1.5,
+    },
+  },
+  {
+    name: "Sniper",
+    description: "Fast, narrow detection. Low heat capacity.",
+    speed: 220,
+    agroRadius: 300,
+    heatParams: {
+      max: 40,
+      warnAt: 28,
+      overheatAt: 40,
+      markerSpeed: 180,
+      kUp: 35,
+      kDown: 8,
+      exp: 1.5,
+    },
+  },
+];
 
 export interface WorldMeta {
   c?: number;
@@ -103,7 +167,7 @@ export interface Selection {
 }
 
 export interface MissileSelection {
-  type: "waypoint";
+  type: "waypoint" | "route";
   index: number;
 }
 
@@ -160,6 +224,7 @@ export function createInitialState(limits: MissileLimits = {
       speed: 180,
       agroRadius: 800,
       lifetime: missileLifetimeFor(180, 800, limits),
+      heatParams: MISSILE_PRESETS[1].heatParams, // Default to Hunter preset
     },
     missileLimits: limits,
     worldMeta: {},
@@ -188,7 +253,7 @@ export function missileLifetimeFor(speed: number, agroRadius: number, limits: Mi
 }
 
 export function sanitizeMissileConfig(
-  cfg: Partial<Pick<MissileConfig, "speed" | "agroRadius">>,
+  cfg: Partial<Pick<MissileConfig, "speed" | "agroRadius" | "heatParams">>,
   fallback: MissileConfig,
   limits: MissileLimits,
 ): MissileConfig {
@@ -204,10 +269,12 @@ export function sanitizeMissileConfig(
   const mergedAgro = Number.isFinite(cfg.agroRadius ?? base.agroRadius) ? (cfg.agroRadius ?? base.agroRadius) : base.agroRadius;
   const speed = clamp(mergedSpeed, minSpeed, maxSpeed);
   const agroRadius = Math.max(minAgro, mergedAgro);
+  const heatParams = cfg.heatParams ? { ...cfg.heatParams } : base.heatParams ? { ...base.heatParams } : undefined;
   return {
     speed,
     agroRadius,
     lifetime: missileLifetimeFor(speed, agroRadius, limits),
+    heatParams,
   };
 }
 
@@ -221,6 +288,89 @@ export function monotonicNow(): number {
 export function cloneWaypointList(list: Waypoint[] | undefined | null): Waypoint[] {
   if (!Array.isArray(list)) return [];
   return list.map((wp) => ({ ...wp }));
+}
+
+// Project heat along a missile route
+export interface MissileRouteProjection {
+  waypoints: Waypoint[];
+  heatAtWaypoints: number[];
+  willOverheat: boolean;
+  overheatAt?: number; // Index where overheat occurs
+}
+
+export function projectMissileHeat(
+  route: Waypoint[],
+  defaultSpeed: number,
+  heatParams: HeatParams
+): MissileRouteProjection {
+  const projection: MissileRouteProjection = {
+    waypoints: route,
+    heatAtWaypoints: [],
+    willOverheat: false,
+  };
+
+  if (route.length === 0) {
+    return projection;
+  }
+
+  let heat = 0; // Missiles start at zero heat
+  let pos = { x: route[0].x, y: route[0].y };
+  let currentSpeed = route[0].speed > 0 ? route[0].speed : defaultSpeed;
+
+  projection.heatAtWaypoints.push(heat);
+
+  for (let i = 1; i < route.length; i++) {
+    const targetPos = route[i];
+    const targetSpeed = targetPos.speed > 0 ? targetPos.speed : defaultSpeed;
+
+    // Calculate distance and time
+    const dx = targetPos.x - pos.x;
+    const dy = targetPos.y - pos.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (distance < 0.001) {
+      projection.heatAtWaypoints.push(heat);
+      continue;
+    }
+
+    // Average speed during segment
+    const avgSpeed = (currentSpeed + targetSpeed) * 0.5;
+    const segmentTime = distance / Math.max(avgSpeed, 1);
+
+    // Calculate heat rate (match server formula)
+    const Vn = Math.max(heatParams.markerSpeed, 0.000001);
+    const dev = avgSpeed - heatParams.markerSpeed;
+    const p = heatParams.exp;
+
+    let hdot: number;
+    if (dev >= 0) {
+      // Heating
+      hdot = heatParams.kUp * Math.pow(dev / Vn, p);
+    } else {
+      // Cooling
+      hdot = -heatParams.kDown * Math.pow(Math.abs(dev) / Vn, p);
+    }
+
+    // Update heat
+    heat += hdot * segmentTime;
+    heat = Math.max(0, Math.min(heat, heatParams.max));
+
+    projection.heatAtWaypoints.push(heat);
+    pos = { x: targetPos.x, y: targetPos.y };
+    currentSpeed = targetSpeed;
+
+    // Check for overheat
+    if (heat >= heatParams.overheatAt && !projection.willOverheat) {
+      projection.willOverheat = true;
+      projection.overheatAt = i;
+    }
+
+    // Update position and speed
+    pos = targetPos;
+    currentSpeed = targetSpeed;
+  }
+
+  return projection;
 }
 
 export function updateMissileLimits(state: AppState, limits: Partial<MissileLimits>): void {

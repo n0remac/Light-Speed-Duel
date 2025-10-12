@@ -9,6 +9,8 @@ import {
   type UIState,
   clamp,
   sanitizeMissileConfig,
+  projectMissileHeat,
+  MISSILE_PRESETS,
 } from "./state";
 import {
   MISSILE_MIN_SPEED,
@@ -45,6 +47,7 @@ let shipDeleteBtn: HTMLButtonElement | null = null;
 let shipSpeedCard: HTMLElement | null = null;
 let shipSpeedSlider: HTMLInputElement | null = null;
 let shipSpeedValue: HTMLElement | null = null;
+let missileSpeedMarker: HTMLElement | null = null;
 
 let missileControlsCard: HTMLElement | null = null;
 let missileAddRouteBtn: HTMLButtonElement | null = null;
@@ -91,9 +94,11 @@ let dualMeterAlert = false;
 let selection: Selection | null = null;
 let missileSelection: MissileSelection | null = null;
 let defaultSpeed = 150;
+let lastMissileLegSpeed = 0;
 let lastLoopTs: number | null = null;
 let lastMissileConfigSent: { speed: number; agroRadius: number } | null = null;
-const legDashOffsets = new Map<number, number>();
+const shipLegDashOffsets = new Map<number, number>();
+const missileLegDashOffsets = new Map<number, number>();
 let lastMissileLaunchTextHTML = "";
 let lastMissileLaunchInfoHTML = "";
 let lastTouchDistance: number | null = null;
@@ -103,6 +108,7 @@ let isPinching = false;
 // Waypoint dragging state
 let draggedWaypoint: number | null = null;
 let dragStartPos: { x: number; y: number } | null = null;
+let draggedMissileWaypoint: number | null = null;
 
 const MIN_ZOOM = 1.0;
 const MAX_ZOOM = 3.0;
@@ -229,9 +235,13 @@ function cacheDom(): void {
   heatBarPlanned = document.getElementById("heat-bar-planned");
   heatValueText = document.getElementById("heat-value-text");
   speedMarker = document.getElementById("speed-marker");
+  missileSpeedMarker = document.getElementById("missile-speed-marker");
   stallOverlay = document.getElementById("stall-overlay");
 
   defaultSpeed = parseFloat(shipSpeedSlider?.value ?? "150");
+  if (missileSpeedSlider) {
+    missileSpeedSlider.disabled = true;
+  }
 }
 
 function bindListeners(): void {
@@ -340,10 +350,48 @@ function bindListeners(): void {
   });
 
   missileSpeedSlider?.addEventListener("input", (event) => {
-    const value = parseFloat((event.target as HTMLInputElement).value);
-    if (!Number.isFinite(value)) return;
-    updateMissileConfigFromUI({ speed: value });
-    busRef.emit("missile:speedChanged", { value });
+    const inputEl = event.target as HTMLInputElement;
+    if (inputEl.disabled) {
+      return;
+    }
+    const rawValue = parseFloat(inputEl.value);
+    if (!Number.isFinite(rawValue)) {
+      updateMissileSpeedControls();
+      return;
+    }
+
+    const route = getActiveMissileRoute();
+    if (!route || !Array.isArray(route.waypoints)) {
+      updateMissileSpeedControls();
+      return;
+    }
+
+    if (
+      missileSelection &&
+      missileSelection.type === "waypoint" &&
+      missileSelection.index >= 0 &&
+      missileSelection.index < route.waypoints.length
+    ) {
+      const minSpeed = stateRef.missileLimits.speedMin ?? MISSILE_MIN_SPEED;
+      const maxSpeed = stateRef.missileLimits.speedMax ?? MISSILE_MAX_SPEED;
+      const clampedValue = clamp(rawValue, minSpeed, maxSpeed);
+      const idx = missileSelection.index;
+      route.waypoints[idx] = { ...route.waypoints[idx], speed: clampedValue };
+      lastMissileLegSpeed = clampedValue;
+      if (missileSpeedValue) {
+        missileSpeedValue.textContent = `${clampedValue.toFixed(0)}`;
+      }
+      sendMessage({
+        type: "update_missile_waypoint_speed",
+        route_id: route.id,
+        index: idx,
+        speed: clampedValue,
+      });
+      busRef.emit("missile:speedChanged", { value: clampedValue, index: idx });
+      renderMissileRouteControls();
+    } else {
+      updateMissileSpeedControls();
+    }
   });
 
   missileAgroSlider?.addEventListener("input", (event) => {
@@ -553,6 +601,25 @@ function onCanvasPointerDown(event: PointerEvent): void {
     }
   }
 
+  if (context === "missile" && uiStateRef.missileTool === "select") {
+    const hit = hitTestMissileRoutes(canvasPoint);
+    if (hit) {
+      setInputContext("missile");
+      const { route, selection: missileSel } = hit;
+      setMissileSelection(missileSel, route.id);
+      renderMissileRouteControls();
+      if (missileSel.type === "waypoint") {
+        draggedMissileWaypoint = missileSel.index;
+        dragStartPos = { x: canvasPoint.x, y: canvasPoint.y };
+        cv.setPointerCapture(event.pointerId);
+      }
+      event.preventDefault();
+      return;
+    }
+    setMissileSelection(null);
+    renderMissileRouteControls();
+  }
+
   // For touch events, delay waypoint placement to allow for pinch gesture detection
   // For mouse events, place immediately
   if (event.pointerType === "touch") {
@@ -585,57 +652,98 @@ function onCanvasPointerDown(event: PointerEvent): void {
 function onCanvasPointerMove(event: PointerEvent): void {
   if (!cv || !ctx) return;
 
-  // Handle waypoint dragging
-  if (draggedWaypoint !== null && dragStartPos) {
-    const rect = cv.getBoundingClientRect();
-    const scaleX = rect.width !== 0 ? cv.width / rect.width : 1;
-    const scaleY = rect.height !== 0 ? cv.height / rect.height : 1;
-    const x = (event.clientX - rect.left) * scaleX;
-    const y = (event.clientY - rect.top) * scaleY;
-    const canvasPoint = { x, y };
-    const worldPoint = canvasToWorld(canvasPoint);
+  const draggingShip = draggedWaypoint !== null && dragStartPos;
+  const draggingMissile = draggedMissileWaypoint !== null && dragStartPos;
 
-    // Clamp to world bounds
-    const worldW = stateRef.worldMeta.w ?? 4000;
-    const worldH = stateRef.worldMeta.h ?? 4000;
-    const clampedX = clamp(worldPoint.x, 0, worldW);
-    const clampedY = clamp(worldPoint.y, 0, worldH);
+  if (!draggingShip && !draggingMissile) {
+    return;
+  }
 
-    // Send update to server
+  const rect = cv.getBoundingClientRect();
+  const scaleX = rect.width !== 0 ? cv.width / rect.width : 1;
+  const scaleY = rect.height !== 0 ? cv.height / rect.height : 1;
+  const x = (event.clientX - rect.left) * scaleX;
+  const y = (event.clientY - rect.top) * scaleY;
+  const canvasPoint = { x, y };
+  const worldPoint = canvasToWorld(canvasPoint);
+
+  // Clamp to world bounds
+  const worldW = stateRef.worldMeta.w ?? 4000;
+  const worldH = stateRef.worldMeta.h ?? 4000;
+  const clampedX = clamp(worldPoint.x, 0, worldW);
+  const clampedY = clamp(worldPoint.y, 0, worldH);
+
+  if (draggingShip && draggedWaypoint !== null) {
     sendMessage({
       type: "move_waypoint",
       index: draggedWaypoint,
       x: clampedX,
-      y: clampedY
+      y: clampedY,
     });
 
-    // Optimistic update for smooth dragging
     if (stateRef.me && stateRef.me.waypoints && draggedWaypoint < stateRef.me.waypoints.length) {
       stateRef.me.waypoints[draggedWaypoint].x = clampedX;
       stateRef.me.waypoints[draggedWaypoint].y = clampedY;
     }
+    event.preventDefault();
+    return;
+  }
 
+  if (draggingMissile && draggedMissileWaypoint !== null) {
+    const route = getActiveMissileRoute();
+    if (route && Array.isArray(route.waypoints) && draggedMissileWaypoint < route.waypoints.length) {
+      sendMessage({
+        type: "move_missile_waypoint",
+        route_id: route.id,
+        index: draggedMissileWaypoint,
+        x: clampedX,
+        y: clampedY,
+      });
+
+      route.waypoints = route.waypoints.map((wp, idx) =>
+        idx === draggedMissileWaypoint ? { ...wp, x: clampedX, y: clampedY } : wp
+      );
+      renderMissileRouteControls();
+    }
     event.preventDefault();
   }
 }
 
 function onCanvasPointerUp(event: PointerEvent): void {
+  let released = false;
+
   if (draggedWaypoint !== null && stateRef.me?.waypoints) {
     const wp = stateRef.me.waypoints[draggedWaypoint];
     if (wp) {
       busRef.emit("ship:waypointMoved", {
         index: draggedWaypoint,
         x: wp.x,
-        y: wp.y
+        y: wp.y,
       });
     }
-
     draggedWaypoint = null;
-    dragStartPos = null;
+    released = true;
+  }
 
-    if (cv) {
-      cv.releasePointerCapture(event.pointerId);
+  if (draggedMissileWaypoint !== null) {
+    const route = getActiveMissileRoute();
+    if (route && route.waypoints && draggedMissileWaypoint < route.waypoints.length) {
+      const wp = route.waypoints[draggedMissileWaypoint];
+      busRef.emit("missile:waypointMoved", {
+        routeId: route.id,
+        index: draggedMissileWaypoint,
+        x: wp.x,
+        y: wp.y,
+      });
     }
+    draggedMissileWaypoint = null;
+    released = true;
+  }
+
+  dragStartPos = null;
+
+  if (released && cv) {
+    cv.releasePointerCapture(event.pointerId);
   }
 }
 
@@ -723,16 +831,6 @@ function syncMissileUIFromState(): void {
 }
 
 function applyMissileUI(cfg: { speed: number; agroRadius: number }): void {
-  if (missileSpeedSlider) {
-    const minSpeed = stateRef.missileLimits.speedMin ?? MISSILE_MIN_SPEED;
-    const maxSpeed = stateRef.missileLimits.speedMax ?? MISSILE_MAX_SPEED;
-    missileSpeedSlider.min = String(minSpeed);
-    missileSpeedSlider.max = String(maxSpeed);
-    missileSpeedSlider.value = cfg.speed.toFixed(0);
-  }
-  if (missileSpeedValue) {
-    missileSpeedValue.textContent = cfg.speed.toFixed(0);
-  }
   if (missileAgroSlider) {
     const minAgro = stateRef.missileLimits.agroMin ?? MISSILE_MIN_AGRO;
     const maxAgro = Math.max(5000, Math.ceil((cfg.agroRadius + 500) / 500) * 500);
@@ -743,25 +841,33 @@ function applyMissileUI(cfg: { speed: number; agroRadius: number }): void {
   if (missileAgroValue) {
     missileAgroValue.textContent = cfg.agroRadius.toFixed(0);
   }
+  if (!lastMissileLegSpeed || lastMissileLegSpeed <= 0) {
+    lastMissileLegSpeed = cfg.speed;
+  }
+  updateMissileSpeedControls();
 }
 
-function updateMissileConfigFromUI(overrides: Partial<{ speed: number; agroRadius: number }> = {}): void {
+function updateMissileConfigFromUI(overrides: Partial<{ agroRadius: number }> = {}): void {
   const current = stateRef.missileConfig;
-  const cfg = sanitizeMissileConfig({
-    speed: overrides.speed ?? current.speed,
-    agroRadius: overrides.agroRadius ?? current.agroRadius,
-  }, current, stateRef.missileLimits);
+  const cfg = sanitizeMissileConfig(
+    {
+      speed: current.speed,
+      agroRadius: overrides.agroRadius ?? current.agroRadius,
+    },
+    current,
+    stateRef.missileLimits,
+  );
   stateRef.missileConfig = cfg;
   applyMissileUI(cfg);
   const last = lastMissileConfigSent;
   const needsSend =
     !last ||
-    Math.abs(last.speed - cfg.speed) > 0.25 ||
     Math.abs((last.agroRadius ?? 0) - cfg.agroRadius) > 5;
   if (needsSend) {
     sendMissileConfig(cfg);
   }
   renderMissileRouteControls();
+  updateSpeedMarker();
 }
 
 function sendMissileConfig(cfg: { speed: number; agroRadius: number }): void {
@@ -813,11 +919,60 @@ function refreshShipSelectionUI(): void {
 }
 
 function refreshMissileSelectionUI(): void {
-  if (!missileDeleteBtn) return;
   const route = getActiveMissileRoute();
   const count = route && Array.isArray(route.waypoints) ? route.waypoints.length : 0;
-  const hasSelection = missileSelection !== null && missileSelection !== undefined && missileSelection.index >= 0 && missileSelection.index < count;
-  missileDeleteBtn.disabled = !hasSelection;
+  const isWaypointSelection =
+    missileSelection !== null &&
+    missileSelection !== undefined &&
+    missileSelection.type === "waypoint" &&
+    missileSelection.index >= 0 &&
+    missileSelection.index < count;
+  if (missileDeleteBtn) {
+    missileDeleteBtn.disabled = !isWaypointSelection;
+  }
+  updateMissileSpeedControls();
+}
+
+function updateMissileSpeedControls(): void {
+  if (!missileSpeedSlider || !missileSpeedValue) {
+    return;
+  }
+
+  const minSpeed = stateRef.missileLimits.speedMin ?? MISSILE_MIN_SPEED;
+  const maxSpeed = stateRef.missileLimits.speedMax ?? MISSILE_MAX_SPEED;
+  missileSpeedSlider.min = String(minSpeed);
+  missileSpeedSlider.max = String(maxSpeed);
+
+  const route = getActiveMissileRoute();
+  let sliderValue: number | null = null;
+
+  if (
+    route &&
+    missileSelection &&
+    missileSelection.type === "waypoint" &&
+    Array.isArray(route.waypoints) &&
+    missileSelection.index >= 0 &&
+    missileSelection.index < route.waypoints.length
+  ) {
+    const wp = route.waypoints[missileSelection.index];
+    const value = typeof wp.speed === "number" && wp.speed > 0 ? wp.speed : stateRef.missileConfig.speed;
+    sliderValue = clamp(value, minSpeed, maxSpeed);
+    if (sliderValue > 0) {
+      lastMissileLegSpeed = sliderValue;
+    }
+  }
+
+  if (sliderValue !== null) {
+    missileSpeedSlider.disabled = false;
+    missileSpeedSlider.value = sliderValue.toFixed(0);
+    missileSpeedValue.textContent = `${sliderValue.toFixed(0)}`;
+  } else {
+    missileSpeedSlider.disabled = true;
+    if (!Number.isFinite(parseFloat(missileSpeedSlider.value))) {
+      missileSpeedSlider.value = stateRef.missileConfig.speed.toFixed(0);
+    }
+    missileSpeedValue.textContent = "--";
+  }
 }
 
 function setSelection(sel: Selection | null): void {
@@ -827,9 +982,13 @@ function setSelection(sel: Selection | null): void {
   busRef.emit("ship:legSelected", { index });
 }
 
-function setMissileSelection(sel: MissileSelection | null): void {
+function setMissileSelection(sel: MissileSelection | null, routeId?: string): void {
   missileSelection = sel;
+  if (routeId) {
+    stateRef.activeMissileRouteId = routeId;
+  }
   refreshMissileSelectionUI();
+  updateMissileSpeedControls();
 }
 
 function handleShipPointer(canvasPoint: { x: number; y: number }, worldPoint: { x: number; y: number }): void {
@@ -850,26 +1009,41 @@ function handleShipPointer(canvasPoint: { x: number; y: number }, worldPoint: { 
   updatePlannedHeatBar();
 }
 
+function getDefaultMissileLegSpeed(): number {
+  const minSpeed = stateRef.missileLimits.speedMin ?? MISSILE_MIN_SPEED;
+  const maxSpeed = stateRef.missileLimits.speedMax ?? MISSILE_MAX_SPEED;
+  const base = lastMissileLegSpeed > 0 ? lastMissileLegSpeed : stateRef.missileConfig.speed;
+  return clamp(base, minSpeed, maxSpeed);
+}
+
 function handleMissilePointer(canvasPoint: { x: number; y: number }, worldPoint: { x: number; y: number }): void {
   const route = getActiveMissileRoute();
   if (!route) return;
 
   if (uiStateRef.missileTool === "select") {
-    const hit = hitTestMissileRoute(canvasPoint);
-    setMissileSelection(hit);
+    const hit = hitTestMissileRoutes(canvasPoint);
+    if (hit) {
+      setMissileSelection(hit.selection, hit.route.id);
+      renderMissileRouteControls();
+    } else {
+      setMissileSelection(null);
+    }
     return;
   }
 
-  const wp = { x: worldPoint.x, y: worldPoint.y };
+  const speed = getDefaultMissileLegSpeed();
+  const wp = { x: worldPoint.x, y: worldPoint.y, speed };
   sendMessage({
     type: "add_missile_waypoint",
     route_id: route.id,
     x: wp.x,
     y: wp.y,
+    speed: wp.speed,
   });
   route.waypoints = route.waypoints ? [...route.waypoints, wp] : [wp];
+  lastMissileLegSpeed = speed;
   renderMissileRouteControls();
-  setMissileSelection({ type: "waypoint", index: route.waypoints.length - 1 });
+  setMissileSelection({ type: "waypoint", index: route.waypoints.length - 1 }, route.id);
   busRef.emit("missile:waypointAdded", { routeId: route.id, index: route.waypoints.length - 1 });
 }
 
@@ -1175,12 +1349,16 @@ function onWindowKeyDown(event: KeyboardEvent): void {
       return;
     case "Semicolon":
       setInputContext("missile");
-      adjustSliderValue(missileSpeedSlider, -1, event.shiftKey);
+      if (missileSpeedSlider && !missileSpeedSlider.disabled) {
+        adjustSliderValue(missileSpeedSlider, -1, event.shiftKey);
+      }
       event.preventDefault();
       return;
     case "Quote":
       setInputContext("missile");
-      adjustSliderValue(missileSpeedSlider, 1, event.shiftKey);
+      if (missileSpeedSlider && !missileSpeedSlider.disabled) {
+        adjustSliderValue(missileSpeedSlider, 1, event.shiftKey);
+      }
       event.preventDefault();
       return;
     case "Delete":
@@ -1366,21 +1544,22 @@ function findWaypointAtPosition(canvasPoint: { x: number; y: number }): number |
   return null;
 }
 
-function updateLegDashOffsets(dtSeconds: number): void {
-  if (!uiStateRef.showShipRoute || !stateRef.me) {
-    legDashOffsets.clear();
-    return;
+function updateDashOffsetsForRoute(
+  store: Map<number, number>,
+  waypoints: Array<{ speed?: number }>,
+  worldPoints: Array<{ x: number; y: number }>,
+  canvasPoints: Array<{ x: number; y: number }>,
+  fallbackSpeed: number,
+  dtSeconds: number,
+  cycle = 64,
+): void {
+  if (!Number.isFinite(dtSeconds) || dtSeconds < 0) {
+    dtSeconds = 0;
   }
-  const route = computeRoutePoints();
-  if (!route || route.waypoints.length === 0) {
-    legDashOffsets.clear();
-    return;
-  }
-  const { waypoints, worldPoints, canvasPoints } = route;
-  const cycle = 64;
+
   for (let i = 0; i < waypoints.length; i++) {
     const wp = waypoints[i];
-    const speed = typeof wp.speed === "number" ? wp.speed : defaultSpeed;
+    const speed = typeof wp.speed === "number" && wp.speed > 0 ? wp.speed : fallbackSpeed;
     const aWorld = worldPoints[i];
     const bWorld = worldPoints[i + 1];
     const worldDist = Math.hypot(bWorld.x - aWorld.x, bWorld.y - aWorld.y);
@@ -1389,31 +1568,72 @@ function updateLegDashOffsets(dtSeconds: number): void {
     const canvasDist = Math.hypot(bCanvas.x - aCanvas.x, bCanvas.y - aCanvas.y);
 
     if (!Number.isFinite(speed) || speed <= 1e-3 || !Number.isFinite(worldDist) || worldDist <= 1e-3 || canvasDist <= 1e-3) {
-      legDashOffsets.set(i, 0);
+      store.set(i, 0);
       continue;
     }
 
-    if (!Number.isFinite(dtSeconds) || dtSeconds <= 0) {
-      if (!legDashOffsets.has(i)) {
-        legDashOffsets.set(i, 0);
+    if (dtSeconds <= 0) {
+      if (!store.has(i)) {
+        store.set(i, 0);
       }
       continue;
     }
 
     const scale = canvasDist / worldDist;
     const dashSpeed = speed * scale;
-    let next = (legDashOffsets.get(i) ?? 0) - dashSpeed * dtSeconds;
+    let next = (store.get(i) ?? 0) - dashSpeed * dtSeconds;
     if (!Number.isFinite(next)) {
       next = 0;
     } else {
       next = ((next % cycle) + cycle) % cycle;
     }
-    legDashOffsets.set(i, next);
+    store.set(i, next);
   }
-  for (const key of Array.from(legDashOffsets.keys())) {
+  for (const key of Array.from(store.keys())) {
     if (key >= waypoints.length) {
-      legDashOffsets.delete(key);
+      store.delete(key);
     }
+  }
+}
+
+function updateRouteAnimations(dtSeconds: number): void {
+  if (!stateRef.me) {
+    shipLegDashOffsets.clear();
+    missileLegDashOffsets.clear();
+    return;
+  }
+
+  if (uiStateRef.showShipRoute) {
+    const shipRoute = computeRoutePoints();
+    if (shipRoute && shipRoute.waypoints.length > 0) {
+      updateDashOffsetsForRoute(shipLegDashOffsets, shipRoute.waypoints, shipRoute.worldPoints, shipRoute.canvasPoints, defaultSpeed, dtSeconds);
+    } else {
+      shipLegDashOffsets.clear();
+    }
+  } else {
+    shipLegDashOffsets.clear();
+  }
+
+  const activeMissileRoute = getActiveMissileRoute();
+  const missileRoutePoints = computeMissileRoutePoints();
+  if (
+    activeMissileRoute &&
+    missileRoutePoints &&
+    Array.isArray(activeMissileRoute.waypoints) &&
+    activeMissileRoute.waypoints.length > 0
+  ) {
+    const fallbackSpeed = lastMissileLegSpeed > 0 ? lastMissileLegSpeed : stateRef.missileConfig.speed;
+    updateDashOffsetsForRoute(
+      missileLegDashOffsets,
+      activeMissileRoute.waypoints,
+      missileRoutePoints.worldPoints,
+      missileRoutePoints.canvasPoints,
+      fallbackSpeed,
+      dtSeconds,
+      64,
+    );
+  } else {
+    missileLegDashOffsets.clear();
   }
 }
 
@@ -1459,22 +1679,79 @@ function hitTestRoute(canvasPoint: { x: number; y: number }): Selection | null {
   return null;
 }
 
-function hitTestMissileRoute(canvasPoint: { x: number; y: number }): MissileSelection | null {
-  const route = computeMissileRoutePoints();
-  if (!route || route.waypoints.length === 0) {
-    return null;
-  }
-  const { canvasPoints } = route;
+function hitTestMissileRoutes(canvasPoint: { x: number; y: number }): { route: MissileRoute; selection: MissileSelection } | null {
+  if (!stateRef.me) return null;
+  const routes = Array.isArray(stateRef.missileRoutes) ? stateRef.missileRoutes : [];
+  if (routes.length === 0) return null;
+
+  const shipPos = { x: stateRef.me.x, y: stateRef.me.y };
   const waypointHitRadius = 16;
-  for (let i = 1; i < canvasPoints.length; i++) {
-    const wpCanvas = canvasPoints[i];
-    const dx = canvasPoint.x - wpCanvas.x;
-    const dy = canvasPoint.y - wpCanvas.y;
-    if (Math.hypot(dx, dy) <= waypointHitRadius) {
-      return { type: "waypoint", index: i - 1 };
+  const legHitDistance = 10;
+
+  let best: { route: MissileRoute; selection: MissileSelection; pointerDist: number; shipDist: number } | null = null;
+
+  for (const route of routes) {
+    const waypoints = Array.isArray(route.waypoints) ? route.waypoints : [];
+    if (waypoints.length === 0) {
+      continue;
+    }
+
+    const worldPoints = [shipPos, ...waypoints.map((wp) => ({ x: wp.x, y: wp.y }))];
+    const canvasPoints = worldPoints.map((point) => worldToCanvas(point));
+
+    // Check waypoint hits (skip ship position at index 0)
+    for (let i = 1; i < canvasPoints.length; i++) {
+      const wpCanvas = canvasPoints[i];
+      const dx = canvasPoint.x - wpCanvas.x;
+      const dy = canvasPoint.y - wpCanvas.y;
+      const pointerDist = Math.hypot(dx, dy);
+      if (pointerDist <= waypointHitRadius) {
+        const worldPoint = worldPoints[i];
+        const shipDist = Math.hypot(worldPoint.x - shipPos.x, worldPoint.y - shipPos.y);
+        if (
+          !best ||
+          pointerDist < best.pointerDist - 0.1 ||
+          (Math.abs(pointerDist - best.pointerDist) <= 0.5 && shipDist < best.shipDist)
+        ) {
+          best = {
+            route,
+            selection: { type: "waypoint", index: i - 1 },
+            pointerDist,
+            shipDist,
+          };
+        }
+      }
+    }
+
+    // Check leg hits
+    for (let i = 0; i < canvasPoints.length - 1; i++) {
+      const pointerDist = pointSegmentDistance(canvasPoint, canvasPoints[i], canvasPoints[i + 1]);
+      if (pointerDist <= legHitDistance) {
+        const midWorld = {
+          x: (worldPoints[i].x + worldPoints[i + 1].x) * 0.5,
+          y: (worldPoints[i].y + worldPoints[i + 1].y) * 0.5,
+        };
+        const shipDist = Math.hypot(midWorld.x - shipPos.x, midWorld.y - shipPos.y);
+        if (
+          !best ||
+          pointerDist < best.pointerDist - 0.1 ||
+          (Math.abs(pointerDist - best.pointerDist) <= 0.5 && shipDist < best.shipDist)
+        ) {
+          best = {
+            route,
+            selection: { type: "route", index: i },
+            pointerDist,
+            shipDist,
+          };
+        }
+      }
     }
   }
-  return null;
+
+  if (!best) {
+    return null;
+  }
+  return { route: best.route, selection: best.selection };
 }
 
 function drawShip(x: number, y: number, vx: number, vy: number, color: string, filled: boolean): void {
@@ -1611,7 +1888,7 @@ function drawRoute(): void {
       ctx.beginPath();
       ctx.moveTo(canvasPoints[i].x, canvasPoints[i].y);
       ctx.lineTo(canvasPoints[i + 1].x, canvasPoints[i + 1].y);
-      ctx.lineDashOffset = legDashOffsets.get(i) ?? 0;
+      ctx.lineDashOffset = shipLegDashOffsets.get(i) ?? 0;
       ctx.stroke();
       ctx.restore();
 
@@ -1645,26 +1922,94 @@ function drawMissileRoute(): void {
   const route = computeMissileRoutePoints();
   if (!route || route.waypoints.length === 0) return;
   const { canvasPoints } = route;
+
+  // Calculate heat projection if heat params available
+  const heatParams = stateRef.missileConfig.heatParams;
+  let heatProjection: import("./state").MissileRouteProjection | null = null;
+  if (heatParams && route.waypoints.length > 0) {
+    const startPoint = {
+      x: stateRef.me.x,
+      y: stateRef.me.y,
+      speed: stateRef.missileConfig.speed,
+    };
+    const routeForHeat = [startPoint, ...route.waypoints];
+    heatProjection = projectMissileHeat(routeForHeat, stateRef.missileConfig.speed, heatParams);
+  }
+
+  // Draw route segments with heat-based coloring
   ctx.save();
   ctx.setLineDash([10, 6]);
   ctx.lineWidth = 2.5;
-  ctx.strokeStyle = "#f87171aa";
-  ctx.beginPath();
-  ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y);
-  for (let i = 1; i < canvasPoints.length; i++) {
-    ctx.lineTo(canvasPoints[i].x, canvasPoints[i].y);
+
+  for (let i = 0; i < canvasPoints.length - 1; i++) {
+    const heat1 = heatProjection ? heatProjection.heatAtWaypoints[i] : 0;
+    const heat2 = heatProjection ? heatProjection.heatAtWaypoints[i + 1] : 0;
+    const maxHeat = Math.max(heat1, heat2);
+    const segmentSelected = missileSelection && missileSelection.type === "route" && missileSelection.index === i;
+
+    // Color based on heat level
+    let strokeColor = "#f87171aa"; // Default red
+    let lineWidth = 2.5;
+    if (segmentSelected) {
+      strokeColor = "#f97316";
+      lineWidth = 3.5;
+      ctx.setLineDash([6, 4]);
+    } else if (heatProjection && heatParams) {
+      const heatRatio = maxHeat / heatParams.max;
+      const warnRatio = heatParams.warnAt / heatParams.max;
+      const overheatRatio = heatParams.overheatAt / heatParams.max;
+
+      if (heatRatio < warnRatio) {
+        strokeColor = "rgba(51, 170, 51, 0.7)"; // Green
+      } else if (heatRatio < overheatRatio) {
+        strokeColor = "rgba(255, 170, 51, 0.7)"; // Orange
+      } else {
+        strokeColor = "rgba(255, 51, 51, 0.8)"; // Red
+      }
+    }
+
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = lineWidth;
+    ctx.beginPath();
+    ctx.lineDashOffset = missileLegDashOffsets.get(i) ?? 0;
+    ctx.moveTo(canvasPoints[i].x, canvasPoints[i].y);
+    ctx.lineTo(canvasPoints[i + 1].x, canvasPoints[i + 1].y);
+    ctx.stroke();
+    if (segmentSelected) {
+      ctx.setLineDash([10, 6]);
+      ctx.lineWidth = 2.5;
+    }
   }
-  ctx.stroke();
   ctx.restore();
 
+  // Draw waypoints with heat indicators
   for (let i = 1; i < canvasPoints.length; i++) {
     const pt = canvasPoints[i];
     const waypointIndex = i - 1;
     const isSelected = missileSelection && missileSelection.index === waypointIndex;
+
+    // Get heat at this waypoint
+    const heat = heatProjection ? heatProjection.heatAtWaypoints[i] : 0;
+    let fillColor = isSelected ? "#facc15" : "#f87171";
+
+    if (heatProjection && heatParams) {
+      const heatRatio = heat / heatParams.max;
+      const warnRatio = heatParams.warnAt / heatParams.max;
+      const overheatRatio = heatParams.overheatAt / heatParams.max;
+
+      if (heatRatio < warnRatio) {
+        fillColor = isSelected ? "#facc15" : "#33aa33";
+      } else if (heatRatio < overheatRatio) {
+        fillColor = isSelected ? "#facc15" : "#ffaa33";
+      } else {
+        fillColor = isSelected ? "#facc15" : "#ff3333";
+      }
+    }
+
     ctx.save();
     ctx.beginPath();
     ctx.arc(pt.x, pt.y, isSelected ? 7 : 5, 0, Math.PI * 2);
-    ctx.fillStyle = isSelected ? "#facc15" : "#f87171";
+    ctx.fillStyle = fillColor;
     ctx.globalAlpha = isSelected ? 0.95 : 0.9;
     ctx.fill();
     ctx.globalAlpha = 1;
@@ -1706,7 +2051,47 @@ function drawMissiles(): void {
       ctx.stroke();
       ctx.restore();
     }
+
+    // Draw missile heat bar if heat data is available
+    if (miss.heat) {
+      drawMissileHeatBar(miss, p);
+    }
   }
+}
+
+function drawMissileHeatBar(missile: MissileSnapshot, canvasPos: { x: number; y: number }): void {
+  if (!ctx || !missile.heat) return;
+
+  const heat = missile.heat;
+  const barWidth = 40;
+  const barHeight = 4;
+  const barX = canvasPos.x - barWidth / 2;
+  const barY = canvasPos.y + 15; // Below missile
+
+  // Background
+  ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+  ctx.fillRect(barX - 1, barY - 1, barWidth + 2, barHeight + 2);
+
+  // Heat fill
+  const heatRatio = heat.value / heat.max;
+  const fillWidth = barWidth * heatRatio;
+
+  // Color based on heat level
+  let heatColor: string;
+  const warnRatio = heat.warnAt / heat.max;
+  const overheatRatio = heat.overheatAt / heat.max;
+
+  if (heatRatio < warnRatio) {
+    heatColor = "#33aa33"; // Green - safe
+  } else if (heatRatio < overheatRatio) {
+    heatColor = "#ffaa33"; // Orange - warning
+  } else {
+    heatColor = "#ff3333"; // Red - critical
+  }
+
+  ctx.fillStyle = heatColor;
+  ctx.fillRect(barX, barY, fillWidth, barHeight);
+
 }
 
 function drawGrid(): void {
@@ -1926,18 +2311,38 @@ function projectPlannedHeat(ship: { x: number; y: number; waypoints: { x: number
 }
 
 function updateSpeedMarker(): void {
-  const heat = stateRef.me?.heat;
-  if (!heat || !speedMarker || !shipSpeedSlider) return;
+  const shipHeat = stateRef.me?.heat;
+  if (speedMarker && shipSpeedSlider && shipHeat && shipHeat.markerSpeed > 0) {
+    const min = parseFloat(shipSpeedSlider.min);
+    const max = parseFloat(shipSpeedSlider.max);
+    const markerSpeed = shipHeat.markerSpeed;
+    const percent = ((markerSpeed - min) / (max - min)) * 100;
+    const clamped = Math.max(0, Math.min(100, percent));
+    speedMarker.style.left = `${clamped}%`;
+    speedMarker.title = `Heat neutral: ${Math.round(markerSpeed)} units/s`;
+    speedMarker.style.display = "block";
+  } else if (speedMarker) {
+    speedMarker.style.display = "none";
+  }
 
-  const min = parseFloat(shipSpeedSlider.min);
-  const max = parseFloat(shipSpeedSlider.max);
-  const markerSpeed = heat.markerSpeed;
+  if (missileSpeedMarker && missileSpeedSlider) {
+    const heatParams = stateRef.missileConfig.heatParams;
+    const markerSpeed =
+      (heatParams && Number.isFinite(heatParams.markerSpeed) ? heatParams.markerSpeed : undefined) ??
+      (shipHeat && shipHeat.markerSpeed > 0 ? shipHeat.markerSpeed : undefined);
 
-  // Calculate position as percentage
-  const percent = ((markerSpeed - min) / (max - min)) * 100;
-  const clamped = Math.max(0, Math.min(100, percent));
-  speedMarker.style.left = `${clamped}%`;
-  speedMarker.title = `Heat neutral: ${Math.round(markerSpeed)} units/s`;
+    if (markerSpeed !== undefined && markerSpeed > 0) {
+      const min = parseFloat(missileSpeedSlider.min);
+      const max = parseFloat(missileSpeedSlider.max);
+      const percent = ((markerSpeed - min) / (max - min)) * 100;
+      const clamped = Math.max(0, Math.min(100, percent));
+      missileSpeedMarker.style.left = `${clamped}%`;
+      missileSpeedMarker.title = `Heat neutral: ${Math.round(markerSpeed)} units/s`;
+      missileSpeedMarker.style.display = "block";
+    } else {
+      missileSpeedMarker.style.display = "none";
+    }
+  }
 }
 
 function updateStallOverlay(): void {
@@ -1981,7 +2386,7 @@ function loop(timestamp: number): void {
     }
   }
   lastLoopTs = timestamp;
-  updateLegDashOffsets(dtSeconds);
+  updateRouteAnimations(dtSeconds);
 
   ctx.clearRect(0, 0, cv.width, cv.height);
   drawGrid();

@@ -10,6 +10,7 @@ import {
 interface ServerMissileWaypoint {
   x: number;
   y: number;
+  speed?: number;
 }
 
 interface ServerMissileRoute {
@@ -65,6 +66,15 @@ interface ServerStateMessage {
     agro_radius?: number;
     agro_min?: number;
     lifetime?: number;
+    heat_config?: {
+      max?: number;
+      warn_at?: number;
+      overheat_at?: number;
+      marker_speed?: number;
+      k_up?: number;
+      k_down?: number;
+      exp?: number;
+    } | null;
   } | null;
   active_missile_route?: string | null;
   meta?: {
@@ -160,7 +170,11 @@ function handleStateMessage(
     id: route.id,
     name: route.name || route.id || "Route",
     waypoints: Array.isArray(route.waypoints)
-      ? route.waypoints.map((wp) => ({ x: wp.x, y: wp.y }))
+      ? route.waypoints.map((wp) => ({
+          x: wp.x,
+          y: wp.y,
+          speed: Number.isFinite(wp.speed) ? wp.speed! : state.missileConfig.speed,
+        }))
       : [],
   }));
 
@@ -185,9 +199,24 @@ function handleStateMessage(
         agroMin: msg.missile_config.agro_min,
       });
     }
+    const prevHeat = state.missileConfig.heatParams;
+    let heatParams: { max: number; warnAt: number; overheatAt: number; markerSpeed: number; kUp: number; kDown: number; exp: number } | undefined;
+    const heatConfig = msg.missile_config.heat_config;
+    if (heatConfig) {
+      heatParams = {
+        max: Number.isFinite(heatConfig.max) ? heatConfig.max! : prevHeat?.max ?? 0,
+        warnAt: Number.isFinite(heatConfig.warn_at) ? heatConfig.warn_at! : prevHeat?.warnAt ?? 0,
+        overheatAt: Number.isFinite(heatConfig.overheat_at) ? heatConfig.overheat_at! : prevHeat?.overheatAt ?? 0,
+        markerSpeed: Number.isFinite(heatConfig.marker_speed) ? heatConfig.marker_speed! : prevHeat?.markerSpeed ?? 0,
+        kUp: Number.isFinite(heatConfig.k_up) ? heatConfig.k_up! : prevHeat?.kUp ?? 0,
+        kDown: Number.isFinite(heatConfig.k_down) ? heatConfig.k_down! : prevHeat?.kDown ?? 0,
+        exp: Number.isFinite(heatConfig.exp) ? heatConfig.exp! : prevHeat?.exp ?? 1,
+      };
+    }
     const sanitized = sanitizeMissileConfig({
       speed: msg.missile_config.speed,
       agroRadius: msg.missile_config.agro_radius,
+      heatParams,
     }, state.missileConfig, state.missileLimits);
     if (Number.isFinite(msg.missile_config.lifetime)) {
       sanitized.lifetime = msg.missile_config.lifetime!;

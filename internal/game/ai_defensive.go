@@ -43,7 +43,7 @@ func estimateHeatAfterSegment(h *HeatComponent, speed, distance float64) float64
 	return projectHeatAfterDuration(h, speed, duration)
 }
 
-func projectRouteHeat(h *HeatComponent, startPos Vec2, route *ShipRoute) float64 {
+func projectRouteHeat(h *HeatComponent, startPos Vec2, route *RouteComponent) float64 {
 	if h == nil {
 		return 0
 	}
@@ -80,7 +80,7 @@ func clampPlanDestination(pos Vec2, direction Vec2, distance, worldW, worldH flo
 	return clampPointToWorldBounds(dest, worldW, worldH)
 }
 
-func planHeatBuildRoute(pos Vec2, direction Vec2, worldW, worldH, shipSpeed float64) []ShipWaypoint {
+func planHeatBuildRoute(pos Vec2, direction Vec2, worldW, worldH, shipSpeed float64) []RouteWaypoint {
 	direction = unitOrZero(direction)
 	if direction.Len() <= 1e-3 {
 		direction = Vec2{X: 1, Y: 0}
@@ -88,10 +88,10 @@ func planHeatBuildRoute(pos Vec2, direction Vec2, worldW, worldH, shipSpeed floa
 	distance := Clamp(300+rand.Float64()*250, 200, 650)
 	dest := clampPlanDestination(pos, direction, distance, worldW, worldH)
 	speed := Clamp(shipSpeed*0.95, shipSpeed*0.8, shipSpeed)
-	return []ShipWaypoint{{Pos: dest, Speed: speed}}
+	return []RouteWaypoint{{Pos: dest, Speed: speed}}
 }
 
-func planHeatCooldownRoute(pos Vec2, direction Vec2, worldW, worldH, markerSpeed float64) []ShipWaypoint {
+func planHeatCooldownRoute(pos Vec2, direction Vec2, worldW, worldH, markerSpeed float64) []RouteWaypoint {
 	direction = unitOrZero(direction)
 	if direction.Len() <= 1e-3 {
 		direction = Vec2{X: 0, Y: 1}
@@ -102,10 +102,10 @@ func planHeatCooldownRoute(pos Vec2, direction Vec2, worldW, worldH, markerSpeed
 		speed = markerSpeed
 	}
 	dest := clampPlanDestination(pos, direction, distance, worldW, worldH)
-	return []ShipWaypoint{{Pos: dest, Speed: speed}}
+	return []RouteWaypoint{{Pos: dest, Speed: speed}}
 }
 
-func planDirectMissileRoute(pos Vec2, threat AIMissileThreat, worldW, worldH, shipSpeed float64) []ShipWaypoint {
+func planDirectMissileRoute(pos Vec2, threat AIMissileThreat, worldW, worldH, shipSpeed float64) []RouteWaypoint {
 	toShip := unitOrZero(pos.Sub(threat.Pos))
 	if toShip.Len() <= 1e-3 {
 		toShip = Vec2{X: 1, Y: 0}
@@ -126,13 +126,13 @@ func planDirectMissileRoute(pos Vec2, threat AIMissileThreat, worldW, worldH, sh
 	escapeDistance := Clamp(900+rand.Float64()*400, 700, 1400)
 	escapePoint := clampPlanDestination(sidePoint, escapeDir, escapeDistance, worldW, worldH)
 	speed := Clamp(shipSpeed, shipSpeed*0.8, shipSpeed)
-	return []ShipWaypoint{
+	return []RouteWaypoint{
 		{Pos: sidePoint, Speed: speed},
 		{Pos: escapePoint, Speed: speed},
 	}
 }
 
-func planGeneralThreatRoute(pos Vec2, threat AIMissileThreat, worldW, worldH, shipSpeed float64) []ShipWaypoint {
+func planGeneralThreatRoute(pos Vec2, threat AIMissileThreat, worldW, worldH, shipSpeed float64) []RouteWaypoint {
 	away := unitOrZero(pos.Sub(threat.Pos))
 	if away.Len() <= 1e-3 {
 		away = Vec2{X: 1, Y: 0}
@@ -140,7 +140,7 @@ func planGeneralThreatRoute(pos Vec2, threat AIMissileThreat, worldW, worldH, sh
 	distance := Clamp(800+rand.Float64()*400, 500, 1400)
 	dest := clampPlanDestination(pos, away, distance, worldW, worldH)
 	speed := Clamp(shipSpeed, shipSpeed*0.7, shipSpeed)
-	return []ShipWaypoint{{Pos: dest, Speed: speed}}
+	return []RouteWaypoint{{Pos: dest, Speed: speed}}
 }
 
 type DefensiveBehavior struct {
@@ -392,10 +392,13 @@ func (b *DefensiveBehavior) Plan(ctx *AIContext) []AICommand {
 		startAccel := pos.Add(dirToOpponent.Scale(250))
 		tail := leadPoint.Add(oppVel.Scale(0.5 * leadTime))
 
-		waypoints := []Vec2{
-			clampPointToWorldBounds(startAccel, worldW, worldH),
-			clampPointToWorldBounds(leadPoint, worldW, worldH),
-			clampPointToWorldBounds(tail, worldW, worldH),
+		clampedStart := clampPointToWorldBounds(startAccel, worldW, worldH)
+		clampedLead := clampPointToWorldBounds(leadPoint, worldW, worldH)
+		clampedTail := clampPointToWorldBounds(tail, worldW, worldH)
+		waypoints := []RouteWaypoint{
+			{Pos: clampedStart, Speed: cfg.Speed},
+			{Pos: clampedLead, Speed: cfg.Speed},
+			{Pos: clampedTail, Speed: cfg.Speed},
 		}
 
 		commands = append(commands, CommandLaunchMissile(cfg, waypoints))

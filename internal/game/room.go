@@ -11,7 +11,7 @@ import (
 type MissileRouteDef struct {
 	ID        string
 	Name      string
-	Waypoints []Vec2
+	Waypoints []RouteWaypoint
 }
 
 type Player struct {
@@ -142,8 +142,10 @@ func (r *Room) Tick() {
 	r.Now += Dt
 
 	r.updateAI()
-	updateShips(r, Dt)
-	updateMissiles(r, Dt)
+	updateMissileGuidance(r, Dt)
+	updateRouteFollowers(r, Dt)
+	resolveMissileCollisions(r)
+	updateMissileHeat(r, Dt)
 
 	// Run garbage collection every second to clean up old destroyed entities
 	tickCount := int(r.Now * SimHz)
@@ -280,7 +282,8 @@ func (r *Room) SpawnShip(owner string, startPos Vec2) EntityID {
 	r.World.SetComponent(id, CompTransform, &Transform{Pos: startPos})
 	r.World.SetComponent(id, compMovement, &Movement{MaxSpeed: ShipMaxSpeed})
 	r.World.SetComponent(id, CompShip, &ShipComponent{HP: ShipMaxHP})
-	r.World.SetComponent(id, compShipRoute, &ShipRoute{})
+	r.World.SetComponent(id, CompRoute, &RouteComponent{})
+	r.World.SetComponent(id, CompRouteFollower, &RouteFollower{})
 	r.World.SetComponent(id, CompOwner, &OwnerComponent{PlayerID: owner})
 	history := newHistory(HistoryKeepS, SimHz)
 	history.push(Snapshot{T: r.Now, Pos: startPos})
@@ -297,7 +300,7 @@ func (r *Room) SpawnShip(owner string, startPos Vec2) EntityID {
 	return id
 }
 
-func (r *Room) LaunchMissile(owner string, shipID EntityID, cfg MissileConfig, waypoints []Vec2, startPos Vec2, startVel Vec2) EntityID {
+func (r *Room) LaunchMissile(owner string, shipID EntityID, cfg MissileConfig, waypoints []RouteWaypoint, startPos Vec2, startVel Vec2) EntityID {
 	if len(waypoints) == 0 {
 		return 0
 	}
@@ -311,9 +314,25 @@ func (r *Room) LaunchMissile(owner string, shipID EntityID, cfg MissileConfig, w
 		Lifetime:   cfg.Lifetime,
 	}
 	r.World.SetComponent(id, CompMissile, missile)
-	copied := append([]Vec2(nil), waypoints...)
-	r.World.SetComponent(id, compMissileRoute, &MissileRoute{Waypoints: copied})
+	copied := make([]RouteWaypoint, len(waypoints))
+	for i, wp := range waypoints {
+		copied[i] = wp
+		if copied[i].Speed <= 0 {
+			copied[i].Speed = cfg.Speed
+		}
+	}
+	r.World.SetComponent(id, CompRoute, &RouteComponent{Waypoints: copied})
+	r.World.SetComponent(id, CompRouteFollower, &RouteFollower{})
 	r.World.SetComponent(id, CompOwner, &OwnerComponent{PlayerID: owner})
+
+	// Add heat component with missile-specific parameters
+	r.World.SetComponent(id, CompHeat, &HeatComponent{
+		P: cfg.HeatParams,
+		S: HeatState{
+			Value:      0.0, // Missiles start at zero heat
+			StallUntil: 0.0, // Not used for missiles (they explode instead)
+		},
+	})
 
 	// Copy ship's history so missile appears at same perceived position as ship
 	// This ensures all observers see missile spawn from where they perceive the ship
@@ -389,8 +408,13 @@ func (r *Room) reSpawnShip(id EntityID) {
 		tr.Pos = respawnPos
 		tr.Vel = Vec2{}
 	}
-	if route := r.World.ShipRoute(id); route != nil {
+	if route := r.World.Route(id); route != nil {
 		route.Waypoints = nil
+	}
+	if follower := r.World.RouteFollower(id); follower != nil {
+		follower.Index = 0
+		follower.Hold = false
+		follower.hasOverride = false
 	}
 	if ship := r.World.ShipData(id); ship != nil {
 		ship.HP = ShipMaxHP
@@ -534,10 +558,34 @@ func (p *Player) SetActiveMissileRoute(id string) bool {
 	return false
 }
 
-func (p *Player) AddWaypointToRoute(id string, wp Vec2) bool {
+func (p *Player) AddWaypointToRoute(id string, wp RouteWaypoint) bool {
 	if route := p.MissileRouteByID(id); route != nil {
+		if wp.Speed <= 0 {
+			wp.Speed = Clamp(p.MissileConfig.Speed, MissileMinSpeed, MissileMaxSpeed)
+		}
 		route.Waypoints = append(route.Waypoints, wp)
 		return true
+	}
+	return false
+}
+
+func (p *Player) UpdateWaypointSpeedInRoute(id string, index int, speed float64) bool {
+	if route := p.MissileRouteByID(id); route != nil {
+		if index >= 0 && index < len(route.Waypoints) {
+			maxSpeed := Clamp(p.MissileConfig.Speed, MissileMinSpeed, MissileMaxSpeed)
+			route.Waypoints[index].Speed = Clamp(speed, MissileMinSpeed, maxSpeed)
+			return true
+		}
+	}
+	return false
+}
+
+func (p *Player) MoveWaypointInRoute(id string, index int, pos Vec2) bool {
+	if route := p.MissileRouteByID(id); route != nil {
+		if index >= 0 && index < len(route.Waypoints) {
+			route.Waypoints[index].Pos = pos
+			return true
+		}
 	}
 	return false
 }

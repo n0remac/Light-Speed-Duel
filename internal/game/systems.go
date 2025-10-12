@@ -2,57 +2,85 @@ package game
 
 import "math/rand"
 
-func updateShips(r *Room, dt float64) {
+func updateRouteFollowers(r *Room, dt float64) {
 	world := r.World
-	world.ForEach([]ComponentKey{CompTransform, compMovement, CompShip}, func(id EntityID) {
-		// Skip destroyed ships - they no longer participate in physics
+	world.ForEach([]ComponentKey{CompTransform, compMovement, CompRouteFollower, CompRoute}, func(id EntityID) {
 		if world.DestroyedData(id) != nil {
 			return
 		}
 
 		tr := world.Transform(id)
 		mov := world.Movement(id)
-		ship := world.ShipData(id)
-		route := world.ShipRoute(id)
-		heat := world.HeatData(id)
-		if tr == nil || mov == nil || ship == nil {
+		route := world.Route(id)
+		follower := world.RouteFollower(id)
+		if tr == nil || mov == nil || route == nil || follower == nil {
 			return
 		}
 
-		// Update heat based on current speed
+		heat := world.HeatData(id)
 		if heat != nil {
-			speed := tr.Vel.Len()
-			UpdateHeat(heat, speed, dt, r.Now)
+			UpdateHeat(heat, tr.Vel.Len(), dt, r.Now)
+			if heat.IsStalled(r.Now) {
+				tr.Vel = Vec2{}
+				follower.hasOverride = false
+				follower.override = RouteWaypoint{}
+				if hist := world.HistoryComponent(id); hist != nil && hist.History != nil {
+					hist.History.push(Snapshot{T: r.Now, Pos: tr.Pos, Vel: tr.Vel})
+				}
+				return
+			}
 		}
 
-		// Check if ship is stalled - if so, skip waypoint navigation
-		if heat != nil && heat.IsStalled(r.Now) {
-			// Ship is stalled - cannot move, but sensors still work
+		if follower.Hold {
 			tr.Vel = Vec2{}
-			// History still updates so other entities can perceive the stalled ship
-			if hist := world.HistoryComponent(id); hist != nil {
+			if hist := world.HistoryComponent(id); hist != nil && hist.History != nil {
 				hist.History.push(Snapshot{T: r.Now, Pos: tr.Pos, Vel: tr.Vel})
 			}
 			return
 		}
 
-		if route != nil && len(route.Waypoints) > 0 {
-			target := route.Waypoints[0]
-			dir := target.Pos.Sub(tr.Pos)
-			dist := dir.Len()
-			speedLimit := Clamp(target.Speed, 0, mov.MaxSpeed)
-			if dist <= ShipStopEps || speedLimit <= 1e-3 || dist <= speedLimit*dt {
-				tr.Pos = target.Pos
-				tr.Vel = Vec2{}
-				route.Waypoints = route.Waypoints[1:]
-			} else {
-				direction := dir.Scale(1.0 / dist)
-				tr.Vel = direction.Scale(speedLimit)
-				tr.Pos = tr.Pos.Add(tr.Vel.Scale(dt))
-			}
+		usingOverride := false
+		var target RouteWaypoint
+
+		if follower.hasOverride {
+			target = follower.override
+			usingOverride = true
+		} else if follower.Index < len(route.Waypoints) {
+			target = route.Waypoints[follower.Index]
 		} else {
 			tr.Vel = Vec2{}
+			if follower.Index > len(route.Waypoints) {
+				follower.Index = len(route.Waypoints)
+			}
+			follower.hasOverride = false
+			follower.override = RouteWaypoint{}
+			if hist := world.HistoryComponent(id); hist != nil && hist.History != nil {
+				hist.History.push(Snapshot{T: r.Now, Pos: tr.Pos, Vel: tr.Vel})
+			}
+			return
 		}
+
+		speedLimit := mov.MaxSpeed
+		if target.Speed > 0 {
+			speedLimit = Clamp(target.Speed, 0, mov.MaxSpeed)
+		}
+
+		dir := target.Pos.Sub(tr.Pos)
+		dist := dir.Len()
+		if dist <= ShipStopEps || speedLimit <= 1e-3 || dist <= speedLimit*dt {
+			tr.Pos = target.Pos
+			tr.Vel = Vec2{}
+			if !usingOverride {
+				follower.Index++
+			}
+		} else {
+			direction := dir.Scale(1.0 / dist)
+			tr.Vel = direction.Scale(speedLimit)
+			tr.Pos = tr.Pos.Add(tr.Vel.Scale(dt))
+		}
+
+		follower.hasOverride = false
+		follower.override = RouteWaypoint{}
 
 		if tr.Pos.X < 0 {
 			tr.Pos.X = 0
@@ -67,17 +95,15 @@ func updateShips(r *Room, dt float64) {
 			tr.Pos.Y = r.WorldHeight
 		}
 
-		if hist := world.HistoryComponent(id); hist != nil {
+		if hist := world.HistoryComponent(id); hist != nil && hist.History != nil {
 			hist.History.push(Snapshot{T: r.Now, Pos: tr.Pos, Vel: tr.Vel})
 		}
 	})
 }
 
-func updateMissiles(r *Room, dt float64) {
+func updateMissileGuidance(r *Room, dt float64) {
 	world := r.World
-
-	world.ForEach([]ComponentKey{CompTransform, compMovement, CompMissile}, func(id EntityID) {
-		// Skip destroyed missiles - they no longer participate in physics
+	world.ForEach([]ComponentKey{CompTransform, compMovement, CompMissile, CompRouteFollower, CompRoute}, func(id EntityID) {
 		if world.DestroyedData(id) != nil {
 			return
 		}
@@ -86,46 +112,59 @@ func updateMissiles(r *Room, dt float64) {
 		mov := world.Movement(id)
 		missile := world.MissileData(id)
 		owner := world.Owner(id)
-		route := world.MissileRoute(id)
-		if tr == nil || mov == nil || missile == nil || owner == nil {
+		route := world.Route(id)
+		follower := world.RouteFollower(id)
+		if tr == nil || mov == nil || missile == nil || owner == nil || route == nil || follower == nil {
 			return
 		}
 
 		age := r.Now - missile.LaunchTime
 		if age >= missile.Lifetime {
-			// Soft delete: mark as destroyed instead of removing
 			world.SetComponent(id, CompDestroyed, &DestroyedComponent{DestroyedAt: r.Now})
+			follower.hasOverride = false
 			return
 		}
 
 		chasing := false
 		var perceivedTargetPos Vec2
 
+		resetToRoute := func() {
+			follower.hasOverride = false
+			follower.override = RouteWaypoint{}
+			if follower.Index < 0 {
+				follower.Index = 0
+			}
+			if follower.Index > len(route.Waypoints) {
+				follower.Index = len(route.Waypoints)
+			}
+			if missile.ReturnIndex >= 0 && missile.ReturnIndex < len(route.Waypoints) {
+				follower.Index = missile.ReturnIndex
+			}
+		}
+
 		if missile.Target != 0 {
 			if world.Exists(missile.Target) {
 				if targetOwner := world.Owner(missile.Target); targetOwner != nil && targetOwner.PlayerID != owner.PlayerID {
-					// Use perceived distance to check if target still in agro radius
 					perceivedDist := PerceivedDistance(tr.Pos, missile.Target, world, r.Now)
 					if perceivedDist <= missile.AgroRadius {
-						// Get perceived position of target
 						if snap, ok := PerceiveEntity(tr.Pos, missile.Target, world, r.Now); ok {
 							chasing = true
 							perceivedTargetPos = snap.Pos
 						} else {
 							missile.Target = 0
-							missile.WaypointIdx = missile.ReturnIdx
+							resetToRoute()
 						}
 					} else {
 						missile.Target = 0
-						missile.WaypointIdx = missile.ReturnIdx
+						resetToRoute()
 					}
 				} else {
 					missile.Target = 0
-					missile.WaypointIdx = missile.ReturnIdx
+					resetToRoute()
 				}
 			} else {
 				missile.Target = 0
-				missile.WaypointIdx = missile.ReturnIdx
+				resetToRoute()
 			}
 		}
 
@@ -134,70 +173,48 @@ func updateMissiles(r *Room, dt float64) {
 				if chasing {
 					return
 				}
+				if world.DestroyedData(shipID) != nil {
+					return
+				}
 				shipOwner := world.Owner(shipID)
 				if shipOwner == nil || shipOwner.PlayerID == owner.PlayerID {
 					return
 				}
-				// Use perceived distance for agro detection
 				perceivedDist := PerceivedDistance(tr.Pos, shipID, world, r.Now)
 				if perceivedDist <= missile.AgroRadius {
-					// Get perceived position of target
 					if snap, ok := PerceiveEntity(tr.Pos, shipID, world, r.Now); ok {
 						chasing = true
 						perceivedTargetPos = snap.Pos
 						missile.Target = shipID
-						missile.ReturnIdx = missile.WaypointIdx
+						missile.ReturnIndex = follower.Index
 					}
 				}
 			})
 		}
 
-		tr.Vel = Vec2{}
-
 		if chasing {
-			// Navigate toward perceived target position
-			toTarget := perceivedTargetPos.Sub(tr.Pos)
-			dist := toTarget.Len()
-			speed := mov.MaxSpeed
-			if dist <= ShipStopEps || speed <= 1e-3 || dist <= speed*dt {
-				tr.Pos = perceivedTargetPos
-				tr.Vel = Vec2{}
-			} else {
-				direction := toTarget.Scale(1.0 / dist)
-				tr.Vel = direction.Scale(speed)
-				tr.Pos = tr.Pos.Add(tr.Vel.Scale(dt))
-			}
-		} else if route != nil && missile.WaypointIdx < len(route.Waypoints) {
-			wp := route.Waypoints[missile.WaypointIdx]
-			toWp := wp.Sub(tr.Pos)
-			dist := toWp.Len()
-			speed := mov.MaxSpeed
-			if dist <= ShipStopEps || speed <= 1e-3 || dist <= speed*dt {
-				tr.Pos = wp
-				tr.Vel = Vec2{}
-				missile.WaypointIdx++
-			} else {
-				direction := toWp.Scale(1.0 / dist)
-				tr.Vel = direction.Scale(speed)
-				tr.Pos = tr.Pos.Add(tr.Vel.Scale(dt))
-			}
+			missile.ReturnIndex = follower.Index
+			follower.override = RouteWaypoint{Pos: perceivedTargetPos, Speed: mov.MaxSpeed}
+			follower.hasOverride = true
+		} else {
+			follower.hasOverride = false
+			follower.override = RouteWaypoint{}
+		}
+	})
+}
+
+func resolveMissileCollisions(r *Room) {
+	world := r.World
+	world.ForEach([]ComponentKey{CompTransform, CompMissile, CompOwner}, func(id EntityID) {
+		if world.DestroyedData(id) != nil {
+			return
 		}
 
-		if tr.Pos.X < 0 {
-			tr.Pos.X = 0
-		}
-		if tr.Pos.Y < 0 {
-			tr.Pos.Y = 0
-		}
-		if tr.Pos.X > r.WorldWidth {
-			tr.Pos.X = r.WorldWidth
-		}
-		if tr.Pos.Y > r.WorldHeight {
-			tr.Pos.Y = r.WorldHeight
-		}
-
-		if !chasing && route != nil && missile.WaypointIdx >= len(route.Waypoints) {
-			tr.Vel = Vec2{}
+		tr := world.Transform(id)
+		missile := world.MissileData(id)
+		owner := world.Owner(id)
+		if tr == nil || missile == nil || owner == nil {
+			return
 		}
 
 		hitShip := EntityID(0)
@@ -205,19 +222,17 @@ func updateMissiles(r *Room, dt float64) {
 			if hitShip != 0 {
 				return
 			}
+			if world.DestroyedData(shipID) != nil {
+				return
+			}
 			shipOwner := world.Owner(shipID)
 			if shipOwner == nil || shipOwner.PlayerID == owner.PlayerID {
 				return
 			}
-			if world.DestroyedData(shipID) != nil {
-				return
-			}
-			// Collision based on missile's perception of ship
 			snap, ok := PerceiveEntity(tr.Pos, shipID, world, r.Now)
 			if !ok {
 				return
 			}
-			// Check if missile's actual position overlaps with perceived ship position
 			if snap.Pos.Sub(tr.Pos).Len() <= MissileHitRadius {
 				hitShip = shipID
 			}
@@ -233,13 +248,31 @@ func updateMissiles(r *Room, dt float64) {
 			if heat := world.HeatData(hitShip); heat != nil {
 				ApplyMissileHeatSpike(heat, r.Now, rand.Float64)
 			}
-			// Soft delete: mark as destroyed instead of removing
 			world.SetComponent(id, CompDestroyed, &DestroyedComponent{DestroyedAt: r.Now})
+		}
+	})
+}
+
+// updateMissileHeat applies heat physics to all missiles.
+// Missiles that overheat explode (get destroyed) instead of stalling.
+func updateMissileHeat(r *Room, dt float64) {
+	world := r.World
+	world.ForEach([]ComponentKey{CompMissile, CompHeat, CompTransform}, func(id EntityID) {
+		if world.DestroyedData(id) != nil {
 			return
 		}
 
-		if hist := world.HistoryComponent(id); hist != nil {
-			hist.History.push(Snapshot{T: r.Now, Pos: tr.Pos, Vel: tr.Vel})
+		heat := world.HeatData(id)
+		transform := world.Transform(id)
+		if heat == nil || transform == nil {
+			return
+		}
+
+		speed := transform.Vel.Len()
+		UpdateHeat(heat, speed, dt, r.Now)
+
+		if heat.S.Value >= heat.P.OverheatAt {
+			world.SetComponent(id, CompDestroyed, &DestroyedComponent{DestroyedAt: r.Now})
 		}
 	})
 }

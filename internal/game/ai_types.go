@@ -5,20 +5,25 @@ type AICommand interface {
 }
 
 type aiCommandSetShipRoute struct {
-	waypoints []ShipWaypoint
+	waypoints []RouteWaypoint
 }
 
 func (c aiCommandSetShipRoute) apply(r *Room, p *Player) {
 	if p == nil || p.Ship == 0 {
 		return
 	}
-	route := r.World.ShipRoute(p.Ship)
+	route := r.World.Route(p.Ship)
 	if route == nil {
 		return
 	}
-	copied := make([]ShipWaypoint, len(c.waypoints))
+	copied := make([]RouteWaypoint, len(c.waypoints))
 	copy(copied, c.waypoints)
 	route.Waypoints = copied
+	if follower := r.World.RouteFollower(p.Ship); follower != nil {
+		follower.Index = 0
+		follower.Hold = false
+		follower.hasOverride = false
+	}
 }
 
 type aiCommandClearShipRoute struct{}
@@ -27,14 +32,19 @@ func (aiCommandClearShipRoute) apply(r *Room, p *Player) {
 	if p == nil || p.Ship == 0 {
 		return
 	}
-	if route := r.World.ShipRoute(p.Ship); route != nil {
+	if route := r.World.Route(p.Ship); route != nil {
 		route.Waypoints = nil
+	}
+	if follower := r.World.RouteFollower(p.Ship); follower != nil {
+		follower.Index = 0
+		follower.Hold = false
+		follower.hasOverride = false
 	}
 }
 
 type aiCommandLaunchMissile struct {
 	config    MissileConfig
-	waypoints []Vec2
+	waypoints []RouteWaypoint
 }
 
 func (c aiCommandLaunchMissile) apply(r *Room, p *Player) {
@@ -55,7 +65,7 @@ func (c aiCommandLaunchMissile) apply(r *Room, p *Player) {
 	}
 }
 
-func CommandSetShipRoute(waypoints []ShipWaypoint) AICommand {
+func CommandSetShipRoute(waypoints []RouteWaypoint) AICommand {
 	return aiCommandSetShipRoute{waypoints: waypoints}
 }
 
@@ -63,8 +73,10 @@ func CommandClearShipRoute() AICommand {
 	return aiCommandClearShipRoute{}
 }
 
-func CommandLaunchMissile(cfg MissileConfig, waypoints []Vec2) AICommand {
-	return aiCommandLaunchMissile{config: cfg, waypoints: append([]Vec2(nil), waypoints...)}
+func CommandLaunchMissile(cfg MissileConfig, waypoints []RouteWaypoint) AICommand {
+	copied := make([]RouteWaypoint, len(waypoints))
+	copy(copied, waypoints)
+	return aiCommandLaunchMissile{config: cfg, waypoints: copied}
 }
 
 type AIBehavior interface {
@@ -119,7 +131,7 @@ type AIContext struct {
 	SelfEntity    EntityID
 	SelfTransform *Transform
 	SelfMovement  *Movement
-	SelfRoute     *ShipRoute
+	SelfRoute     *RouteComponent
 	SelfHeat      *HeatComponent
 	Opponents     []AIShipInfo
 	Threats       []AIMissileThreat
@@ -139,7 +151,7 @@ func buildAIContext(r *Room, self *Player) *AIContext {
 		if self.Ship != 0 {
 			ctx.SelfTransform = r.World.Transform(self.Ship)
 			ctx.SelfMovement = r.World.Movement(self.Ship)
-			ctx.SelfRoute = r.World.ShipRoute(self.Ship)
+			ctx.SelfRoute = r.World.Route(self.Ship)
 			ctx.SelfHeat = r.World.HeatData(self.Ship)
 		}
 	}

@@ -15,9 +15,9 @@ This strategic roadmap is organized into **5 phases**, each building on the prev
 - **[Frontend Changes](./Phase1_Frontend.md)** - Drag-to-move waypoints, heat visualization
 - **[Networking Layer](./Phase1_Networking.md)** - WebSocket messages, DTOs, bandwidth optimization
 
-#### Phase 2: Missile Economy & Heat Integration
-- **[Backend Changes](./Phase2_Backend.md)** - Heat-based launch costs, validation, balancing
-- **[Frontend Changes](./Phase2_Frontend.md)** - Launch indicators, missile presets, error handling
+#### Phase 2: Missile Heat System Integration
+- **[Backend Changes](./Phase2_Backend.md)** - Missile heat components, heat physics, overheat explosions, presets
+- **[Frontend Changes](./Phase2_Frontend.md)** - Missile heat visualization, route projection, preset UI, heat planning
 
 #### Phase 3: Upgrade & Progression System
 - **[Backend Changes](./Phase3_Backend.md)** - Player profiles, upgrade tree, XP system, persistence
@@ -55,9 +55,9 @@ Each subsystem—movement, heat, missiles, upgrades, and story—feeds this loop
 | **1** | Waypoint Dragging | ★★ | routes.go, ws.go, dto.go, game.ts | High |
 | **1** | Heat Visualization | ★★ | game.ts, state.ts | High |
 | **1** | Hold Command | ★ | game.ts, bus.ts | Medium |
-| **2** | Missile Heat Cost | ★★ | room.go, consts.go, game.ts | High |
-| **2** | Launch Restrictions | ★★ | game.ts, state.ts | High |
-| **2** | Crafting Queue | ★★★★ | ecs.go, systems.go, dto.go | Low (Future) |
+| **2** | Missile Heat System | ★★★ | ecs.go, heat.go, systems.go, consts.go | High |
+| **2** | Missile Heat UI | ★★ | game.ts, state.ts | High |
+| **2** | Missile Presets | ★★ | consts.go, game.ts, state.ts | Medium |
 | **3** | Upgrade System | ★★★ | profile.go, room.go, upgrades.ts | Medium |
 | **3** | Persistence | ★★ | profile.go, database integration | Medium |
 | **4** | Obstacles | ★★★ | ecs.go, perception.go, game.ts | Low |
@@ -73,10 +73,11 @@ Each subsystem—movement, heat, missiles, upgrades, and story—feeds this loop
 - Enable "Hold" command for emergency stops
 - **📖 See**: [Phase1_Backend.md](./Phase1_Backend.md), [Phase1_Frontend.md](./Phase1_Frontend.md), [Phase1_Networking.md](./Phase1_Networking.md)
 
-**Sprint 3-4: Missile Economy** (Phase 2)
-- Add missile launch heat costs
-- Update UI with heat warnings and presets
-- Balance missile heat economy through playtesting
+**Sprint 3-4: Missile Heat System** (Phase 2)
+- Add missile heat components to ECS (same as ships)
+- Implement missile heat physics and overheat explosions
+- Create missile preset system with different heat profiles
+- Build heat visualization and route projection UI
 - **📖 See**: [Phase2_Backend.md](./Phase2_Backend.md), [Phase2_Frontend.md](./Phase2_Frontend.md)
 
 **Sprint 5-6: Progression Foundation** (Phase 3)
@@ -134,8 +135,8 @@ Each subsystem—movement, heat, missiles, upgrades, and story—feeds this loop
 **Phase 1**: Players use heat visualization to plan efficient routes
 - *Metric*: Heat bar attention time, route planning time increase
 
-**Phase 2**: Missile spam reduces by 60%
-- *Metric*: Launches per minute, heat-limited launch events
+**Phase 2**: Missiles become strategic tools requiring heat management
+- *Metric*: Missile overheat rate, route planning time, preset usage
 
 **Phase 3**: 70% of players engage with upgrade system
 - *Metric*: Upgrade purchases, XP earnings, profile creation rate
