@@ -235,32 +235,31 @@ export function projectRouteHeat(
   }
 
   let heat = clamp(initialHeat, 0, params.max);
-  let pos = { x: route[0].x, y: route[0].y };
-  let currentSpeed = route[0].speed ?? params.markerSpeed;
+  let prevPoint = { x: route[0].x, y: route[0].y };
 
   result.heatAtWaypoints.push(heat);
 
   for (let i = 1; i < route.length; i++) {
     const targetPos = route[i];
-    const targetSpeed = targetPos.speed ?? params.markerSpeed;
 
     // Calculate distance and time
-    const dx = targetPos.x - pos.x;
-    const dy = targetPos.y - pos.y;
+    const dx = targetPos.x - prevPoint.x;
+    const dy = targetPos.y - prevPoint.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
 
     if (distance < 0.001) {
       result.heatAtWaypoints.push(heat);
+      prevPoint = { x: targetPos.x, y: targetPos.y };
       continue;
     }
 
-    // Average speed during segment
-    const avgSpeed = (currentSpeed + targetSpeed) * 0.5;
-    const segmentTime = distance / Math.max(avgSpeed, 1);
+    const rawSpeed = targetPos.speed ?? params.markerSpeed;
+    const segmentSpeed = Math.max(rawSpeed, 0.000001);
+    const segmentTime = distance / segmentSpeed;
 
     // Calculate heat rate (match server formula)
     const Vn = Math.max(params.markerSpeed, 0.000001);
-    const dev = avgSpeed - params.markerSpeed;
+    const dev = segmentSpeed - params.markerSpeed;
     const p = params.exp;
 
     let hdot: number;
@@ -284,8 +283,7 @@ export function projectRouteHeat(
       result.overheatAt = i;
     }
 
-    pos = { x: targetPos.x, y: targetPos.y };
-    currentSpeed = targetSpeed;
+    prevPoint = { x: targetPos.x, y: targetPos.y };
   }
 
   return result;

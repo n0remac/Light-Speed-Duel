@@ -995,7 +995,18 @@ export function createUI({
       return null;
     }
 
-    const route = [{ x: ship.x, y: ship.y, speed: undefined }, ...ship.waypoints];
+    const currentIndexRaw = ship.currentWaypointIndex;
+    const currentIndex =
+      typeof currentIndexRaw === "number" && Number.isFinite(currentIndexRaw) ? currentIndexRaw : 0;
+    const clampedIndex = Math.max(0, Math.min(currentIndex, ship.waypoints.length));
+    const remainingWaypoints =
+      clampedIndex > 0 ? ship.waypoints.slice(clampedIndex) : ship.waypoints.slice();
+
+    if (remainingWaypoints.length === 0) {
+      return null;
+    }
+
+    const route = [{ x: ship.x, y: ship.y, speed: undefined }, ...remainingWaypoints];
 
     const heatParams = {
       markerSpeed: ship.heat.markerSpeed,
@@ -1013,14 +1024,20 @@ export function createUI({
 
   function updatePlannedHeatBar(): void {
     if (!heatBarPlanned) return;
+    const resetPlannedBar = () => {
+      heatBarPlanned.style.width = "0%";
+    };
+
     const ship = state.me;
     if (!ship || !ship.heat) {
+      resetPlannedBar();
       dualMeterAlert = false;
       return;
     }
 
     const planned = projectPlannedHeat();
     if (planned === null) {
+      resetPlannedBar();
       dualMeterAlert = false;
       return;
     }
