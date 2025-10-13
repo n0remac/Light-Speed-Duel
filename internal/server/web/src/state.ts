@@ -168,7 +168,7 @@ export interface Selection {
 }
 
 export interface MissileSelection {
-  type: "waypoint" | "route";
+  type: "waypoint" | "leg";
   index: number;
 }
 

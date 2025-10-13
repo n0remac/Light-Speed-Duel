@@ -1,3 +1,5 @@
+import type { MissileSelection } from "./state";
+
 export type ShipContext = "ship" | "missile";
 export type ShipTool = "set" | "select" | null;
 export type MissileTool = "set" | "select" | null;
@@ -26,6 +28,7 @@ export interface EventMap {
   "missile:routeRenamed": { routeId: string; name: string };
   "missile:activeRouteChanged": { routeId: string | null };
   "missile:toolChanged": { tool: MissileTool };
+  "missile:selectionChanged": { selection: MissileSelection | null };
   "missile:waypointAdded": { routeId: string; index: number };
   "missile:waypointDeleted": { routeId: string; index: number };
   "missile:waypointsCleared": { routeId: string };
