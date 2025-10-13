@@ -79,6 +79,7 @@ export function initGame({ state, uiState, bus }: InitGameOptions): GameControll
   ui.updateHelpOverlay();
   ui.updateStatusIndicators();
   ui.updateMissileLaunchButtonState();
+  ui.updateMissileCountDisplay();
 
   let lastLoopTs: number | null = null;
 
@@ -99,6 +100,7 @@ export function initGame({ state, uiState, bus }: InitGameOptions): GameControll
     logic.updateRouteAnimations(dtSeconds);
     renderer.drawScene();
     ui.updateMissileLaunchButtonState();
+    ui.updateCraftTimer();
 
     requestAnimationFrame(loop);
   }
@@ -112,6 +114,8 @@ export function initGame({ state, uiState, bus }: InitGameOptions): GameControll
       ui.refreshShipSelectionUI();
       ui.refreshMissileSelectionUI();
       ui.updateMissileLaunchButtonState();
+      ui.updateMissileCountDisplay();
+      ui.updateCraftTimer();
       ui.updateStatusIndicators();
     },
   };

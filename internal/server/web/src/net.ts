@@ -83,6 +83,25 @@ interface ServerStateMessage {
     w?: number;
     h?: number;
   };
+  inventory?: {
+    items?: Array<{
+      type: string;
+      variant_id: string;
+      heat_capacity: number;
+      quantity: number;
+    }>;
+  };
+  dag?: {
+    nodes?: Array<{
+      id: string;
+      kind: string;
+      label: string;
+      status: string;
+      remaining_s: number;
+      duration_s: number;
+      repeatable: boolean;
+    }>;
+  };
 }
 
 interface ConnectOptions {
@@ -235,6 +254,31 @@ function handleStateMessage(
     w: hasW ? meta.w! : state.worldMeta.w,
     h: hasH ? meta.h! : state.worldMeta.h,
   };
+
+  if (msg.inventory && Array.isArray(msg.inventory.items)) {
+    state.inventory = {
+      items: msg.inventory.items.map((item) => ({
+        type: item.type,
+        variant_id: item.variant_id,
+        heat_capacity: item.heat_capacity,
+        quantity: item.quantity,
+      })),
+    };
+  }
+
+  if (msg.dag && Array.isArray(msg.dag.nodes)) {
+    state.dag = {
+      nodes: msg.dag.nodes.map((node) => ({
+        id: node.id,
+        kind: node.kind,
+        label: node.label,
+        status: node.status,
+        remaining_s: node.remaining_s,
+        duration_s: node.duration_s,
+        repeatable: node.repeatable,
+      })),
+    };
+  }
 
   if (state.missiles.length > prevMissileCount) {
     const activeRouteId = state.activeMissileRouteId;

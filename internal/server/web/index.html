@@ -719,6 +719,16 @@
               </span>
               <span id="missile-launch-info"></span>
             </button>
+            <button id="missile-craft" class="edge-btn">
+              <span class="btn-text-full">Craft</span>
+              <span class="btn-text-short">Craft</span>
+            </button>
+          </div>
+          <div id="missile-inventory" style="font-size: 11px; color: var(--text-muted); text-align: center; padding: 4px;">
+            Missiles: <span id="missile-count">0</span>
+          </div>
+          <div id="missile-craft-timer" style="font-size: 11px; color: var(--text-accent); text-align: center; padding: 4px; display: none;">
+            Crafting: <span id="craft-time-remaining">0</span>s
           </div>
         </div>
       </div>
@@ -738,6 +748,11 @@
               <label for="missile-agro-slider">Missile Agro</label>
               <input id="missile-agro-slider" type="range" min="100" max="2000" value="800" step="50" />
               <span id="missile-agro-value">800</span>
+            </div>
+            <div id="missile-heat-capacity-card" class="slider-card">
+              <label for="missile-heat-capacity-slider">Heat Capacity</label>
+              <input id="missile-heat-capacity-slider" type="range" min="80" max="200" value="80" step="10" />
+              <span id="missile-heat-capacity-value">80</span>
             </div>
             <div id="missile-speed-card" class="slider-card">
               <label for="missile-speed-slider">Leg Speed</label>

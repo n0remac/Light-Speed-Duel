@@ -62,3 +62,32 @@ type shipHeatViewDTO struct {
     KD float64 `json:"kd"` // kDown (cooling scale)
     EX float64 `json:"ex"` // exp (response exponent)
 }
+
+// dagNodeDTO represents a node in the DAG for client serialization
+type dagNodeDTO struct {
+	ID         string  `json:"id"`
+	Kind       string  `json:"kind"`
+	Label      string  `json:"label"`
+	Status     string  `json:"status"`      // locked, available, in_progress, completed
+	RemainingS float64 `json:"remaining_s"` // Time remaining for in-progress jobs
+	DurationS  float64 `json:"duration_s"`  // Total duration of the node
+	Repeatable bool    `json:"repeatable"`  // Whether the node can be repeated
+}
+
+// dagStateDTO contains the full DAG state for a player
+type dagStateDTO struct {
+	Nodes []dagNodeDTO `json:"nodes"`
+}
+
+// inventoryItemDTO represents a single item in the player's inventory
+type inventoryItemDTO struct {
+	Type         string  `json:"type"`
+	VariantID    string  `json:"variant_id"`
+	HeatCapacity float64 `json:"heat_capacity"`
+	Quantity     int     `json:"quantity"`
+}
+
+// inventoryDTO contains the player's full inventory
+type inventoryDTO struct {
+	Items []inventoryItemDTO `json:"items"`
+}

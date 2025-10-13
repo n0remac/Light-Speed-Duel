@@ -4,6 +4,7 @@ import (
 	"log"
 	"time"
 
+	"LightSpeedDuel/internal/dag"
 	. "LightSpeedDuel/internal/game"
 )
 
@@ -33,6 +34,13 @@ func resolveHeatParams(cfg AppConfig) HeatParams {
 func StartApp(addr string, cfg AppConfig) {
 	heat := resolveHeatParams(cfg)
 	hub := NewHub(heat)
+
+	// Initialize DAG system with missile crafting graph
+	nodes := dag.SeedMissileCraftNodes()
+	if err := dag.Init(nodes); err != nil {
+		log.Fatalf("failed to initialize DAG: %v", err)
+	}
+	log.Printf("DAG system initialized with %d missile craft nodes", len(nodes))
 
 	// Periodic cleanup of empty rooms (every 60 seconds)
 	go func() {

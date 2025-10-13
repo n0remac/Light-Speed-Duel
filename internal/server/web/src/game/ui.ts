@@ -40,6 +40,8 @@ export interface UIController {
   updateHelpOverlay(): void;
   setHelpVisible(flag: boolean): void;
   updateMissileLaunchButtonState(): void;
+  updateMissileCountDisplay(): void;
+  updateCraftTimer(): void;
   updateStatusIndicators(): void;
   updatePlannedHeatBar(): void;
   updateSpeedMarker(): void;
@@ -92,6 +94,13 @@ export function createUI({
   let missileAgroCard: HTMLElement | null = null;
   let missileAgroSlider: HTMLInputElement | null = null;
   let missileAgroValue: HTMLElement | null = null;
+  let missileHeatCapacityCard: HTMLElement | null = null;
+  let missileHeatCapacitySlider: HTMLInputElement | null = null;
+  let missileHeatCapacityValue: HTMLElement | null = null;
+  let missileCraftBtn: HTMLButtonElement | null = null;
+  let missileCountSpan: HTMLElement | null = null;
+  let missileCraftTimerDiv: HTMLElement | null = null;
+  let craftTimeRemainingSpan: HTMLElement | null = null;
   let spawnBotBtn: HTMLButtonElement | null = null;
   let spawnBotText: HTMLElement | null = null;
 
@@ -154,6 +163,13 @@ export function createUI({
     missileAgroCard = document.getElementById("missile-agro-card");
     missileAgroSlider = document.getElementById("missile-agro-slider") as HTMLInputElement | null;
     missileAgroValue = document.getElementById("missile-agro-value");
+    missileHeatCapacityCard = document.getElementById("missile-heat-capacity-card");
+    missileHeatCapacitySlider = document.getElementById("missile-heat-capacity-slider") as HTMLInputElement | null;
+    missileHeatCapacityValue = document.getElementById("missile-heat-capacity-value");
+    missileCraftBtn = document.getElementById("missile-craft") as HTMLButtonElement | null;
+    missileCountSpan = document.getElementById("missile-count");
+    missileCraftTimerDiv = document.getElementById("missile-craft-timer");
+    craftTimeRemainingSpan = document.getElementById("craft-time-remaining");
 
     spawnBotBtn = document.getElementById("spawn-bot") as HTMLButtonElement | null;
     spawnBotText = document.getElementById("spawn-bot-text");
@@ -349,6 +365,51 @@ export function createUI({
       }
       updateMissileConfigFromUI({ agroRadius: clampedValue });
       bus.emit("missile:agroChanged", { value: clampedValue });
+    });
+
+    missileHeatCapacitySlider?.addEventListener("input", (event) => {
+      const raw = parseFloat((event.target as HTMLInputElement).value);
+      if (!Number.isFinite(raw)) return;
+      const clampedValue = Math.max(80, Math.min(200, raw));
+      missileHeatCapacitySlider.value = clampedValue.toFixed(0);
+      if (missileHeatCapacityValue) {
+        missileHeatCapacityValue.textContent = `${clampedValue.toFixed(0)}`;
+      }
+      state.craftHeatCapacity = clampedValue;
+    });
+
+    missileCraftBtn?.addEventListener("click", () => {
+      if (missileCraftBtn.disabled) return;
+
+      // Find the craft node for the selected heat capacity
+      const heatCap = state.craftHeatCapacity;
+      let nodeId = "craft.missile.basic"; // Default
+
+      if (state.dag) {
+        // Find the best matching craft node based on heat capacity
+        const craftNodes = state.dag.nodes.filter(n => n.kind === "craft" && n.id.includes("missile"));
+        for (const node of craftNodes) {
+          const nodeHeatCap = parseInt(node.id.match(/(\d+)/)?.[1] || "80");
+          if (Math.abs(nodeHeatCap - heatCap) < 5) {
+            nodeId = node.id;
+            break;
+          }
+        }
+
+        // Determine the right node based on heat capacity ranges
+        if (heatCap >= 180) {
+          nodeId = "craft.missile.extended";
+        } else if (heatCap >= 140) {
+          nodeId = "craft.missile.high_heat";
+        } else if (heatCap >= 110) {
+          nodeId = "craft.missile.long_range";
+        } else {
+          nodeId = "craft.missile.basic";
+        }
+      }
+
+      sendMessage({ type: "dag_start", node_id: nodeId });
+      bus.emit("missile:craftRequested", { nodeId, heatCapacity: heatCap });
     });
 
     routePrevBtn?.addEventListener("click", () => logic.cycleMissileRoute(-1));
@@ -831,6 +892,46 @@ export function createUI({
     }
   }
 
+  function updateMissileCountDisplay(): void {
+    if (!missileCountSpan) return;
+
+    let count = 0;
+    if (state.inventory && state.inventory.items) {
+      for (const item of state.inventory.items) {
+        if (item.type === "missile") {
+          count += item.quantity;
+        }
+      }
+    }
+
+    missileCountSpan.textContent = count.toString();
+  }
+
+  function updateCraftTimer(): void {
+    if (!missileCraftTimerDiv || !craftTimeRemainingSpan) return;
+
+    // Look for any craft node that's in progress
+    let craftInProgress = false;
+    let remainingTime = 0;
+
+    if (state.dag && state.dag.nodes) {
+      for (const node of state.dag.nodes) {
+        if (node.kind === "craft" && node.status === "in_progress") {
+          craftInProgress = true;
+          remainingTime = node.remaining_s;
+          break;
+        }
+      }
+    }
+
+    if (craftInProgress && remainingTime > 0) {
+      missileCraftTimerDiv.style.display = "block";
+      craftTimeRemainingSpan.textContent = Math.ceil(remainingTime).toString();
+    } else {
+      missileCraftTimerDiv.style.display = "none";
+    }
+  }
+
   function updateStatusIndicators(): void {
     const meta = state.worldMeta ?? {};
     camera.updateWorldFromMeta(meta);
@@ -1015,6 +1116,8 @@ export function createUI({
     updateHelpOverlay,
     setHelpVisible,
     updateMissileLaunchButtonState,
+    updateMissileCountDisplay,
+    updateCraftTimer,
     updateStatusIndicators,
     updatePlannedHeatBar,
     updateSpeedMarker,

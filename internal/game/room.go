@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"LightSpeedDuel/internal/dag"
 )
 
 type MissileRouteDef struct {
@@ -24,6 +26,8 @@ type Player struct {
 	MissileReadyAt       float64
 	IsBot                bool
 	Kills                int
+	DagState             *dag.State // Progression state for crafting/upgrades
+	Inventory            *Inventory // Player's crafted items
 }
 
 type Room struct {
@@ -146,11 +150,40 @@ func (r *Room) Tick() {
 	updateRouteFollowers(r, Dt)
 	resolveMissileCollisions(r)
 	updateMissileHeat(r, Dt)
+	r.updateDagStates()
 
 	// Run garbage collection every second to clean up old destroyed entities
 	tickCount := int(r.Now * SimHz)
 	if tickCount%int(SimHz) == 0 {
 		r.cleanupDestroyedEntitiesLocked()
+	}
+}
+
+// updateDagStates evaluates and updates DAG progression for all players.
+func (r *Room) updateDagStates() {
+	graph := dag.GetGraph()
+	if graph == nil {
+		return // DAG not initialized yet
+	}
+
+	for _, player := range r.Players {
+		if player.DagState == nil {
+			player.EnsureDagState()
+		}
+
+		// Evaluate current state
+		result := dag.Evaluator(graph, player.DagState, r.Now)
+
+		// Apply status updates
+		for nodeID, newStatus := range result.StatusUpdates {
+			player.DagState.SetStatus(nodeID, newStatus)
+		}
+
+		// Complete due jobs with crafting effects
+		effects := NewCraftingEffects(player)
+		for _, nodeID := range result.DueCompletions {
+			_ = dag.Complete(graph, player.DagState, nodeID, effects)
+		}
 	}
 }
 
@@ -240,6 +273,8 @@ func (r *Room) addBotUnlocked(name string, behavior AIBehavior, startPos Vec2) *
 		IsBot:         true,
 	}
 	player.EnsureMissileRoutes()
+	player.EnsureDagState()
+	player.EnsureInventory()
 	shipID := r.SpawnShip(id, startPos)
 	player.Ship = shipID
 	r.Players[id] = player
@@ -479,6 +514,20 @@ func (p *Player) EnsureMissileRoutes() {
 	}
 	if p.ActiveMissileRouteID == "" || p.MissileRouteByID(p.ActiveMissileRouteID) == nil {
 		p.ActiveMissileRouteID = p.MissileRoutes[0].ID
+	}
+}
+
+// EnsureDagState initializes the DAG state if not already present.
+func (p *Player) EnsureDagState() {
+	if p.DagState == nil {
+		p.DagState = dag.NewState()
+	}
+}
+
+// EnsureInventory initializes the inventory if not already present.
+func (p *Player) EnsureInventory() {
+	if p.Inventory == nil {
+		p.Inventory = NewInventory()
 	}
 }
 

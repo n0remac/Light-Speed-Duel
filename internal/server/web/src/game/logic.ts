@@ -368,6 +368,22 @@ export function createLogic({
     if (getMissileCooldownRemaining() > 0.05) {
       return;
     }
+
+    // Check if player has missiles in inventory
+    let hasMissiles = false;
+    if (state.inventory?.items) {
+      for (const item of state.inventory.items) {
+        if (item.type === "missile" && item.quantity > 0) {
+          hasMissiles = true;
+          break;
+        }
+      }
+    }
+    if (!hasMissiles) {
+      console.log("No missiles available - craft missiles first");
+      return;
+    }
+
     bus.emit("missile:launchRequested", { routeId: route.id });
     sendMessage({
       type: "launch_missile",

@@ -93,6 +93,31 @@ export interface MissilePreset {
   heatParams: HeatParams;
 }
 
+export interface InventoryItem {
+  type: string;
+  variant_id: string;
+  heat_capacity: number;
+  quantity: number;
+}
+
+export interface Inventory {
+  items: InventoryItem[];
+}
+
+export interface DagNode {
+  id: string;
+  kind: string;
+  label: string;
+  status: string; // "locked" | "available" | "in_progress" | "completed"
+  remaining_s: number;
+  duration_s: number;
+  repeatable: boolean;
+}
+
+export interface DagState {
+  nodes: DagNode[];
+}
+
 // Missile preset definitions matching backend
 export const MISSILE_PRESETS: MissilePreset[] = [
   {
@@ -160,6 +185,9 @@ export interface AppState {
   missileConfig: MissileConfig;
   missileLimits: MissileLimits;
   worldMeta: WorldMeta;
+  inventory: Inventory | null;
+  dag: DagState | null;
+  craftHeatCapacity: number; // Heat capacity slider value for crafting
 }
 
 export interface Selection {
@@ -229,6 +257,9 @@ export function createInitialState(limits: MissileLimits = {
     },
     missileLimits: limits,
     worldMeta: {},
+    inventory: null,
+    dag: null,
+    craftHeatCapacity: 80, // Default to basic missile heat capacity
   };
 }
 

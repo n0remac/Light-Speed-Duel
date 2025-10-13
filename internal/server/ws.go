@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"LightSpeedDuel/internal/dag"
 	. "LightSpeedDuel/internal/game"
 
 	"github.com/gorilla/websocket"
@@ -100,6 +101,8 @@ type wsMsg struct {
 	MissileAgro  float64 `json:"missile_agro,omitempty"`
 	RouteID      string  `json:"route_id,omitempty"`
 	RouteName    string  `json:"route_name,omitempty"`
+	// dag
+	NodeID string `json:"node_id,omitempty"`
 }
 
 type stateMsg struct {
@@ -114,6 +117,8 @@ type stateMsg struct {
 	MissileRoutes      []missileRouteDTO `json:"missile_routes"`
 	ActiveMissileRoute string            `json:"active_missile_route"`
 	NextMissileReady   float64           `json:"next_missile_ready"`
+	Dag                *dagStateDTO      `json:"dag,omitempty"`       // DAG progression state
+	Inventory          *inventoryDTO     `json:"inventory,omitempty"` // Player's crafted items
 }
 
 type roomMeta struct {
@@ -208,6 +213,8 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 		AgroRadius: 800,
 	})
 	player.EnsureMissileRoutes()
+	player.EnsureDagState()
+	player.EnsureInventory()
 
 	existingHumans := room.HumanPlayerCountLocked()
 	startPos := Vec2{
@@ -439,14 +446,96 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 						room.Mu.Unlock()
 						continue
 					}
+
+					// Check if player has missiles in inventory
+					p.EnsureInventory()
+					hasMissiles := false
+					var missileToConsume *InventoryItem
+					for i := range p.Inventory.Items {
+						item := &p.Inventory.Items[i]
+						if item.Type == "missile" && item.Quantity > 0 {
+							hasMissiles = true
+							missileToConsume = item
+							break
+						}
+					}
+					if !hasMissiles {
+						log.Printf("Player %s attempted to launch missile but has none in inventory", playerID)
+						room.Mu.Unlock()
+						continue
+					}
+
 					if tr := room.World.Transform(p.Ship); tr != nil {
 						speed := tr.Vel.Len()
 						if id := room.LaunchMissile(playerID, p.Ship, cfg, waypoints, tr.Pos, tr.Vel); id != 0 {
 							p.MissileReadyAt = now + MissileCooldownForSpeed(speed)
+							// Consume one missile from inventory
+							p.Inventory.RemoveItem(missileToConsume.Type, missileToConsume.VariantID, missileToConsume.HeatCapacity, 1)
+							log.Printf("Player %s launched missile, consumed 1x %s (heat: %.0f)", playerID, missileToConsume.VariantID, missileToConsume.HeatCapacity)
 						}
 					}
 				}
 				room.Mu.Unlock()
+			case "dag_start":
+				room.Mu.Lock()
+				if p := room.Players[playerID]; p != nil {
+					p.EnsureDagState()
+					graph := dag.GetGraph()
+					if graph != nil {
+						effects := NewCraftingEffects(p)
+						nodeID := dag.NodeID(m.NodeID)
+						if err := dag.Start(graph, p.DagState, nodeID, room.Now, effects); err != nil {
+							log.Printf("dag_start error for player %s node %s: %v", playerID, nodeID, err)
+						}
+					}
+				}
+				room.Mu.Unlock()
+			case "dag_cancel":
+				room.Mu.Lock()
+				if p := room.Players[playerID]; p != nil {
+					p.EnsureDagState()
+					graph := dag.GetGraph()
+					if graph != nil {
+						effects := NewCraftingEffects(p)
+						nodeID := dag.NodeID(m.NodeID)
+						if err := dag.Cancel(graph, p.DagState, nodeID, effects); err != nil {
+							log.Printf("dag_cancel error for player %s node %s: %v", playerID, nodeID, err)
+						}
+					}
+				}
+				room.Mu.Unlock()
+			case "dag_list":
+				room.Mu.Lock()
+				var dagDTO *dagStateDTO
+				if p := room.Players[playerID]; p != nil {
+					p.EnsureDagState()
+					if graph := dag.GetGraph(); graph != nil && p.DagState != nil {
+						now := room.Now
+						var nodes []dagNodeDTO
+						for nodeID, node := range graph.Nodes {
+							status := p.DagState.GetStatus(nodeID)
+							remaining := p.DagState.RemainingTime(nodeID, now)
+							nodes = append(nodes, dagNodeDTO{
+								ID:         string(nodeID),
+								Kind:       string(node.Kind),
+								Label:      node.Label,
+								Status:     string(status),
+								RemainingS: remaining,
+								DurationS:  node.DurationS,
+								Repeatable: node.Repeatable,
+							})
+						}
+						dagDTO = &dagStateDTO{Nodes: nodes}
+					}
+				}
+				room.Mu.Unlock()
+				// Send dag list response
+				if dagDTO != nil {
+					_ = conn.WriteJSON(map[string]any{
+						"type": "dag_list",
+						"dag":  dagDTO,
+					})
+				}
 			}
 		}
 	}()
@@ -473,6 +562,8 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 				var ghosts []ghost
 				var missiles []missileDTO
 				var nextMissileReady float64
+				var dagDTO *dagStateDTO
+				var invDTO *inventoryDTO
 
 				var meEntity EntityID
 				var meTransform *Transform
@@ -565,6 +656,41 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 								EX: heat.P.Exp,
 							}
 						}
+					}
+
+					// Build DAG state DTO
+					p.EnsureDagState()
+					if graph := dag.GetGraph(); graph != nil && p.DagState != nil {
+						var nodes []dagNodeDTO
+						for nodeID, node := range graph.Nodes {
+							status := p.DagState.GetStatus(nodeID)
+							remaining := p.DagState.RemainingTime(nodeID, now)
+							nodes = append(nodes, dagNodeDTO{
+								ID:         string(nodeID),
+								Kind:       string(node.Kind),
+								Label:      node.Label,
+								Status:     string(status),
+								RemainingS: remaining,
+								DurationS:  node.DurationS,
+								Repeatable: node.Repeatable,
+							})
+						}
+						dagDTO = &dagStateDTO{Nodes: nodes}
+					}
+
+					// Build inventory DTO
+					p.EnsureInventory()
+					if p.Inventory != nil && len(p.Inventory.Items) > 0 {
+						items := make([]inventoryItemDTO, len(p.Inventory.Items))
+						for i, item := range p.Inventory.Items {
+							items[i] = inventoryItemDTO{
+								Type:         item.Type,
+								VariantID:    item.VariantID,
+								HeatCapacity: item.HeatCapacity,
+								Quantity:     item.Quantity,
+							}
+						}
+						invDTO = &inventoryDTO{Items: items}
 					}
 				}
 
@@ -679,6 +805,8 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 					MissileRoutes:      missileRoutesDTO,
 					ActiveMissileRoute: activeRouteID,
 					NextMissileReady:   nextMissileReady,
+					Dag:                dagDTO,
+					Inventory:          invDTO,
 				}
 				_ = conn.WriteJSON(msg)
 			}
