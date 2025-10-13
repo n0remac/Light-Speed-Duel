@@ -373,6 +373,8 @@ export const MISSILE_PALETTE: RoutePalette = {
   waypointSelected: "#facc15",
   waypointStroke: "#7f1d1d",
   waypointStrokeSelected: "#854d0e",
+  heatCoolRgb: [248, 129, 129],
+  heatHotRgb: [220, 38, 38],
 };
 
 export interface DrawPlannedRouteOptions {
@@ -452,12 +454,14 @@ export function drawPlannedRoute(
       // Calculate heat-based color if heat data available
       let strokeStyle: string;
       let lineWidth: number;
+      let lineDash: number[] | null = null;
+      let alphaOverride: number | null = null;
 
       if (isSelected) {
         // Selection styling
         strokeStyle = palette.selection;
         lineWidth = 3.5;
-        ctx.setLineDash([4, 4]);
+        lineDash = [4, 4];
       } else if (heatProjection && heatParams && palette.heatCoolRgb && palette.heatHotRgb) {
         // Heat-based color interpolation (ship style)
         const heatRatio = clamp(segmentHeat / heatParams.overheatAt, 0, 1);
@@ -466,16 +470,23 @@ export function drawPlannedRoute(
         lineWidth = baseWidth + heatRatio * 4;
         const alpha = isFirstLeg ? 1 : 0.4;
         strokeStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha})`;
-        ctx.setLineDash(isFirstLeg ? [6, 6] : [8, 8]);
+        lineDash = isFirstLeg ? [6, 6] : [8, 8];
       } else {
         // Default styling (no heat)
         const baseWidth = isFirstLeg ? 3 : 1.5;
         lineWidth = baseWidth;
-        strokeStyle = isFirstLeg ? palette.defaultLine : `${palette.defaultLine}66`;
-        ctx.setLineDash(isFirstLeg ? [6, 6] : [8, 8]);
+        strokeStyle = palette.defaultLine;
+        lineDash = isFirstLeg ? [6, 6] : [8, 8];
+        alphaOverride = isFirstLeg ? 1 : 0.4;
       }
 
       ctx.save();
+      if (lineDash) {
+        ctx.setLineDash(lineDash);
+      }
+      if (alphaOverride !== null) {
+        ctx.globalAlpha = alphaOverride;
+      }
       ctx.strokeStyle = strokeStyle;
       ctx.lineWidth = lineWidth;
       ctx.beginPath();
