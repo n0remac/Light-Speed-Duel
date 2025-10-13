@@ -250,7 +250,7 @@ function cacheDom(): void {
 
   defaultSpeed = parseFloat(shipSpeedSlider?.value ?? "150");
   if (missileSpeedSlider) {
-    missileSpeedSlider.disabled = true;
+    missileSpeedSlider.disabled = false;
   }
 }
 
@@ -361,13 +361,21 @@ function bindListeners(): void {
 
   missileSpeedSlider?.addEventListener("input", (event) => {
     const inputEl = event.target as HTMLInputElement;
-    if (inputEl.disabled) {
-      return;
-    }
     const rawValue = parseFloat(inputEl.value);
     if (!Number.isFinite(rawValue)) {
       updateMissileSpeedControls();
       return;
+    }
+
+    const minSpeed = stateRef.missileLimits.speedMin ?? MISSILE_MIN_SPEED;
+    const maxSpeed = stateRef.missileLimits.speedMax ?? MISSILE_MAX_SPEED;
+    const clampedValue = clamp(rawValue, minSpeed, maxSpeed);
+    if (Math.abs(clampedValue - rawValue) > 1e-3) {
+      inputEl.value = clampedValue.toFixed(0);
+    }
+    lastMissileLegSpeed = clampedValue;
+    if (missileSpeedValue) {
+      missileSpeedValue.textContent = `${clampedValue.toFixed(0)}`;
     }
 
     const route = getActiveMissileRoute();
@@ -382,15 +390,8 @@ function bindListeners(): void {
       missileSelection.index >= 0 &&
       missileSelection.index < route.waypoints.length
     ) {
-      const minSpeed = stateRef.missileLimits.speedMin ?? MISSILE_MIN_SPEED;
-      const maxSpeed = stateRef.missileLimits.speedMax ?? MISSILE_MAX_SPEED;
-      const clampedValue = clamp(rawValue, minSpeed, maxSpeed);
       const idx = missileSelection.index;
       route.waypoints[idx] = { ...route.waypoints[idx], speed: clampedValue };
-      lastMissileLegSpeed = clampedValue;
-      if (missileSpeedValue) {
-        missileSpeedValue.textContent = `${clampedValue.toFixed(0)}`;
-      }
       sendMessage({
         type: "update_missile_waypoint_speed",
         route_id: route.id,
@@ -972,16 +973,19 @@ function updateMissileSpeedControls(): void {
     }
   }
 
-  if (sliderValue !== null) {
-    missileSpeedSlider.disabled = false;
-    missileSpeedSlider.value = sliderValue.toFixed(0);
-    missileSpeedValue.textContent = `${sliderValue.toFixed(0)}`;
-  } else {
-    missileSpeedSlider.disabled = true;
-    if (!Number.isFinite(parseFloat(missileSpeedSlider.value))) {
-      missileSpeedSlider.value = stateRef.missileConfig.speed.toFixed(0);
-    }
-    missileSpeedValue.textContent = "--";
+  if (sliderValue === null) {
+    const rawValue = parseFloat(missileSpeedSlider.value);
+    const fallback = lastMissileLegSpeed > 0 ? lastMissileLegSpeed : stateRef.missileConfig.speed;
+    const targetValue = Number.isFinite(rawValue) ? rawValue : fallback;
+    sliderValue = clamp(targetValue, minSpeed, maxSpeed);
+  }
+
+  missileSpeedSlider.disabled = false;
+  missileSpeedSlider.value = sliderValue.toFixed(0);
+  missileSpeedValue.textContent = `${sliderValue.toFixed(0)}`;
+
+  if (sliderValue > 0) {
+    lastMissileLegSpeed = sliderValue;
   }
 }
 
@@ -1059,7 +1063,7 @@ function handleMissilePointer(canvasPoint: { x: number; y: number }, worldPoint:
   route.waypoints = route.waypoints ? [...route.waypoints, wp] : [wp];
   lastMissileLegSpeed = speed;
   renderMissileRouteControls();
-  setMissileSelection({ type: "waypoint", index: route.waypoints.length - 1 }, route.id);
+  setMissileSelection(null, route.id);
   busRef.emit("missile:waypointAdded", { routeId: route.id, index: route.waypoints.length - 1 });
 }
 
@@ -1861,46 +1865,7 @@ function drawMissiles(): void {
       ctx.restore();
     }
 
-    // Draw missile heat bar if heat data is available
-    if (miss.heat) {
-      drawMissileHeatBar(miss, p);
-    }
   }
-}
-
-function drawMissileHeatBar(missile: MissileSnapshot, canvasPos: { x: number; y: number }): void {
-  if (!ctx || !missile.heat) return;
-
-  const heat = missile.heat;
-  const barWidth = 40;
-  const barHeight = 4;
-  const barX = canvasPos.x - barWidth / 2;
-  const barY = canvasPos.y + 15; // Below missile
-
-  // Background
-  ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-  ctx.fillRect(barX - 1, barY - 1, barWidth + 2, barHeight + 2);
-
-  // Heat fill
-  const heatRatio = heat.value / heat.max;
-  const fillWidth = barWidth * heatRatio;
-
-  // Color based on heat level
-  let heatColor: string;
-  const warnRatio = heat.warnAt / heat.max;
-  const overheatRatio = heat.overheatAt / heat.max;
-
-  if (heatRatio < warnRatio) {
-    heatColor = "#33aa33"; // Green - safe
-  } else if (heatRatio < overheatRatio) {
-    heatColor = "#ffaa33"; // Orange - warning
-  } else {
-    heatColor = "#ff3333"; // Red - critical
-  }
-
-  ctx.fillStyle = heatColor;
-  ctx.fillRect(barX, barY, fillWidth, barHeight);
-
 }
 
 function drawGrid(): void {
