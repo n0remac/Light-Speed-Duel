@@ -7,6 +7,7 @@ on:
 permissions:
   contents: read
   issues: write
+  pull-requests: read
 
 jobs:
   plan:
@@ -17,6 +18,22 @@ jobs:
       contains(github.event.issue.labels.*.name, 'research')
 
     steps:
+      - name: Check if user is a collaborator
+        id: collaborator
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "Checking if $ISSUE_AUTHOR is a collaborator..."
+          if gh api repos/$REPO/collaborators/$ISSUE_AUTHOR --silent; then
+            echo "User is collaborator ✅"
+          else
+            echo "User $ISSUE_AUTHOR is not a collaborator ❌"
+            echo "Skipping workflow."
+            exit 0
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -32,6 +49,7 @@ jobs:
           LABELS="${{ toJson(github.event.issue.labels.*.name) }}"
           ISSUE_TITLE="${{ github.event.issue.title }}"
           ISSUE_BODY="${{ github.event.issue.body }}"
+          ISSUE_USER="${{ github.event.issue.user.login }}"
 
           if echo "$LABELS" | grep -iq "bug"; then
             MODE="bug"
@@ -41,35 +59,25 @@ jobs:
             INSTRUCTION="Treat this issue as a FEATURE request. Design a clear implementation plan."
           else
             MODE="research"
-            INSTRUCTION="Treat this issue as a RESEARCH inquiry. Explore the codebase and explain how the relevant components work together. Provide a conceptual overview of data flow, dependencies, and logic. Do not propose code changes unless directly relevant."
+            INSTRUCTION="Treat this issue as a RESEARCH inquiry. Explore the codebase and explain how relevant components work together."
           fi
 
           cat <<EOF > aider_prompt.txt
-You are a senior software engineer assistant. The current issue is labeled as **$MODE**.
+You are a senior software engineer assistant. This issue was opened by @$ISSUE_USER and labeled **$MODE**.
 
 $INSTRUCTION
 
-If this is a FEATURE or BUG, generate a concise Markdown plan structured as follows:
-
+If FEATURE or BUG:
 1. **Frontend Plan**
-   - UI components or files involved.
-   - Expected interactions or visuals.
-
 2. **Backend Plan**
-   - APIs, database models, and logic involved.
-
 3. **Networking / Integration**
-   - How data moves between frontend & backend, caching, errors, protocols.
-
 4. **Acceptance Criteria**
-   - List testable conditions for completion.
 
-If this is a RESEARCH issue, instead produce:
-
-- **Overview**: High-level purpose of this subsystem.
-- **Key Components**: List main files/functions and their responsibilities.
-- **Data Flow**: Describe how information or control moves.
-- **Notes for Further Study**: Open questions or unclear relationships.
+If RESEARCH:
+- **Overview**
+- **Key Components**
+- **Data Flow**
+- **Notes for Further Study**
 
 ---
 **Issue Context**
