@@ -53,7 +53,16 @@ export function mountMissionController({ state, bus, mode, missionId }: MissionC
   }
 
   const storageKey = `${STORAGE_PREFIX}${spec.id}`;
-  const persisted = loadProgress(storageKey);
+  let persisted = loadProgress(storageKey);
+  const completedBefore = persisted.beaconIndex >= spec.beacons.length;
+  if (completedBefore) {
+    persisted = { beaconIndex: 0, holdAccum: 0 };
+    try {
+      saveProgress(storageKey, JSON.stringify(persisted));
+    } catch {
+      // ignore storage errors
+    }
+  }
 
   let mission: MissionState = {
     active: true,
@@ -65,7 +74,7 @@ export function mountMissionController({ state, bus, mode, missionId }: MissionC
   };
 
   let lastWorldKey = "";
-  let lastPersistedJSON = "";
+  let lastPersistedJSON = completedBefore ? JSON.stringify(persisted) : "";
   let lastServerNow: number | null = null;
 
   state.mission = mission;

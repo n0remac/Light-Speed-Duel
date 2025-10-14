@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -103,6 +105,8 @@ type wsMsg struct {
 	RouteName    string  `json:"route_name,omitempty"`
 	// dag
 	NodeID string `json:"node_id,omitempty"`
+	// mission wave spawning
+	WaveIndex int `json:"wave_index,omitempty"`
 }
 
 type stateMsg struct {
@@ -489,6 +493,19 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 					}
 				}
 				room.Mu.Unlock()
+			case "mission_spawn_wave":
+				if mode != "campaign" {
+					continue
+				}
+				waveIndex := m.WaveIndex
+				if waveIndex < 1 || waveIndex > 3 {
+					continue
+				}
+				room.Mu.Lock()
+				if room.SetMissionWaveSpawnedLocked(waveIndex) {
+					spawnMissionWave(room, waveIndex)
+				}
+				room.Mu.Unlock()
 			case "dag_start":
 				room.Mu.Lock()
 				if p := room.Players[playerID]; p != nil {
@@ -839,4 +856,133 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 		room.RemoveAllBotsLocked()
 	}
 	room.Mu.Unlock()
+}
+
+func spawnMissionWave(room *Room, waveIndex int) {
+	beacons := missionBeaconPositions(room)
+	if len(beacons) < 4 {
+		return
+	}
+	switch waveIndex {
+	case 1:
+		heat := HeatParams{
+			Max:         40,
+			WarnAt:      28,
+			OverheatAt:  40,
+			MarkerSpeed: 60,
+			KUp:         20,
+			KDown:       14,
+			Exp:         HeatExp,
+		}
+		total := 18 + rand.Intn(7) // 18-24
+		points := []Vec2{
+			lerpVec(beacons[0], beacons[1], 0.25),
+			lerpVec(beacons[0], beacons[1], 0.5),
+			lerpVec(beacons[0], beacons[1], 0.75),
+		}
+		radius := math.Max(room.WorldWidth*0.025, 600)
+		distributed := total
+		for idx, center := range points {
+			if distributed <= 0 {
+				break
+			}
+			remainingSlots := len(points) - idx
+			group := distributed / remainingSlots
+			if group <= 0 {
+				group = distributed
+			}
+			room.SpawnMinefield(int(center.X), int(center.Y), group, radius, heat, 160)
+			distributed -= group
+		}
+	case 2:
+		minesHeat := HeatParams{
+			Max:         50,
+			WarnAt:      35,
+			OverheatAt:  50,
+			MarkerSpeed: 100,
+			KUp:         24,
+			KDown:       12,
+			Exp:         HeatExp,
+		}
+		total := 28 + rand.Intn(9) // 28-36
+		mineCount := int(math.Round(float64(total) * 0.65))
+		if mineCount < 12 {
+			mineCount = 12
+		}
+		if mineCount > total {
+			mineCount = total
+		}
+		patrollerCount := total - mineCount
+		points := []Vec2{
+			lerpVec(beacons[1], beacons[2], 0.2),
+			lerpVec(beacons[1], beacons[2], 0.45),
+			lerpVec(beacons[1], beacons[2], 0.7),
+		}
+		radius := math.Max(room.WorldWidth*0.02, 500)
+		distributed := mineCount
+		for idx, center := range points {
+			if distributed <= 0 {
+				break
+			}
+			remainingSlots := len(points) - idx
+			group := distributed / remainingSlots
+			if group <= 0 {
+				group = distributed
+			}
+			room.SpawnMinefield(int(center.X), int(center.Y), group, radius, minesHeat, 200)
+			distributed -= group
+		}
+		if patrollerCount > 0 {
+			path := []Vec2{
+				lerpVec(beacons[1], beacons[2], 0.15),
+				lerpVec(beacons[1], beacons[2], 0.5),
+				lerpVec(beacons[1], beacons[2], 0.85),
+			}
+			room.SpawnPatrollers(path, patrollerCount, [2]float64{20, 40}, 320, minesHeat, 200)
+		}
+	case 3:
+		seekersHeat := HeatParams{
+			Max:         68,
+			WarnAt:      46,
+			OverheatAt:  68,
+			MarkerSpeed: 120,
+			KUp:         20,
+			KDown:       15,
+			Exp:         HeatExp,
+		}
+		seekers := 6 + rand.Intn(5) // 6-10
+		center := lerpVec(beacons[2], beacons[3], 0.55)
+		ring := math.Max(room.WorldWidth*0.035, 900)
+		room.SpawnSeekers(int(center.X), int(center.Y), seekers, ring, [2]float64{60, 100}, [2]float64{600, 900}, seekersHeat, 260)
+
+		supportHeat := HeatParams{
+			Max:         55,
+			WarnAt:      38,
+			OverheatAt:  55,
+			MarkerSpeed: 90,
+			KUp:         22,
+			KDown:       13,
+			Exp:         HeatExp,
+		}
+		mines := 12 + rand.Intn(5)
+		room.SpawnMinefield(int(center.X), int(center.Y), mines, ring*0.8, supportHeat, 220)
+	}
+}
+
+func missionBeaconPositions(room *Room) []Vec2 {
+	w := room.WorldWidth
+	h := room.WorldHeight
+	return []Vec2{
+		{X: 0.15 * w, Y: 0.55 * h},
+		{X: 0.40 * w, Y: 0.50 * h},
+		{X: 0.65 * w, Y: 0.47 * h},
+		{X: 0.85 * w, Y: 0.44 * h},
+	}
+}
+
+func lerpVec(a, b Vec2, t float64) Vec2 {
+	return Vec2{
+		X: a.X + (b.X-a.X)*t,
+		Y: a.Y + (b.Y-a.Y)*t,
+	}
 }

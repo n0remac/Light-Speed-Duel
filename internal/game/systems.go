@@ -13,6 +13,7 @@ func updateRouteFollowers(r *Room, dt float64) {
 		mov := world.Movement(id)
 		route := world.Route(id)
 		follower := world.RouteFollower(id)
+		owner := world.Owner(id)
 		if tr == nil || mov == nil || route == nil || follower == nil {
 			return
 		}
@@ -45,19 +46,24 @@ func updateRouteFollowers(r *Room, dt float64) {
 		if follower.hasOverride {
 			target = follower.override
 			usingOverride = true
-		} else if follower.Index < len(route.Waypoints) {
-			target = route.Waypoints[follower.Index]
 		} else {
-			tr.Vel = Vec2{}
-			if follower.Index > len(route.Waypoints) {
-				follower.Index = len(route.Waypoints)
+			if follower.Index >= len(route.Waypoints) {
+				if owner != nil && owner.Neutral && len(route.Waypoints) > 0 {
+					follower.Index = 0
+				} else {
+					tr.Vel = Vec2{}
+					if follower.Index > len(route.Waypoints) {
+						follower.Index = len(route.Waypoints)
+					}
+					follower.hasOverride = false
+					follower.override = RouteWaypoint{}
+					if hist := world.HistoryComponent(id); hist != nil && hist.History != nil {
+						hist.History.push(Snapshot{T: r.Now, Pos: tr.Pos, Vel: tr.Vel})
+					}
+					return
+				}
 			}
-			follower.hasOverride = false
-			follower.override = RouteWaypoint{}
-			if hist := world.HistoryComponent(id); hist != nil && hist.History != nil {
-				hist.History.push(Snapshot{T: r.Now, Pos: tr.Pos, Vel: tr.Vel})
-			}
-			return
+			target = route.Waypoints[follower.Index]
 		}
 
 		speedLimit := mov.MaxSpeed

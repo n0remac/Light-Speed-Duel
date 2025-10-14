@@ -42,6 +42,7 @@ type Room struct {
 	WorldWidth   float64
 	WorldHeight  float64
 	heatDefaults HeatParams
+	missionWaves map[int]bool
 }
 
 func newRoom(id string, defaults HeatParams) *Room {
@@ -56,6 +57,7 @@ func newRoom(id string, defaults HeatParams) *Room {
 		WorldWidth:   WorldW,
 		WorldHeight:  WorldH,
 		heatDefaults: sanitized,
+		missionWaves: map[int]bool{},
 	}
 }
 
@@ -134,6 +136,30 @@ func (r *Room) SetHeatParams(params HeatParams) {
 	r.Mu.Lock()
 	defer r.Mu.Unlock()
 	r.applyHeatParams(params)
+}
+
+func (r *Room) MissionWaveSpawnedLocked(index int) bool {
+	if index <= 0 {
+		return false
+	}
+	if r.missionWaves == nil {
+		return false
+	}
+	return r.missionWaves[index]
+}
+
+func (r *Room) SetMissionWaveSpawnedLocked(index int) bool {
+	if index <= 0 {
+		return false
+	}
+	if r.missionWaves == nil {
+		r.missionWaves = map[int]bool{}
+	}
+	if r.missionWaves[index] {
+		return false
+	}
+	r.missionWaves[index] = true
+	return true
 }
 
 func (r *Room) SetHeatParamsLocked(params HeatParams) {
