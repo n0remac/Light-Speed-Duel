@@ -123,6 +123,7 @@ type stateMsg struct {
 	NextMissileReady   float64           `json:"next_missile_ready"`
 	Dag                *dagStateDTO      `json:"dag,omitempty"`       // DAG progression state
 	Inventory          *inventoryDTO     `json:"inventory,omitempty"` // Player's crafted items
+	Story              *storyStateDTO    `json:"story,omitempty"`
 }
 
 type roomMeta struct {
@@ -144,6 +145,19 @@ type ghost struct {
 	HP                   int              `json:"hp"`
 	Kills                int              `json:"kills"`
 	Heat                 *shipHeatViewDTO `json:"heat,omitempty"`
+}
+
+type storyStateDTO struct {
+	ActiveNode string          `json:"active_node,omitempty"`
+	Available  []string        `json:"available,omitempty"`
+	Flags      map[string]bool `json:"flags,omitempty"`
+	Events     []storyEventDTO `json:"recent_events,omitempty"`
+}
+
+type storyEventDTO struct {
+	ChapterID string  `json:"chapter"`
+	NodeID    string  `json:"node"`
+	Timestamp float64 `json:"timestamp"`
 }
 
 type liveConn struct {
@@ -197,7 +211,12 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 
 	room := h.GetRoom(roomID)
 	playerID := RandId("p")
-	player := &Player{ID: playerID, Name: "Anon"}
+	player := &Player{
+		ID:                playerID,
+		Name:              "Anon",
+		StoryFlags:        make(map[string]bool),
+		ActiveStoryNodeID: "",
+	}
 
 	room.Mu.Lock()
 	if room.HumanPlayerCountLocked() >= RoomMaxPlayers {
@@ -534,6 +553,17 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 					}
 				}
 				room.Mu.Unlock()
+			case "dag_story_ack":
+				room.Mu.Lock()
+				if p := room.Players[playerID]; p != nil {
+					p.EnsureStoryState()
+				}
+				room.Mu.Unlock()
+				if m.NodeID != "" {
+					log.Printf("dag_story_ack received (stub) from %s for %s", playerID, m.NodeID)
+				} else {
+					log.Printf("dag_story_ack received (stub) from %s", playerID)
+				}
 			case "dag_list":
 				room.Mu.Lock()
 				var dagDTO *dagStateDTO
@@ -594,6 +624,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 				var nextMissileReady float64
 				var dagDTO *dagStateDTO
 				var invDTO *inventoryDTO
+				var storyDTO *storyStateDTO
 
 				var meEntity EntityID
 				var meTransform *Transform
@@ -690,6 +721,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 
 					// Build DAG state DTO
 					p.EnsureDagState()
+					p.EnsureStoryState()
 					if graph := dag.GetGraph(); graph != nil && p.DagState != nil {
 						var nodes []dagNodeDTO
 						for nodeID, node := range graph.Nodes {
@@ -721,6 +753,16 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 							}
 						}
 						invDTO = &inventoryDTO{Items: items}
+					}
+
+					flags := copyStoryFlags(p.StoryFlags)
+					if flags == nil {
+						flags = make(map[string]bool)
+					}
+					storyDTO = &storyStateDTO{
+						ActiveNode: p.ActiveStoryNodeID,
+						Flags:      flags,
+						Available:  []string{},
 					}
 				}
 
@@ -837,6 +879,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 					NextMissileReady:   nextMissileReady,
 					Dag:                dagDTO,
 					Inventory:          invDTO,
+					Story:              storyDTO,
 				}
 				_ = conn.WriteJSON(msg)
 			}
@@ -967,6 +1010,17 @@ func spawnMissionWave(room *Room, waveIndex int) {
 		mines := 12 + rand.Intn(5)
 		room.SpawnMinefield(int(center.X), int(center.Y), mines, ring*0.8, supportHeat, 220)
 	}
+}
+
+func copyStoryFlags(src map[string]bool) map[string]bool {
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make(map[string]bool, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }
 
 func missionBeaconPositions(room *Room) []Vec2 {

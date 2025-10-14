@@ -23,6 +23,8 @@ const (
 	NodeKindUpgrade NodeKind = "upgrade"
 	// NodeKindStoryGate represents a story gate node.
 	NodeKindStoryGate NodeKind = "story_gate"
+	// NodeKindStory represents a narrative beat controlled by the server DAG.
+	NodeKindStory NodeKind = "story"
 )
 
 // Node represents a single node in the DAG.
@@ -30,17 +32,17 @@ type Node struct {
 	ID         NodeID            `json:"id"`
 	Kind       NodeKind          `json:"kind"`
 	Label      string            `json:"label"`
-	DurationS  float64           `json:"duration_s"`  // Duration in seconds (0 = instant)
-	Repeatable bool              `json:"repeatable"`  // Can be repeated after completion
-	Payload    map[string]string `json:"payload"`     // Arbitrary key-value data
-	Requires   []NodeID          `json:"requires"`    // Dependencies (must be completed)
+	DurationS  float64           `json:"duration_s"` // Duration in seconds (0 = instant)
+	Repeatable bool              `json:"repeatable"` // Can be repeated after completion
+	Payload    map[string]string `json:"payload"`    // Arbitrary key-value data
+	Requires   []NodeID          `json:"requires"`   // Dependencies (must be completed)
 }
 
 // Graph represents the complete DAG.
 type Graph struct {
-	Nodes       map[NodeID]*Node      // All nodes indexed by ID
-	RequiresIn  map[NodeID][]NodeID   // Reverse index: which nodes require this one
-	TopoOrder   []NodeID              // Topologically sorted node IDs
+	Nodes      map[NodeID]*Node    // All nodes indexed by ID
+	RequiresIn map[NodeID][]NodeID // Reverse index: which nodes require this one
+	TopoOrder  []NodeID            // Topologically sorted node IDs
 }
 
 var (

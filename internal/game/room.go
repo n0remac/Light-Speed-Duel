@@ -28,6 +28,8 @@ type Player struct {
 	Kills                int
 	DagState             *dag.State // Progression state for crafting/upgrades
 	Inventory            *Inventory // Player's crafted items
+	StoryFlags           map[string]bool
+	ActiveStoryNodeID    string
 }
 
 type Room struct {
@@ -554,6 +556,13 @@ func (p *Player) EnsureMissileRoutes() {
 func (p *Player) EnsureDagState() {
 	if p.DagState == nil {
 		p.DagState = dag.NewState()
+	}
+}
+
+// EnsureStoryState initializes the story-related fields if not already present.
+func (p *Player) EnsureStoryState() {
+	if p.StoryFlags == nil {
+		p.StoryFlags = make(map[string]bool)
 	}
 }
 
