@@ -46,9 +46,7 @@ export function createStoryController({ bus, overlay, state }: StoryControllerOp
 
   function showDialogueForNode(chapter: string, node: string, fullNodeId: string): void {
     const content = getDialogueForNode(fullNodeId);
-    console.log("[story] Dialogue content:", content);
     if (!content) {
-      console.warn("[story] No dialogue content found for:", fullNodeId);
       // Still acknowledge the node to progress the story
       acknowledgeNode(fullNodeId, null);
       return;

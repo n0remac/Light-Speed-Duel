@@ -321,9 +321,6 @@ function handleStateMessage(
         timestamp: evt.timestamp,
       })) : [],
     };
-    if (state.story.activeNode === null) {
-      state.story.activeNode = "story.signal-static-1.start";
-    }
     // Emit event when active story node changes
     if (state.story.activeNode !== prevActiveNode && state.story.activeNode) {
       bus.emit("story:nodeActivated", { nodeId: state.story.activeNode });

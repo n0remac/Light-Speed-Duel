@@ -250,13 +250,13 @@ func (r *Room) HandleMissionStoryEventLocked(player *Player, event string, beaco
 }
 
 func storyNodeForMissionEvent(event string, beaconIndex int) dag.NodeID {
-	fmt.Println("Event: ", event)
 	switch event {
 	case "mission:start":
 		return dag.NodeID("story.signal-static-1.start")
 	case "mission:beacon-locked":
 		switch beaconIndex {
 		case 1:
+			fmt.Println("Starting story node for beacon 1")
 			return dag.NodeID("story.signal-static-1.beacon-1")
 		case 2:
 			return dag.NodeID("story.signal-static-1.beacon-2")

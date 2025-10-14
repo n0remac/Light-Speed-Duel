@@ -7,7 +7,7 @@ func SeedStoryNodes() []*Node {
 			ID:         "story.signal-static-1.start",
 			Kind:       NodeKindStory,
 			Label:      "Signal In The Static – Arrival",
-			DurationS:  0,
+			DurationS:  5,
 			Repeatable: false,
 			Payload: map[string]string{
 				"chapter": "signal-static-1",
@@ -20,7 +20,7 @@ func SeedStoryNodes() []*Node {
 			ID:         "story.signal-static-1.beacon-1",
 			Kind:       NodeKindStory,
 			Label:      "Signal In The Static – Beacon 1",
-			DurationS:  0,
+			DurationS:  5,
 			Repeatable: false,
 			Payload: map[string]string{
 				"chapter": "signal-static-1",
