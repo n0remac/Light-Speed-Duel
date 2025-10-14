@@ -229,13 +229,21 @@ func (r *Room) tryStartStoryNodeLocked(player *Player, nodeID dag.NodeID) {
 	}
 	effects := NewRoomDagEffects(r, player)
 	r.EvaluatePlayerDagLocked(graph, player, effects)
-	if player.DagState.GetStatus(nodeID) != dag.StatusAvailable {
+
+	status := player.DagState.GetStatus(nodeID)
+	log.Printf("[story] Player %s attempting to start node %s (status: %s)", player.ID, nodeID, status)
+
+	if status != dag.StatusAvailable {
+		log.Printf("[story] Node %s not available for player %s (status: %s), skipping", nodeID, player.ID, status)
 		return
 	}
+
 	if err := dag.Start(graph, player.DagState, nodeID, r.Now, effects); err != nil {
-		log.Printf("story start error for player %s node %s: %v", player.ID, nodeID, err)
+		log.Printf("[story] Start error for player %s node %s: %v", player.ID, nodeID, err)
 		return
 	}
+
+	log.Printf("[story] Successfully started node %s for player %s", nodeID, player.ID)
 	// Re-evaluate to unlock downstream nodes immediately.
 	r.EvaluatePlayerDagLocked(graph, player, effects)
 }

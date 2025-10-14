@@ -6,6 +6,7 @@ import {
   sanitizeMissileConfig,
   updateMissileLimits,
 } from "./state";
+import type { DialogueContent } from "./story/types";
 
 interface ServerMissileWaypoint {
   x: number;
@@ -104,6 +105,20 @@ interface ServerStateMessage {
   };
   story?: {
     active_node?: string;
+    dialogue?: {
+      speaker: string;
+      text: string;
+      intent: string;
+      continue_label?: string;
+      choices?: Array<{
+        id: string;
+        text: string;
+      }>;
+      tutorial_tip?: {
+        title: string;
+        text: string;
+      };
+    };
     available?: string[];
     flags?: Record<string, boolean>;
     recent_events?: Array<{
@@ -309,10 +324,30 @@ function handleStateMessage(
   }
 
   if (msg.story) {
-    
+
     const prevActiveNode = state.story?.activeNode ?? null;
+
+    // Convert server dialogue to DialogueContent format
+    let dialogue: DialogueContent | null = null;
+    if (msg.story.dialogue) {
+      const d = msg.story.dialogue;
+      dialogue = {
+        speaker: d.speaker,
+        text: d.text,
+        intent: d.intent as "factory" | "unit",
+        typingSpeedMs: 18, // Default, or could come from server
+        continueLabel: d.continue_label,
+        choices: d.choices?.map(c => ({ id: c.id, text: c.text })),
+        tutorialTip: d.tutorial_tip ? {
+          title: d.tutorial_tip.title,
+          text: d.tutorial_tip.text,
+        } : undefined,
+      };
+    }
+
     state.story = {
       activeNode: msg.story.active_node ?? null,
+      dialogue, // Store dialogue
       available: Array.isArray(msg.story.available) ? msg.story.available : [],
       flags: msg.story.flags ?? {},
       recentEvents: Array.isArray(msg.story.recent_events) ? msg.story.recent_events.map((evt) => ({
@@ -323,7 +358,10 @@ function handleStateMessage(
     };
     // Emit event when active story node changes
     if (state.story.activeNode !== prevActiveNode && state.story.activeNode) {
-      bus.emit("story:nodeActivated", { nodeId: state.story.activeNode });
+      bus.emit("story:nodeActivated", {
+        nodeId: state.story.activeNode,
+        dialogue: state.story.dialogue ?? undefined, // Pass dialogue
+      });
     }
   }
 

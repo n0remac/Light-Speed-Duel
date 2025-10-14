@@ -1,4 +1,5 @@
 import type { MissileSelection } from "./state";
+import type { DialogueContent } from "./story/types";
 
 export type ShipContext = "ship" | "missile";
 export type ShipTool = "set" | "select" | null;
@@ -53,7 +54,7 @@ export interface EventMap {
   "dialogue:choice": { nodeId: string; choiceId: string; chapterId: string };
   "story:flagUpdated": { flag: string; value: boolean };
   "story:progressed": { chapterId: string; nodeId: string };
-  "story:nodeActivated": { nodeId: string };
+  "story:nodeActivated": { nodeId: string; dialogue?: DialogueContent };
   "mission:start": void;
   "mission:beacon-locked": { index: number };
   "mission:completed": void;

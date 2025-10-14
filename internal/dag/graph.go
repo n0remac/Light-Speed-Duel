@@ -36,6 +36,7 @@ type Node struct {
 	Repeatable bool              `json:"repeatable"` // Can be repeated after completion
 	Payload    map[string]string `json:"payload"`    // Arbitrary key-value data
 	Requires   []NodeID          `json:"requires"`   // Dependencies (must be completed)
+	Dialogue   *DialogueContent  `json:"dialogue,omitempty"` // Story nodes only - dialogue content to display
 }
 
 // Graph represents the complete DAG.

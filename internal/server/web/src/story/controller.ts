@@ -1,8 +1,8 @@
 import type { EventBus } from "../bus";
 import type { AppState } from "../state";
 import type { DialogueOverlay } from "./overlay";
+import type { DialogueContent } from "./types";
 import { sendMessage } from "../net";
-import { getDialogueForNode } from "./mission1-content";
 
 interface StoryControllerOptions {
   bus: EventBus;
@@ -24,8 +24,15 @@ export function createStoryController({ bus, overlay, state }: StoryControllerOp
   const listeners: Array<() => void> = [];
   let tutorialTipElement: HTMLElement | null = null;
 
-  function handleNodeActivated({ nodeId }: { nodeId: string }): void {
+  function handleNodeActivated({ nodeId, dialogue }: { nodeId: string; dialogue?: DialogueContent }): void {
     console.log("[story] Node activated:", nodeId);
+
+    if (!dialogue) {
+      console.error("[story] No dialogue provided by server for:", nodeId);
+      // Auto-acknowledge to prevent blocking progression
+      acknowledgeNode(nodeId, null);
+      return;
+    }
 
     // Parse the node ID to extract chapter and node info
     // Expected format: "story.<chapter>.<node>"
@@ -38,19 +45,10 @@ export function createStoryController({ bus, overlay, state }: StoryControllerOp
     const chapter = parts[1];
     const node = parts.slice(2).join(".");
 
-    // For now, we'll use a simple mapping to display dialogue
-    // In a full implementation, this would fetch node metadata from the server
-    // or have a local lookup table
-    showDialogueForNode(chapter, node, nodeId);
+    showDialogueForNode(chapter, node, nodeId, dialogue);
   }
 
-  function showDialogueForNode(chapter: string, node: string, fullNodeId: string): void {
-    const content = getDialogueForNode(fullNodeId);
-    if (!content) {
-      // Still acknowledge the node to progress the story
-      acknowledgeNode(fullNodeId, null);
-      return;
-    }
+  function showDialogueForNode(chapter: string, node: string, fullNodeId: string, content: DialogueContent): void {
 
     // Show tutorial tip if present
     if (content.tutorialTip) {
@@ -203,7 +201,10 @@ export function createStoryController({ bus, overlay, state }: StoryControllerOp
     // Check if there's already an active story node on startup
     if (state.story?.activeNode) {
       console.log("[story] Found active story node on startup:", state.story.activeNode);
-      handleNodeActivated({ nodeId: state.story.activeNode });
+      handleNodeActivated({
+        nodeId: state.story.activeNode,
+        dialogue: state.story.dialogue ?? undefined,
+      });
     }
   }
 

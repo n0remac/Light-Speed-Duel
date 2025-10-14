@@ -1,4 +1,5 @@
 import type { ShipContext, ShipTool, MissileTool } from "./bus";
+import type { DialogueContent } from "./story/types";
 
 export const MISSILE_MIN_SPEED = 40;
 export const MISSILE_MAX_SPEED = 250;
@@ -196,6 +197,7 @@ export interface StoryEvent {
 
 export interface StoryState {
   activeNode: string | null;
+  dialogue: DialogueContent | null;
   available: string[];
   flags: Record<string, boolean>;
   recentEvents: StoryEvent[];

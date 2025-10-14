@@ -1,5 +1,26 @@
 export type StoryIntent = "factory" | "unit";
 
+export interface DialogueChoice {
+  id: string;
+  text: string;
+}
+
+export interface DialogueContent {
+  speaker: string;
+  text: string;
+  intent?: "factory" | "unit";
+  typingSpeedMs?: number;
+  continueLabel?: string;
+  choices?: DialogueChoice[];
+  autoAdvance?: {
+    delayMs: number;
+  };
+  tutorialTip?: {
+    title: string;
+    text: string;
+  };
+}
+
 export interface StoryChoiceDefinition {
   id?: string;
   text: string;

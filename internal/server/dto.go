@@ -91,3 +91,25 @@ type inventoryItemDTO struct {
 type inventoryDTO struct {
 	Items []inventoryItemDTO `json:"items"`
 }
+
+// storyDialogueChoiceDTO represents a player response option
+type storyDialogueChoiceDTO struct {
+	ID   string `json:"id"`
+	Text string `json:"text"`
+}
+
+// storyTutorialTipDTO provides gameplay hints alongside dialogue
+type storyTutorialTipDTO struct {
+	Title string `json:"title"`
+	Text  string `json:"text"`
+}
+
+// storyDialogueDTO contains presentation data for a story node
+type storyDialogueDTO struct {
+	Speaker       string                    `json:"speaker"`
+	Text          string                    `json:"text"`
+	Intent        string                    `json:"intent"`                    // "factory" or "unit"
+	ContinueLabel string                    `json:"continue_label,omitempty"` // Empty = default "Continue"
+	Choices       []storyDialogueChoiceDTO  `json:"choices,omitempty"`        // Empty = show continue button
+	TutorialTip   *storyTutorialTipDTO      `json:"tutorial_tip,omitempty"`   // Optional gameplay hint
+}

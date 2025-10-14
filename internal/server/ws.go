@@ -105,7 +105,8 @@ type wsMsg struct {
 	RouteID      string  `json:"route_id,omitempty"`
 	RouteName    string  `json:"route_name,omitempty"`
 	// dag
-	NodeID string `json:"node_id,omitempty"`
+	NodeID   string `json:"node_id,omitempty"`
+	ChoiceID string `json:"choice_id,omitempty"`
 	// mission wave spawning
 	WaveIndex int `json:"wave_index,omitempty"`
 	// mission story events
@@ -152,10 +153,11 @@ type ghost struct {
 }
 
 type storyStateDTO struct {
-	ActiveNode string          `json:"active_node,omitempty"`
-	Available  []string        `json:"available,omitempty"`
-	Flags      map[string]bool `json:"flags,omitempty"`
-	Events     []storyEventDTO `json:"recent_events,omitempty"`
+	ActiveNode string            `json:"active_node,omitempty"`
+	Dialogue   *storyDialogueDTO `json:"dialogue,omitempty"` // Full dialogue content
+	Available  []string          `json:"available,omitempty"`
+	Flags      map[string]bool   `json:"flags,omitempty"`
+	Events     []storyEventDTO   `json:"recent_events,omitempty"`
 }
 
 type storyEventDTO struct {
@@ -582,32 +584,39 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 				}
 				room.Mu.Unlock()
 			case "dag_story_ack":
+				log.Printf("[story] Received dag_story_ack from player %s for node %s (choice: %s)",
+					playerID, m.NodeID, m.ChoiceID)
+
 				room.Mu.Lock()
 				if p := room.Players[playerID]; p != nil {
 					p.EnsureStoryState()
 					if m.NodeID != "" {
+						nodeID := dag.NodeID(m.NodeID)
 						graph := dag.GetGraph()
-						if graph != nil {
-							nodeID := dag.NodeID(m.NodeID)
-							node := graph.GetNode(nodeID)
-							effects := NewRoomDagEffects(room, p)
-							if node != nil && node.Kind == dag.NodeKindStory {
-								status := p.DagState.GetStatus(nodeID)
-								if status == dag.StatusInProgress {
-									if err := dag.Complete(graph, p.DagState, nodeID, effects); err != nil {
-										log.Printf("dag_story_ack complete error for player %s node %s: %v", playerID, nodeID, err)
-									}
+						if graph == nil {
+							log.Printf("[story] No graph available for ack from player %s", playerID)
+							room.Mu.Unlock()
+							continue
+						}
+						node := graph.GetNode(nodeID)
+						effects := NewRoomDagEffects(room, p)
+						if node != nil && node.Kind == dag.NodeKindStory {
+							status := p.DagState.GetStatus(nodeID)
+							if status == dag.StatusInProgress {
+								if err := dag.Complete(graph, p.DagState, nodeID, effects); err != nil {
+									log.Printf("[story] Complete error for player %s node %s: %v", playerID, nodeID, err)
+								} else {
+									log.Printf("[story] Successfully completed node %s for player %s", nodeID, playerID)
 								}
 							}
 						}
+					} else {
+						log.Printf("[story] Empty node ID in ack from player %s", playerID)
 					}
+				} else {
+					log.Printf("[story] Player %s not found when processing ack", playerID)
 				}
 				room.Mu.Unlock()
-				if m.NodeID != "" {
-					log.Printf("dag_story_ack received (stub) from %s for %s", playerID, m.NodeID)
-				} else {
-					log.Printf("dag_story_ack received (stub) from %s", playerID)
-				}
 			case "dag_list":
 				room.Mu.Lock()
 				var dagDTO *dagStateDTO
@@ -811,6 +820,47 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 						ActiveNode: p.ActiveStoryNodeID,
 						Flags:      flags,
 						Available:  storyAvailable,
+					}
+
+					// Serialize dialogue for active node
+					if p.ActiveStoryNodeID != "" {
+						if graph := dag.GetGraph(); graph != nil {
+							nodeID := dag.NodeID(p.ActiveStoryNodeID)
+							if node := graph.GetNode(nodeID); node != nil && node.Dialogue != nil {
+								d := node.Dialogue
+
+								// Convert choices
+								var choices []storyDialogueChoiceDTO
+								for _, choice := range d.Choices {
+									choices = append(choices, storyDialogueChoiceDTO{
+										ID:   choice.ID,
+										Text: choice.Text,
+									})
+								}
+
+								// Convert tutorial tip
+								var tip *storyTutorialTipDTO
+								if d.TutorialTip != nil {
+									tip = &storyTutorialTipDTO{
+										Title: d.TutorialTip.Title,
+										Text:  d.TutorialTip.Text,
+									}
+								}
+
+								// Build dialogue DTO
+								storyDTO.Dialogue = &storyDialogueDTO{
+									Speaker:       d.Speaker,
+									Text:          d.Text,
+									Intent:        d.Intent,
+									ContinueLabel: d.ContinueLabel,
+									Choices:       choices,
+									TutorialTip:   tip,
+								}
+
+								log.Printf("[story] Sending dialogue for node %s to player %s (speaker: %s, choices: %d)",
+									p.ActiveStoryNodeID, p.ID, storyDTO.Dialogue.Speaker, len(storyDTO.Dialogue.Choices))
+							}
+						}
 					}
 				}
 
