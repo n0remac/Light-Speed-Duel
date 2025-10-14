@@ -6,6 +6,7 @@ import { createInput } from "./game/input";
 import { createLogic } from "./game/logic";
 import { createRenderer } from "./game/render";
 import { createUI } from "./game/ui";
+import { mountMissionHud } from "./mission/hud";
 
 interface InitGameOptions {
   state: AppState;
@@ -80,6 +81,8 @@ export function initGame({ state, uiState, bus }: InitGameOptions): GameControll
   ui.updateStatusIndicators();
   ui.updateMissileLaunchButtonState();
   ui.updateMissileCountDisplay();
+
+  mountMissionHud({ state, bus });
 
   let lastLoopTs: number | null = null;
 

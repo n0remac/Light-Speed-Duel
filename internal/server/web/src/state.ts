@@ -173,6 +173,21 @@ export interface WorldMeta {
   h?: number;
 }
 
+export interface BeaconDefinition {
+  cx: number;
+  cy: number;
+  radius: number;
+}
+
+export interface MissionState {
+  active: boolean;
+  missionId: string;
+  beaconIndex: number;
+  holdAccum: number;
+  holdRequired: number;
+  beacons: BeaconDefinition[];
+}
+
 export interface AppState {
   now: number;
   nowSyncedAt: number;
@@ -187,6 +202,7 @@ export interface AppState {
   worldMeta: WorldMeta;
   inventory: Inventory | null;
   dag: DagState | null;
+  mission: MissionState | null;
   craftHeatCapacity: number; // Heat capacity slider value for crafting
 }
 
@@ -259,6 +275,7 @@ export function createInitialState(limits: MissileLimits = {
     worldMeta: {},
     inventory: null,
     dag: null,
+    mission: null,
     craftHeatCapacity: 80, // Default to basic missile heat capacity
   };
 }

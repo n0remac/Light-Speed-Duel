@@ -272,11 +272,11 @@ func (r *Room) addBotUnlocked(name string, behavior AIBehavior, startPos Vec2) *
 		MissileConfig: SanitizeMissileConfig(MissileConfig{Speed: ShipMaxSpeed * 0.7, AgroRadius: 900}),
 		IsBot:         true,
 	}
-    player.EnsureMissileRoutes()
-    player.EnsureDagState()
-    player.EnsureInventory()
-    // Seed bots with basic missiles (10x)
-    player.Inventory.AddItem("missile", "basic", 80, 10)
+	player.EnsureMissileRoutes()
+	player.EnsureDagState()
+	player.EnsureInventory()
+	// Seed bots with basic missiles (10x)
+	player.Inventory.AddItem("missile", "basic", 80, 10)
 	shipID := r.SpawnShip(id, startPos)
 	player.Ship = shipID
 	r.Players[id] = player
@@ -321,7 +321,7 @@ func (r *Room) SpawnShip(owner string, startPos Vec2) EntityID {
 	r.World.SetComponent(id, CompShip, &ShipComponent{HP: ShipMaxHP})
 	r.World.SetComponent(id, CompRoute, &RouteComponent{})
 	r.World.SetComponent(id, CompRouteFollower, &RouteFollower{})
-	r.World.SetComponent(id, CompOwner, &OwnerComponent{PlayerID: owner})
+	r.World.SetComponent(id, CompOwner, &OwnerComponent{PlayerID: owner, Neutral: false})
 	history := newHistory(HistoryKeepS, SimHz)
 	history.push(Snapshot{T: r.Now, Pos: startPos})
 	r.World.SetComponent(id, CompHistory, &HistoryComponent{History: history})
@@ -360,7 +360,12 @@ func (r *Room) LaunchMissile(owner string, shipID EntityID, cfg MissileConfig, w
 	}
 	r.World.SetComponent(id, CompRoute, &RouteComponent{Waypoints: copied})
 	r.World.SetComponent(id, CompRouteFollower, &RouteFollower{})
-	r.World.SetComponent(id, CompOwner, &OwnerComponent{PlayerID: owner})
+	normalizedOwner := strings.TrimSpace(owner)
+	neutralOwner := normalizedOwner == "" || strings.EqualFold(normalizedOwner, "mission")
+	if neutralOwner && strings.EqualFold(normalizedOwner, "mission") {
+		normalizedOwner = "mission"
+	}
+	r.World.SetComponent(id, CompOwner, &OwnerComponent{PlayerID: normalizedOwner, Neutral: neutralOwner})
 
 	// Add heat component with missile-specific parameters
 	r.World.SetComponent(id, CompHeat, &HeatComponent{

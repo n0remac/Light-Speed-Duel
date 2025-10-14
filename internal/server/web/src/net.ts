@@ -112,6 +112,8 @@ interface ConnectOptions {
   onOpen?: (socket: WebSocket) => void;
   mapW?: number;
   mapH?: number;
+  mode?: string;
+  missionId?: string;
 }
 
 let ws: WebSocket | null = null;
@@ -122,7 +124,17 @@ export function sendMessage(payload: unknown): void {
   ws.send(data);
 }
 
-export function connectWebSocket({ room, state, bus, onStateUpdated, onOpen, mapW, mapH }: ConnectOptions): void {
+export function connectWebSocket({
+  room,
+  state,
+  bus,
+  onStateUpdated,
+  onOpen,
+  mapW,
+  mapH,
+  mode,
+  missionId,
+}: ConnectOptions): void {
   const protocol = window.location.protocol === "https:" ? "wss://" : "ws://";
   let wsUrl = `${protocol}${window.location.host}/ws?room=${encodeURIComponent(room)}`;
   if (mapW && mapW > 0) {
@@ -130,6 +142,12 @@ export function connectWebSocket({ room, state, bus, onStateUpdated, onOpen, map
   }
   if (mapH && mapH > 0) {
     wsUrl += `&mapH=${mapH}`;
+  }
+  if (mode) {
+    wsUrl += `&mode=${encodeURIComponent(mode)}`;
+  }
+  if (missionId) {
+    wsUrl += `&mission=${encodeURIComponent(missionId)}`;
   }
   ws = new WebSocket(wsUrl);
   ws.addEventListener("open", () => {

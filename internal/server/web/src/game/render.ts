@@ -15,6 +15,7 @@ interface RenderDependencies {
 export interface Renderer {
   drawScene(): void;
   drawGrid(): void;
+  drawBeacons(): void;
   drawShip(x: number, y: number, vx: number, vy: number, color: string, filled: boolean): void;
   drawGhostDot(x: number, y: number): void;
   drawRoute(): void;
@@ -233,9 +234,86 @@ export function createRenderer({
     ctx.restore();
   }
 
+  function drawBeacons(): void {
+    const mission = state.mission;
+    if (!mission || !mission.active || mission.beacons.length === 0) {
+      return;
+    }
+
+    const world = camera.getWorldSize();
+    const scale = Math.min(canvas.width / world.w, canvas.height / world.h) * uiState.zoom;
+    const me = state.me;
+    const holdRequired = mission.holdRequired || 10;
+
+    mission.beacons.forEach((beacon, index) => {
+      const center = camera.worldToCanvas({ x: beacon.cx, y: beacon.cy });
+      const edge = camera.worldToCanvas({ x: beacon.cx + beacon.radius, y: beacon.cy });
+      const radius = Math.hypot(edge.x - center.x, edge.y - center.y);
+      if (!Number.isFinite(radius) || radius <= 0.5) {
+        return;
+      }
+
+      const isLocked = index < mission.beaconIndex;
+      const isActive = index === mission.beaconIndex;
+      const baseLineWidth = Math.max(1.5, 2.5 * Math.min(1, scale * 1.2));
+      const strokeStyle = isLocked
+        ? "rgba(74,222,128,0.85)"
+        : isActive
+        ? "rgba(56,189,248,0.95)"
+        : "rgba(148,163,184,0.65)";
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.setLineDash(isActive ? [] : [10, 12]);
+      ctx.lineWidth = isActive ? baseLineWidth * 1.4 : baseLineWidth;
+      ctx.strokeStyle = strokeStyle;
+      ctx.globalAlpha = isLocked ? 0.9 : 0.8;
+      ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      const inside =
+        isActive && me
+          ? (() => {
+              const dx = me.x - beacon.cx;
+              const dy = me.y - beacon.cy;
+              return dx * dx + dy * dy <= beacon.radius * beacon.radius;
+            })()
+          : false;
+
+      if (inside) {
+        ctx.beginPath();
+        ctx.fillStyle = "rgba(56,189,248,0.12)";
+        ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      if (isActive) {
+        const progress = holdRequired > 0 ? Math.max(0, Math.min(1, mission.holdAccum / holdRequired)) : 0;
+        if (progress > 0) {
+          ctx.beginPath();
+          ctx.strokeStyle = "rgba(56,189,248,0.95)";
+          ctx.lineWidth = Math.max(baseLineWidth * 1.8, 2);
+          ctx.setLineDash([]);
+          ctx.arc(center.x, center.y, radius, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+
+      if (isLocked) {
+        ctx.beginPath();
+        ctx.fillStyle = "rgba(74,222,128,0.75)";
+        ctx.arc(center.x, center.y, Math.max(4, radius * 0.05), 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+    });
+  }
+
   function drawScene(): void {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawGrid();
+    drawBeacons();
     drawRoute();
     drawMissileRoute();
     drawMissiles();
@@ -252,6 +330,7 @@ export function createRenderer({
   return {
     drawScene,
     drawGrid,
+    drawBeacons,
     drawShip,
     drawGhostDot,
     drawRoute,

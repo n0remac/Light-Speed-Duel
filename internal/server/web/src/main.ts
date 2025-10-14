@@ -10,6 +10,7 @@ import { resumeAudio } from "./story/sfx";
 import { AudioEngine } from "./audio/engine";
 import { MusicDirector } from "./audio/music";
 import { registerAudioBusBindings } from "./audio/cues";
+import { mountMissionController } from "./mission/controller";
 
 const CALL_SIGN_STORAGE_KEY = "lsd:callsign";
 
@@ -17,6 +18,7 @@ const CALL_SIGN_STORAGE_KEY = "lsd:callsign";
   const qs = new URLSearchParams(window.location.search);
   const room = qs.get("room") || "default";
   const mode = qs.get("mode") || "";
+  const missionId = qs.get("mission") || (mode === "campaign" ? "1" : null);
   const nameParam = sanitizeCallSign(qs.get("name"));
   const storedName = sanitizeCallSign(readStoredCallSign());
   const callSign = nameParam || storedName;
@@ -58,6 +60,7 @@ const CALL_SIGN_STORAGE_KEY = "lsd:callsign";
   });
 
   const game = initGame({ state, uiState, bus });
+  mountMissionController({ state, bus, mode, missionId });
 
   // Mount tutorial and story based on game mode
   const enableTutorial = mode === "campaign" || mode === "tutorial";
@@ -98,6 +101,8 @@ const CALL_SIGN_STORAGE_KEY = "lsd:callsign";
     bus,
     mapW,
     mapH,
+    mode,
+    missionId: missionId ?? undefined,
     onStateUpdated: () => game.onStateUpdated(),
     onOpen: () => {
       const nameToSend = callSign || sanitizeCallSign(readStoredCallSign());

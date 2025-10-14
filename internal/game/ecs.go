@@ -48,6 +48,7 @@ type MissileComponent struct {
 
 type OwnerComponent struct {
 	PlayerID string
+	Neutral  bool
 }
 
 type HistoryComponent struct {

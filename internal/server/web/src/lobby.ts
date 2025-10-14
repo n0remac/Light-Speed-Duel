@@ -31,9 +31,15 @@ function bootstrap(): void {
 
   campaignButton?.addEventListener("click", () => {
     const name = ensureCallSign();
-    const mapSize = getSelectedMapSize();
     const roomId = generateRoomId("campaign");
-    const url = buildRoomUrl(roomId, name, "campaign", mapSize);
+    const missionId = "1";
+    const url = buildRoomUrl(
+      roomId,
+      name,
+      "campaign",
+      { w: 32000, h: 18000 },
+      missionId,
+    );
     window.location.href = url;
   });
 
@@ -123,10 +129,19 @@ function readStoredCallSign(): string {
   }
 }
 
-function buildRoomUrl(roomId: string, callSign: string, mode?: string, mapSize?: { w: number; h: number }): string {
+function buildRoomUrl(
+  roomId: string,
+  callSign: string,
+  mode?: string,
+  mapSize?: { w: number; h: number },
+  missionId?: string,
+): string {
   let url = `${window.location.origin}/?room=${encodeURIComponent(roomId)}`;
   if (mode) {
     url += `&mode=${encodeURIComponent(mode)}`;
+  }
+  if (missionId) {
+    url += `&mission=${encodeURIComponent(missionId)}`;
   }
   if (callSign) {
     url += `&name=${encodeURIComponent(callSign)}`;

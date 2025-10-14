@@ -101,6 +101,16 @@ func updateRouteFollowers(r *Room, dt float64) {
 	})
 }
 
+func ownersAllied(a, b *OwnerComponent) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	if a.Neutral || b.Neutral {
+		return false
+	}
+	return a.PlayerID == b.PlayerID
+}
+
 func updateMissileGuidance(r *Room, dt float64) {
 	world := r.World
 	world.ForEach([]ComponentKey{CompTransform, compMovement, CompMissile, CompRouteFollower, CompRoute}, func(id EntityID) {
@@ -144,7 +154,7 @@ func updateMissileGuidance(r *Room, dt float64) {
 
 		if missile.Target != 0 {
 			if world.Exists(missile.Target) {
-				if targetOwner := world.Owner(missile.Target); targetOwner != nil && targetOwner.PlayerID != owner.PlayerID {
+				if targetOwner := world.Owner(missile.Target); targetOwner != nil && !ownersAllied(owner, targetOwner) {
 					perceivedDist := PerceivedDistance(tr.Pos, missile.Target, world, r.Now)
 					if perceivedDist <= missile.AgroRadius {
 						if snap, ok := PerceiveEntity(tr.Pos, missile.Target, world, r.Now); ok {
@@ -177,7 +187,7 @@ func updateMissileGuidance(r *Room, dt float64) {
 					return
 				}
 				shipOwner := world.Owner(shipID)
-				if shipOwner == nil || shipOwner.PlayerID == owner.PlayerID {
+				if shipOwner == nil || ownersAllied(owner, shipOwner) {
 					return
 				}
 				perceivedDist := PerceivedDistance(tr.Pos, shipID, world, r.Now)
@@ -226,7 +236,7 @@ func resolveMissileCollisions(r *Room) {
 				return
 			}
 			shipOwner := world.Owner(shipID)
-			if shipOwner == nil || shipOwner.PlayerID == owner.PlayerID {
+			if shipOwner == nil || ownersAllied(owner, shipOwner) {
 				return
 			}
 			snap, ok := PerceiveEntity(tr.Pos, shipID, world, r.Now)

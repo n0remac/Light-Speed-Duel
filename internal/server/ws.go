@@ -128,18 +128,18 @@ type roomMeta struct {
 }
 
 type ghost struct {
-	ID                    string           `json:"id"`
-	X                     float64          `json:"x"`
-	Y                     float64          `json:"y"`
-	VX                    float64          `json:"vx"`
-	VY                    float64          `json:"vy"`
-	T                     float64          `json:"t"`
-	Self                  bool             `json:"self"`
-	Waypoints             []waypointDTO    `json:"waypoints,omitempty"`
-	CurrentWaypointIndex  int              `json:"current_waypoint_index,omitempty"`
-	HP                    int              `json:"hp"`
-	Kills                 int              `json:"kills"`
-	Heat                  *shipHeatViewDTO `json:"heat,omitempty"`
+	ID                   string           `json:"id"`
+	X                    float64          `json:"x"`
+	Y                    float64          `json:"y"`
+	VX                   float64          `json:"vx"`
+	VY                   float64          `json:"vy"`
+	T                    float64          `json:"t"`
+	Self                 bool             `json:"self"`
+	Waypoints            []waypointDTO    `json:"waypoints,omitempty"`
+	CurrentWaypointIndex int              `json:"current_waypoint_index,omitempty"`
+	HP                   int              `json:"hp"`
+	Kills                int              `json:"kills"`
+	Heat                 *shipHeatViewDTO `json:"heat,omitempty"`
 }
 
 type liveConn struct {
@@ -155,20 +155,27 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 		roomID = "default"
 	}
 
+	mode := strings.ToLower(query.Get("mode"))
+
 	mapW := WorldW
 	mapH := WorldH
-	if mapWStr := query.Get("mapW"); mapWStr != "" {
-		if parsed, err := fmt.Sscanf(mapWStr, "%f", &mapW); err == nil && parsed == 1 && mapW > 0 {
-			// Successfully parsed mapW
-		} else {
-			mapW = WorldW
+	if mode == "campaign" {
+		mapW = 32000
+		mapH = 18000
+	} else {
+		if mapWStr := query.Get("mapW"); mapWStr != "" {
+			if parsed, err := fmt.Sscanf(mapWStr, "%f", &mapW); err == nil && parsed == 1 && mapW > 0 {
+				// Successfully parsed mapW
+			} else {
+				mapW = WorldW
+			}
 		}
-	}
-	if mapHStr := query.Get("mapH"); mapHStr != "" {
-		if parsed, err := fmt.Sscanf(mapHStr, "%f", &mapH); err == nil && parsed == 1 && mapH > 0 {
-			// Successfully parsed mapH
-		} else {
-			mapH = WorldH
+		if mapHStr := query.Get("mapH"); mapHStr != "" {
+			if parsed, err := fmt.Sscanf(mapHStr, "%f", &mapH); err == nil && parsed == 1 && mapH > 0 {
+				// Successfully parsed mapH
+			} else {
+				mapH = WorldH
+			}
 		}
 	}
 
@@ -220,6 +227,12 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 	startPos := Vec2{
 		X: (room.WorldWidth * 0.25) + float64(existingHumans)*200.0,
 		Y: (room.WorldHeight * 0.5) + float64(existingHumans)*-200.0,
+	}
+	if mode == "campaign" {
+		startPos = Vec2{
+			X: Clamp(room.WorldWidth*0.08, 0, room.WorldWidth),
+			Y: Clamp(room.WorldHeight*0.50, 0, room.WorldHeight),
+		}
 	}
 
 	shipEntity := room.SpawnShip(playerID, startPos)
@@ -629,15 +642,15 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 						}
 						meGhost.Kills = p.Kills
 						if route != nil && len(route.Waypoints) > 0 {
-						// Always send complete waypoints array for consistent indexing
-						meGhost.Waypoints = make([]waypointDTO, len(route.Waypoints))
-						for i, wp := range route.Waypoints {
-							meGhost.Waypoints[i] = waypointDTO{X: wp.Pos.X, Y: wp.Pos.Y, Speed: wp.Speed}
-						}
-						// Send current waypoint index so client knows which waypoints have been passed
-						if follower != nil {
-							meGhost.CurrentWaypointIndex = follower.Index
-						}
+							// Always send complete waypoints array for consistent indexing
+							meGhost.Waypoints = make([]waypointDTO, len(route.Waypoints))
+							for i, wp := range route.Waypoints {
+								meGhost.Waypoints[i] = waypointDTO{X: wp.Pos.X, Y: wp.Pos.Y, Speed: wp.Speed}
+							}
+							// Send current waypoint index so client knows which waypoints have been passed
+							if follower != nil {
+								meGhost.CurrentWaypointIndex = follower.Index
+							}
 						}
 						if history != nil {
 							meGhost.T = now
