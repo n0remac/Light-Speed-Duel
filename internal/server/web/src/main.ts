@@ -97,13 +97,8 @@ const CALL_SIGN_STORAGE_KEY = "lsd:callsign";
 
   if (enableStory) {
     // Campaign mode: story + tutorial
-    const unsubscribeStoryClosed = bus.on("dialogue:closed", ({ chapterId, nodeId }) => {
-      if (chapterId !== INTRO_CHAPTER_ID) return;
-      if (!INTRO_INITIAL_RESPONSE_IDS.includes(nodeId as typeof INTRO_INITIAL_RESPONSE_IDS[number])) return;
-      unsubscribeStoryClosed();
-      startTutorial();
-    });
-    mountStory({ bus, roomId: room });
+    
+    mountStory({ bus, state, roomId: room });
   } else if (mode === "tutorial") {
     // Tutorial mode: auto-start tutorial without story
     startTutorial();

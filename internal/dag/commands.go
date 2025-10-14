@@ -70,10 +70,11 @@ func Start(graph *Graph, state *State, nodeID NodeID, now float64, effects Effec
 			}
 		}
 	}
-
+	
 	// Start the job
 	if effectiveDuration == 0 {
-		// Instant completion
+		// Instant completion - call OnStart first to ensure proper state initialization
+		effects.OnStart(nodeID, node)
 		state.SetStatus(nodeID, StatusCompleted)
 		effects.OnComplete(nodeID, node)
 	} else {

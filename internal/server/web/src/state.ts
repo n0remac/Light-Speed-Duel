@@ -188,6 +188,19 @@ export interface MissionState {
   beacons: BeaconDefinition[];
 }
 
+export interface StoryEvent {
+  chapter: string;
+  node: string;
+  timestamp: number;
+}
+
+export interface StoryState {
+  activeNode: string | null;
+  available: string[];
+  flags: Record<string, boolean>;
+  recentEvents: StoryEvent[];
+}
+
 export interface AppState {
   now: number;
   nowSyncedAt: number;
@@ -203,6 +216,7 @@ export interface AppState {
   inventory: Inventory | null;
   dag: DagState | null;
   mission: MissionState | null;
+  story: StoryState | null;
   craftHeatCapacity: number; // Heat capacity slider value for crafting
 }
 
@@ -276,6 +290,7 @@ export function createInitialState(limits: MissileLimits = {
     inventory: null,
     dag: null,
     mission: null,
+    story: null,
     craftHeatCapacity: 80, // Default to basic missile heat capacity
   };
 }

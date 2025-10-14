@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 	"strings"
 	"sync"
@@ -30,6 +31,7 @@ type Player struct {
 	Inventory            *Inventory // Player's crafted items
 	StoryFlags           map[string]bool
 	ActiveStoryNodeID    string
+	PendingStoryEvents   []StoryEvent
 }
 
 type Room struct {
@@ -195,24 +197,79 @@ func (r *Room) updateDagStates() {
 	}
 
 	for _, player := range r.Players {
-		if player.DagState == nil {
-			player.EnsureDagState()
+		if player == nil {
+			continue
 		}
+		effects := NewRoomDagEffects(r, player)
+		r.EvaluatePlayerDagLocked(graph, player, effects)
+	}
+}
 
-		// Evaluate current state
-		result := dag.Evaluator(graph, player.DagState, r.Now)
-
-		// Apply status updates
-		for nodeID, newStatus := range result.StatusUpdates {
-			player.DagState.SetStatus(nodeID, newStatus)
-		}
-
-		// Complete due jobs with crafting effects
-		effects := NewCraftingEffects(player)
-		for _, nodeID := range result.DueCompletions {
-			_ = dag.Complete(graph, player.DagState, nodeID, effects)
+func (r *Room) EvaluatePlayerDagLocked(graph *dag.Graph, player *Player, effects dag.Effects) {
+	if graph == nil || player == nil {
+		return
+	}
+	player.EnsureDagState()
+	player.EnsureStoryState()
+	result := dag.Evaluator(graph, player.DagState, r.Now)
+	for nodeID, newStatus := range result.StatusUpdates {
+		player.DagState.SetStatus(nodeID, newStatus)
+	}
+	for _, nodeID := range result.DueCompletions {
+		if err := dag.Complete(graph, player.DagState, nodeID, effects); err != nil {
+			log.Printf("dag completion error for player %s node %s: %v", player.ID, nodeID, err)
 		}
 	}
+}
+
+func (r *Room) tryStartStoryNodeLocked(player *Player, nodeID dag.NodeID) {
+	graph := dag.GetGraph()
+	if graph == nil || player == nil || nodeID == "" {
+		return
+	}
+	effects := NewRoomDagEffects(r, player)
+	r.EvaluatePlayerDagLocked(graph, player, effects)
+	if player.DagState.GetStatus(nodeID) != dag.StatusAvailable {
+		return
+	}
+	if err := dag.Start(graph, player.DagState, nodeID, r.Now, effects); err != nil {
+		log.Printf("story start error for player %s node %s: %v", player.ID, nodeID, err)
+		return
+	}
+	// Re-evaluate to unlock downstream nodes immediately.
+	r.EvaluatePlayerDagLocked(graph, player, effects)
+}
+
+func (r *Room) HandleMissionStoryEventLocked(player *Player, event string, beaconIndex int) {
+	nodeID := storyNodeForMissionEvent(event, beaconIndex)
+	if nodeID == "" {
+		return
+	}
+	
+	r.tryStartStoryNodeLocked(player, nodeID)
+}
+
+func storyNodeForMissionEvent(event string, beaconIndex int) dag.NodeID {
+	fmt.Println("Event: ", event)
+	switch event {
+	case "mission:start":
+		return dag.NodeID("story.signal-static-1.start")
+	case "mission:beacon-locked":
+		switch beaconIndex {
+		case 1:
+			return dag.NodeID("story.signal-static-1.beacon-1")
+		case 2:
+			return dag.NodeID("story.signal-static-1.beacon-2")
+		case 3:
+			return dag.NodeID("story.signal-static-1.beacon-3")
+		case 4:
+			// Allow optional beacon 4 message to map to completion as fallback.
+			return dag.NodeID("story.signal-static-1.complete")
+		}
+	case "mission:completed":
+		return dag.NodeID("story.signal-static-1.complete")
+	}
+	return ""
 }
 
 func (r *Room) cleanupDestroyedEntitiesLocked() {
@@ -564,6 +621,27 @@ func (p *Player) EnsureStoryState() {
 	if p.StoryFlags == nil {
 		p.StoryFlags = make(map[string]bool)
 	}
+	if p.PendingStoryEvents == nil {
+		p.PendingStoryEvents = make([]StoryEvent, 0, 4)
+	}
+}
+
+func (p *Player) enqueueStoryEvent(event StoryEvent) {
+	p.PendingStoryEvents = append(p.PendingStoryEvents, event)
+}
+
+func (p *Player) ConsumeStoryEvents() []StoryEvent {
+	if len(p.PendingStoryEvents) == 0 {
+		return nil
+	}
+	events := make([]StoryEvent, len(p.PendingStoryEvents))
+	copy(events, p.PendingStoryEvents)
+	// Reset in place to avoid releasing underlying array immediately.
+	for i := range p.PendingStoryEvents {
+		p.PendingStoryEvents[i] = StoryEvent{}
+	}
+	p.PendingStoryEvents = p.PendingStoryEvents[:0]
+	return events
 }
 
 // EnsureInventory initializes the inventory if not already present.
@@ -689,4 +767,10 @@ func (p *Player) DeleteWaypointFromRoute(id string, index int) bool {
 		}
 	}
 	return false
+}
+
+type StoryEvent struct {
+	Chapter   string
+	Node      string
+	Timestamp float64
 }

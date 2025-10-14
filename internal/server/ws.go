@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"LightSpeedDuel/internal/dag"
+	"LightSpeedDuel/internal/game"
 	. "LightSpeedDuel/internal/game"
 
 	"github.com/gorilla/websocket"
@@ -107,6 +108,9 @@ type wsMsg struct {
 	NodeID string `json:"node_id,omitempty"`
 	// mission wave spawning
 	WaveIndex int `json:"wave_index,omitempty"`
+	// mission story events
+	StoryEvent  string `json:"story_event,omitempty"`
+	StoryBeacon int    `json:"story_beacon,omitempty"`
 }
 
 type stateMsg struct {
@@ -245,6 +249,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 	player.EnsureMissileRoutes()
 	player.EnsureDagState()
 	player.EnsureInventory()
+	player.EnsureStoryState()
 
 	existingHumans := room.HumanPlayerCountLocked()
 	startPos := Vec2{
@@ -261,6 +266,13 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 	shipEntity := room.SpawnShip(playerID, startPos)
 	player.Ship = shipEntity
 	room.Players[playerID] = player
+	if mode == "campaign" {
+		room.HandleMissionStoryEventLocked(player, "mission:start", 0)
+		if graph := dag.GetGraph(); graph != nil {
+			effects := game.NewRoomDagEffects(room, player)
+			room.EvaluatePlayerDagLocked(graph, player, effects) // Make method public or add helper
+		}
+	}
 	room.Mu.Unlock()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -524,14 +536,29 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 				if room.SetMissionWaveSpawnedLocked(waveIndex) {
 					spawnMissionWave(room, waveIndex)
 				}
+				if p := room.Players[playerID]; p != nil {
+					room.HandleMissionStoryEventLocked(p, "mission:beacon-locked", waveIndex)
+				}
+				room.Mu.Unlock()
+			case "mission_story_event":
+				if mode != "campaign" {
+					continue
+				}
+				event := strings.ToLower(strings.TrimSpace(m.StoryEvent))
+				beacon := m.StoryBeacon
+				room.Mu.Lock()
+				if p := room.Players[playerID]; p != nil {
+					room.HandleMissionStoryEventLocked(p, event, beacon)
+				}
 				room.Mu.Unlock()
 			case "dag_start":
 				room.Mu.Lock()
 				if p := room.Players[playerID]; p != nil {
 					p.EnsureDagState()
+					p.EnsureStoryState()
 					graph := dag.GetGraph()
 					if graph != nil {
-						effects := NewCraftingEffects(p)
+						effects := NewRoomDagEffects(room, p)
 						nodeID := dag.NodeID(m.NodeID)
 						if err := dag.Start(graph, p.DagState, nodeID, room.Now, effects); err != nil {
 							log.Printf("dag_start error for player %s node %s: %v", playerID, nodeID, err)
@@ -543,9 +570,10 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 				room.Mu.Lock()
 				if p := room.Players[playerID]; p != nil {
 					p.EnsureDagState()
+					p.EnsureStoryState()
 					graph := dag.GetGraph()
 					if graph != nil {
-						effects := NewCraftingEffects(p)
+						effects := NewRoomDagEffects(room, p)
 						nodeID := dag.NodeID(m.NodeID)
 						if err := dag.Cancel(graph, p.DagState, nodeID, effects); err != nil {
 							log.Printf("dag_cancel error for player %s node %s: %v", playerID, nodeID, err)
@@ -557,6 +585,22 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 				room.Mu.Lock()
 				if p := room.Players[playerID]; p != nil {
 					p.EnsureStoryState()
+					if m.NodeID != "" {
+						graph := dag.GetGraph()
+						if graph != nil {
+							nodeID := dag.NodeID(m.NodeID)
+							node := graph.GetNode(nodeID)
+							effects := NewRoomDagEffects(room, p)
+							if node != nil && node.Kind == dag.NodeKindStory {
+								status := p.DagState.GetStatus(nodeID)
+								if status == dag.StatusInProgress {
+									if err := dag.Complete(graph, p.DagState, nodeID, effects); err != nil {
+										log.Printf("dag_story_ack complete error for player %s node %s: %v", playerID, nodeID, err)
+									}
+								}
+							}
+						}
+					}
 				}
 				room.Mu.Unlock()
 				if m.NodeID != "" {
@@ -722,6 +766,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 					// Build DAG state DTO
 					p.EnsureDagState()
 					p.EnsureStoryState()
+					var storyAvailable []string
 					if graph := dag.GetGraph(); graph != nil && p.DagState != nil {
 						var nodes []dagNodeDTO
 						for nodeID, node := range graph.Nodes {
@@ -736,6 +781,9 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 								DurationS:  node.DurationS,
 								Repeatable: node.Repeatable,
 							})
+							if node.Kind == dag.NodeKindStory && status == dag.StatusAvailable {
+								storyAvailable = append(storyAvailable, string(nodeID))
+							}
 						}
 						dagDTO = &dagStateDTO{Nodes: nodes}
 					}
@@ -762,7 +810,22 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 					storyDTO = &storyStateDTO{
 						ActiveNode: p.ActiveStoryNodeID,
 						Flags:      flags,
-						Available:  []string{},
+						Available:  storyAvailable,
+					}
+				}
+
+				if storyDTO != nil {
+					events := p.ConsumeStoryEvents()
+					if len(events) > 0 {
+						dtos := make([]storyEventDTO, len(events))
+						for i, ev := range events {
+							dtos[i] = storyEventDTO{
+								ChapterID: ev.Chapter,
+								NodeID:    ev.Node,
+								Timestamp: ev.Timestamp,
+							}
+						}
+						storyDTO.Events = dtos
 					}
 				}
 

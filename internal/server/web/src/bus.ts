@@ -53,6 +53,7 @@ export interface EventMap {
   "dialogue:choice": { nodeId: string; choiceId: string; chapterId: string };
   "story:flagUpdated": { flag: string; value: boolean };
   "story:progressed": { chapterId: string; nodeId: string };
+  "story:nodeActivated": { nodeId: string };
   "mission:start": void;
   "mission:beacon-locked": { index: number };
   "mission:completed": void;

@@ -102,6 +102,16 @@ interface ServerStateMessage {
       repeatable: boolean;
     }>;
   };
+  story?: {
+    active_node?: string;
+    available?: string[];
+    flags?: Record<string, boolean>;
+    recent_events?: Array<{
+      chapter: string;
+      node: string;
+      timestamp: number;
+    }>;
+  };
 }
 
 interface ConnectOptions {
@@ -296,6 +306,28 @@ function handleStateMessage(
         repeatable: node.repeatable,
       })),
     };
+  }
+
+  if (msg.story) {
+    
+    const prevActiveNode = state.story?.activeNode ?? null;
+    state.story = {
+      activeNode: msg.story.active_node ?? null,
+      available: Array.isArray(msg.story.available) ? msg.story.available : [],
+      flags: msg.story.flags ?? {},
+      recentEvents: Array.isArray(msg.story.recent_events) ? msg.story.recent_events.map((evt) => ({
+        chapter: evt.chapter,
+        node: evt.node,
+        timestamp: evt.timestamp,
+      })) : [],
+    };
+    if (state.story.activeNode === null) {
+      state.story.activeNode = "story.signal-static-1.start";
+    }
+    // Emit event when active story node changes
+    if (state.story.activeNode !== prevActiveNode && state.story.activeNode) {
+      bus.emit("story:nodeActivated", { nodeId: state.story.activeNode });
+    }
   }
 
   if (state.missiles.length > prevMissileCount) {
