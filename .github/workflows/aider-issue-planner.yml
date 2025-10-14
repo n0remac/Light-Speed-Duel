@@ -13,7 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       contains(github.event.issue.labels.*.name, 'feature') ||
-      contains(github.event.issue.labels.*.name, 'bug')
+      contains(github.event.issue.labels.*.name, 'bug') ||
+      contains(github.event.issue.labels.*.name, 'research')
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -32,36 +34,42 @@ jobs:
           ISSUE_BODY="${{ github.event.issue.body }}"
 
           if echo "$LABELS" | grep -iq "bug"; then
-            TYPE="bug"
-            3="Analyze this issue as a BUG. Identify the root cause if possible and propose a fix plan."
+            MODE="bug"
+            INSTRUCTION="Analyze this issue as a BUG. Identify likely causes, describe how to reproduce it, and propose a fix plan."
+          elif echo "$LABELS" | grep -iq "feature"; then
+            MODE="feature"
+            INSTRUCTION="Treat this issue as a FEATURE request. Design a clear implementation plan."
           else
-            TYPE="feature"
-            INSTRUCTION="Treat this issue as a FEATURE request. Design a plan for implementation."
+            MODE="research"
+            INSTRUCTION="Treat this issue as a RESEARCH inquiry. Explore the codebase and explain how the relevant components work together. Provide a conceptual overview of data flow, dependencies, and logic. Do not propose code changes unless directly relevant."
           fi
 
           cat <<EOF > aider_prompt.txt
-You are a senior software architect reviewing a new GitHub issue labeled as a $TYPE.
+You are a senior software engineer assistant. The current issue is labeled as **$MODE**.
 
 $INSTRUCTION
 
-Create a clear and actionable **Implementation Plan** with the following structure:
+If this is a FEATURE or BUG, generate a concise Markdown plan structured as follows:
 
 1. **Frontend Plan**
-   - Describe UI components, pages, or states to modify or add.
-   - Mention technologies or frameworks to be updated.
+   - UI components or files involved.
+   - Expected interactions or visuals.
 
 2. **Backend Plan**
-   - Define APIs, database changes, or services required.
-   - Mention validation logic, models, and interactions.
+   - APIs, database models, and logic involved.
 
-3. **Networking / Integration Plan**
-   - Cover data flow between frontend and backend.
-   - Include authentication, caching, error handling, or protocol-level notes.
+3. **Networking / Integration**
+   - How data moves between frontend & backend, caching, errors, protocols.
 
 4. **Acceptance Criteria**
-   - Write bullet points describing what must be true for the task to be complete and verified.
+   - List testable conditions for completion.
 
-Keep it concise, structured, and in Markdown.
+If this is a RESEARCH issue, instead produce:
+
+- **Overview**: High-level purpose of this subsystem.
+- **Key Components**: List main files/functions and their responsibilities.
+- **Data Flow**: Describe how information or control moves.
+- **Notes for Further Study**: Open questions or unclear relationships.
 
 ---
 **Issue Context**
@@ -71,17 +79,17 @@ Description:
 $ISSUE_BODY
 EOF
 
-      - name: Run Aider to generate plan
+      - name: Run Aider to generate response
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           aider --model gpt-4o-mini --message-file aider_prompt.txt --no-auto-commit > aider_output.txt
 
-      - name: Post plan as issue comment
+      - name: Post Aider output as issue comment
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          echo "### 🤖 Aider Generated Implementation Plan" > plan_comment.md
+          echo "### 🤖 Aider ${MODE^} Response" > plan_comment.md
           echo "" >> plan_comment.md
           cat aider_output.txt >> plan_comment.md
           gh issue comment ${{ github.event.issue.number }} --body-file plan_comment.md
