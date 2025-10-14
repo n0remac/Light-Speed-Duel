@@ -1,7 +1,6 @@
 package server
 
 import (
-	"math/rand"
 	"testing"
 
 	. "LightSpeedDuel/internal/game"
@@ -65,8 +64,6 @@ func TestLerpVec(t *testing.T) {
 }
 
 func TestLerpVecWithVerticalSpread(t *testing.T) {
-	rand.Seed(42) // Use fixed seed for reproducibility
-
 	a := Vec2{X: 0, Y: 5000}
 	b := Vec2{X: 10000, Y: 5000}
 	worldHeight := 10000.0
