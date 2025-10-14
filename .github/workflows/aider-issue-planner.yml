@@ -1,0 +1,87 @@
+name: Aider Issue Planner
+
+on:
+  issues:
+    types: [opened, labeled]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    if: |
+      contains(github.event.issue.labels.*.name, 'feature') ||
+      contains(github.event.issue.labels.*.name, 'bug')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Python and Aider
+        run: |
+          python -m pip install --upgrade pip
+          pip install aider-install
+          aider-install
+
+      - name: Prepare Aider prompt
+        id: prep
+        run: |
+          LABELS="${{ toJson(github.event.issue.labels.*.name) }}"
+          ISSUE_TITLE="${{ github.event.issue.title }}"
+          ISSUE_BODY="${{ github.event.issue.body }}"
+
+          if echo "$LABELS" | grep -iq "bug"; then
+            TYPE="bug"
+            3="Analyze this issue as a BUG. Identify the root cause if possible and propose a fix plan."
+          else
+            TYPE="feature"
+            INSTRUCTION="Treat this issue as a FEATURE request. Design a plan for implementation."
+          fi
+
+          cat <<EOF > aider_prompt.txt
+You are a senior software architect reviewing a new GitHub issue labeled as a $TYPE.
+
+$INSTRUCTION
+
+Create a clear and actionable **Implementation Plan** with the following structure:
+
+1. **Frontend Plan**
+   - Describe UI components, pages, or states to modify or add.
+   - Mention technologies or frameworks to be updated.
+
+2. **Backend Plan**
+   - Define APIs, database changes, or services required.
+   - Mention validation logic, models, and interactions.
+
+3. **Networking / Integration Plan**
+   - Cover data flow between frontend and backend.
+   - Include authentication, caching, error handling, or protocol-level notes.
+
+4. **Acceptance Criteria**
+   - Write bullet points describing what must be true for the task to be complete and verified.
+
+Keep it concise, structured, and in Markdown.
+
+---
+**Issue Context**
+Title: $ISSUE_TITLE
+
+Description:
+$ISSUE_BODY
+EOF
+
+      - name: Run Aider to generate plan
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          aider --model gpt-4o-mini --message-file aider_prompt.txt --no-auto-commit > aider_output.txt
+
+      - name: Post plan as issue comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "### 🤖 Aider Generated Implementation Plan" > plan_comment.md
+          echo "" >> plan_comment.md
+          cat aider_output.txt >> plan_comment.md
+          gh issue comment ${{ github.event.issue.number }} --body-file plan_comment.md
