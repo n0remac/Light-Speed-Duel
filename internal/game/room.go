@@ -272,9 +272,11 @@ func (r *Room) addBotUnlocked(name string, behavior AIBehavior, startPos Vec2) *
 		MissileConfig: SanitizeMissileConfig(MissileConfig{Speed: ShipMaxSpeed * 0.7, AgroRadius: 900}),
 		IsBot:         true,
 	}
-	player.EnsureMissileRoutes()
-	player.EnsureDagState()
-	player.EnsureInventory()
+    player.EnsureMissileRoutes()
+    player.EnsureDagState()
+    player.EnsureInventory()
+    // Seed bots with basic missiles (10x)
+    player.Inventory.AddItem("missile", "basic", 80, 10)
 	shipID := r.SpawnShip(id, startPos)
 	player.Ship = shipID
 	r.Players[id] = player

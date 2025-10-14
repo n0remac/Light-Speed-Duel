@@ -1,8 +1,33 @@
 package game
 
 import (
-	"math"
-	"math/rand"
+    "math"
+    "math/rand"
+)
+
+// Phase constants for minimal tactical cycle
+const (
+    aiPhaseAttack    = 0
+    aiPhaseCoolFire  = 1
+    aiPhaseEvade     = 2
+)
+
+// Tunables for Phase 1 behavior (kept local to AI)
+const (
+    phaseAttackMinS = 0.9
+    phaseAttackMaxS = 1.6
+    phaseCoolMinS   = 0.8
+    phaseCoolMaxS   = 1.4
+    phaseEvadeMinS  = 0.9
+    phaseEvadeMaxS  = 1.6
+
+    closeRangePX = 900.0
+
+    shipHeatCapRatio    = 0.92 // fraction of OverheatAt
+    missileHeatCapRatio = 0.90 // fraction of OverheatAt
+
+    speedScaleStep       = 0.90
+    speedScaleIterations = 6
 )
 
 func projectHeatAfterDuration(h *HeatComponent, speed, duration float64) float64 {
@@ -144,18 +169,91 @@ func planGeneralThreatRoute(pos Vec2, threat AIMissileThreat, worldW, worldH, sh
 }
 
 type DefensiveBehavior struct {
-	desiredMin  float64
-	desiredMax  float64
-	cooling     bool
-	lastPlanDir Vec2
+    desiredMin  float64
+    desiredMax  float64
+    lastPlanDir Vec2
+    phase       int
+    phaseUntil  float64
 }
 
 func NewDefensiveBehavior() *DefensiveBehavior {
-	return &DefensiveBehavior{
-		desiredMin:  1200,
-		desiredMax:  2000,
-		lastPlanDir: Vec2{X: 1, Y: 0},
-	}
+    return &DefensiveBehavior{
+        desiredMin:  1200,
+        desiredMax:  2000,
+        lastPlanDir: Vec2{X: 1, Y: 0},
+        phase:       aiPhaseAttack,
+    }
+}
+
+func randRange(lo, hi float64) float64 {
+    if hi <= lo {
+        return lo
+    }
+    return lo + rand.Float64()*(hi-lo)
+}
+
+func projectMaxHeatForWaypoints(h *HeatComponent, startPos Vec2, waypoints []RouteWaypoint) float64 {
+    if h == nil {
+        return 0
+    }
+    rc := &RouteComponent{Waypoints: waypoints}
+    return projectRouteHeat(h, startPos, rc)
+}
+
+func clampShipWaypointsToHeat(h *HeatComponent, startPos Vec2, waypoints []RouteWaypoint, heatCap float64, minSpeed float64) []RouteWaypoint {
+    if h == nil || len(waypoints) == 0 {
+        return waypoints
+    }
+    wps := make([]RouteWaypoint, len(waypoints))
+    copy(wps, waypoints)
+    for iter := 0; iter < speedScaleIterations; iter++ {
+        maxHeat := projectMaxHeatForWaypoints(h, startPos, wps)
+        if maxHeat <= heatCap {
+            return wps
+        }
+        // scale down speeds
+        for i := range wps {
+            s := wps[i].Speed * speedScaleStep
+            if s < minSpeed {
+                s = minSpeed
+            }
+            wps[i].Speed = s
+        }
+    }
+    return wps
+}
+
+func clampMissileWaypointsToHeat(params HeatParams, startPos Vec2, waypoints []RouteWaypoint, heatCap float64, minSpeed, maxSpeed float64) []RouteWaypoint {
+    if len(waypoints) == 0 {
+        return waypoints
+    }
+    // We don't have missile current heat; assume 0 at launch
+    currentHeat := 0.0
+    wps := make([]RouteWaypoint, len(waypoints))
+    copy(wps, waypoints)
+    for iter := 0; iter < speedScaleIterations; iter++ {
+        projected := ProjectHeatForRoute(currentHeat, params, startPos, 0, wps)
+        maxProjected := 0.0
+        for _, v := range projected {
+            if v > maxProjected {
+                maxProjected = v
+            }
+        }
+        if maxProjected <= heatCap {
+            return wps
+        }
+        for i := range wps {
+            s := wps[i].Speed * speedScaleStep
+            if s < minSpeed {
+                s = minSpeed
+            }
+            if s > maxSpeed {
+                s = maxSpeed
+            }
+            wps[i].Speed = s
+        }
+    }
+    return wps
 }
 
 func (b *DefensiveBehavior) Plan(ctx *AIContext) []AICommand {
@@ -302,73 +400,132 @@ func (b *DefensiveBehavior) Plan(ctx *AIContext) []AICommand {
 	}
 	b.lastPlanDir = direction
 
-	if imminentThreat != nil {
-		route := planDirectMissileRoute(pos, *imminentThreat, worldW, worldH, shipSpeed)
-		commands = append(commands, CommandClearShipRoute())
-		commands = append(commands, CommandSetShipRoute(route))
-		b.cooling = true
-	} else if closeThreat != nil && closestThreatDist <= 1400 {
-		route := planGeneralThreatRoute(pos, *closeThreat, worldW, worldH, shipSpeed)
-		commands = append(commands, CommandSetShipRoute(route))
-		b.cooling = true
-	} else {
-		heat := ctx.SelfHeat
-		route := ctx.SelfRoute
-		needPlan := false
-		if route == nil || len(route.Waypoints) == 0 {
-			needPlan = true
-		} else {
-			distToFirst := route.Waypoints[0].Pos.Sub(pos).Len()
-			if distToFirst < 160 {
-				needPlan = true
-			}
-		}
+    if imminentThreat != nil {
+        route := planDirectMissileRoute(pos, *imminentThreat, worldW, worldH, shipSpeed)
+        commands = append(commands, CommandClearShipRoute())
+        // When dodging, keep as-is (threat escape has priority)
+        commands = append(commands, CommandSetShipRoute(route))
+    } else if closeThreat != nil && closestThreatDist <= 1400 {
+        route := planGeneralThreatRoute(pos, *closeThreat, worldW, worldH, shipSpeed)
+        commands = append(commands, CommandSetShipRoute(route))
+    } else {
+        heat := ctx.SelfHeat
+        route := ctx.SelfRoute
+        needPlan := false
+        if route == nil || len(route.Waypoints) == 0 {
+            needPlan = true
+        } else {
+            distToFirst := route.Waypoints[0].Pos.Sub(pos).Len()
+            if distToFirst < 160 {
+                needPlan = true
+            }
+        }
 
-		if heat != nil {
-			plannedHeat := projectRouteHeat(heat, pos, route)
-			highTarget := math.Min(heat.P.Max, math.Max(heat.P.OverheatAt-3, heat.P.Max*0.92))
-			lowTarget := math.Max(0, math.Min(heat.P.WarnAt*0.6, heat.P.WarnAt-10))
-			currentHeat := heat.S.Value
+        if heat == nil {
+            needPlan = true
+        }
 
-			if b.cooling {
-				if currentHeat <= lowTarget && plannedHeat <= lowTarget {
-					b.cooling = false
-					needPlan = true
-				}
-			} else {
-				if plannedHeat >= highTarget && currentHeat >= heat.P.WarnAt*0.9 {
-					b.cooling = true
-					needPlan = true
-				}
-			}
+        if needPlan {
+            // Choose route by phase
+            if heat != nil {
+                shipCap := math.Min(heat.P.Max, heat.P.OverheatAt*shipHeatCapRatio)
+                minSpeed := math.Max(heat.P.MarkerSpeed*0.7, 60)
+                switch b.phase {
+                case aiPhaseAttack:
+                    // Move toward nearest opponent if available
+                    toward := direction
+                    if nearest != nil && nearest.Transform != nil {
+                        toward = unitOrZero(nearest.Transform.Pos.Sub(pos))
+                    }
+                    newRoute := planHeatBuildRoute(pos, toward, worldW, worldH, shipSpeed)
+                    newRoute = clampShipWaypointsToHeat(heat, pos, newRoute, shipCap, minSpeed)
+                    // If still too hot, fallback to cooldown
+                    if projectMaxHeatForWaypoints(heat, pos, newRoute) > shipCap {
+                        newRoute = planHeatCooldownRoute(pos, toward, worldW, worldH, heat.P.MarkerSpeed)
+                    }
+                    commands = append(commands, CommandSetShipRoute(newRoute))
+                    // Initialize or maintain attack phase timer
+                    if b.phaseUntil <= ctx.Now {
+                        b.phaseUntil = ctx.Now + randRange(phaseAttackMinS, phaseAttackMaxS)
+                    }
+                    // Transition to Cool&Fire when close to target or timer elapsed
+                    if (nearest != nil && nearest.Transform != nil && nearest.Transform.Pos.Sub(pos).Len() <= closeRangePX) || ctx.Now >= b.phaseUntil {
+                        b.phase = aiPhaseCoolFire
+                        b.phaseUntil = ctx.Now + randRange(phaseCoolMinS, phaseCoolMaxS)
+                    }
 
-			if !b.cooling && plannedHeat < highTarget*0.9 {
-				needPlan = true
-			}
-			if b.cooling && plannedHeat > lowTarget {
-				needPlan = true
-			}
-		} else {
-			needPlan = true
-		}
+                case aiPhaseCoolFire:
+                    toward := direction
+                    if nearest != nil && nearest.Transform != nil {
+                        toward = unitOrZero(nearest.Transform.Pos.Sub(pos))
+                    }
+                    newRoute := planHeatCooldownRoute(pos, toward, worldW, worldH, heat.P.MarkerSpeed)
+                    newRoute = clampShipWaypointsToHeat(heat, pos, newRoute, shipCap, minSpeed)
+                    commands = append(commands, CommandSetShipRoute(newRoute))
+                    if b.phaseUntil <= ctx.Now {
+                        b.phaseUntil = ctx.Now + randRange(phaseCoolMinS, phaseCoolMaxS)
+                    }
+                    if ctx.Now >= b.phaseUntil {
+                        b.phase = aiPhaseEvade
+                        b.phaseUntil = ctx.Now + randRange(phaseEvadeMinS, phaseEvadeMaxS)
+                    }
 
-		if needPlan {
-			if ctx.SelfHeat != nil && b.cooling {
-				newRoute := planHeatCooldownRoute(pos, direction, worldW, worldH, ctx.SelfHeat.P.MarkerSpeed)
-				commands = append(commands, CommandSetShipRoute(newRoute))
-			} else {
-				newRoute := planHeatBuildRoute(pos, direction, worldW, worldH, shipSpeed)
-				commands = append(commands, CommandSetShipRoute(newRoute))
-			}
-		}
-	}
+                case aiPhaseEvade:
+                    away := direction
+                    if nearest != nil && nearest.Transform != nil {
+                        away = unitOrZero(pos.Sub(nearest.Transform.Pos))
+                    }
+                    newRoute := planHeatBuildRoute(pos, away, worldW, worldH, shipSpeed)
+                    newRoute = clampShipWaypointsToHeat(heat, pos, newRoute, shipCap, minSpeed)
+                    if projectMaxHeatForWaypoints(heat, pos, newRoute) > shipCap {
+                        newRoute = planHeatCooldownRoute(pos, away, worldW, worldH, heat.P.MarkerSpeed)
+                    }
+                    commands = append(commands, CommandSetShipRoute(newRoute))
+                    if b.phaseUntil <= ctx.Now {
+                        b.phaseUntil = ctx.Now + randRange(phaseEvadeMinS, phaseEvadeMaxS)
+                    }
+                    if ctx.Now >= b.phaseUntil {
+                        b.phase = aiPhaseAttack
+                        b.phaseUntil = ctx.Now + randRange(phaseAttackMinS, phaseAttackMaxS)
+                    }
+                }
+            } else {
+                // No heat data: default to build route
+                newRoute := planHeatBuildRoute(pos, direction, worldW, worldH, shipSpeed)
+                commands = append(commands, CommandSetShipRoute(newRoute))
+            }
+        }
+    }
 
-	if nearest != nil && ctx.MissileReady() && ctx.SelfTransform != nil {
-		oppPos := nearest.Transform.Pos
-		oppVel := Vec2{}
-		if nearest.Transform != nil {
-			oppVel = nearest.Transform.Vel
-		}
+    // Gate missile firing: only when close and in Cool&Fire phase
+    canFirePhase := b.phase == aiPhaseCoolFire
+    isClose := false
+    if nearest != nil && nearest.Transform != nil {
+        isClose = nearest.Transform.Pos.Sub(pos).Len() <= closeRangePX
+    }
+
+    // Count available missiles (all variants)
+    ammo := 0
+    if ctx.Self != nil && ctx.Self.Inventory != nil {
+        for i := range ctx.Self.Inventory.Items {
+            it := ctx.Self.Inventory.Items[i]
+            if it.Type == "missile" && it.Quantity > 0 {
+                ammo += it.Quantity
+            }
+        }
+    }
+
+    // Auto-craft when ammo low
+    if ammo < 3 {
+        commands = append(commands, CommandDagStart("craft.missile.basic"))
+    }
+
+    if nearest != nil && canFirePhase && isClose && ctx.MissileReady() && ammo > 0 && ctx.SelfTransform != nil {
+        oppPos := nearest.Transform.Pos
+        oppVel := Vec2{}
+        if nearest.Transform != nil {
+            oppVel = nearest.Transform.Vel
+        }
 		rel := oppPos.Sub(pos)
 		relSpeed := rel.Len()
 
@@ -401,8 +558,11 @@ func (b *DefensiveBehavior) Plan(ctx *AIContext) []AICommand {
 			{Pos: clampedTail, Speed: cfg.Speed},
 		}
 
-		commands = append(commands, CommandLaunchMissile(cfg, waypoints))
-	}
+        // Clamp missile speeds to avoid overheating
+        missileCap := cfg.HeatParams.OverheatAt * missileHeatCapRatio
+        clamped := clampMissileWaypointsToHeat(cfg.HeatParams, pos, waypoints, missileCap, MissileMinSpeed, cfg.Speed)
+        commands = append(commands, CommandLaunchMissile(cfg, clamped))
+    }
 
-	return commands
+    return commands
 }

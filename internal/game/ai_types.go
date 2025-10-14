@@ -1,7 +1,11 @@
 package game
 
+import (
+    dagpkg "LightSpeedDuel/internal/dag"
+)
+
 type AICommand interface {
-	apply(r *Room, p *Player)
+    apply(r *Room, p *Player)
 }
 
 type aiCommandSetShipRoute struct {
@@ -43,26 +47,50 @@ func (aiCommandClearShipRoute) apply(r *Room, p *Player) {
 }
 
 type aiCommandLaunchMissile struct {
-	config    MissileConfig
-	waypoints []RouteWaypoint
+    config    MissileConfig
+    waypoints []RouteWaypoint
 }
 
 func (c aiCommandLaunchMissile) apply(r *Room, p *Player) {
-	if p == nil || p.Ship == 0 || len(c.waypoints) == 0 {
-		return
-	}
-	now := r.Now
-	if p.MissileReadyAt > 0 && now < p.MissileReadyAt {
-		return
-	}
-	cfg := SanitizeMissileConfig(c.config)
-	if tr := r.World.Transform(p.Ship); tr != nil {
-		missileID := r.LaunchMissile(p.ID, p.Ship, cfg, c.waypoints, tr.Pos, tr.Vel)
-		if missileID != 0 {
-			speed := tr.Vel.Len()
-			p.MissileReadyAt = now + MissileCooldownForSpeed(speed)
-		}
-	}
+    if p == nil || p.Ship == 0 || len(c.waypoints) == 0 {
+        return
+    }
+    now := r.Now
+    if p.MissileReadyAt > 0 && now < p.MissileReadyAt {
+        return
+    }
+    // Require ammo: consume one missile from inventory before launching
+    if p.Inventory == nil || len(p.Inventory.Items) == 0 {
+        return
+    }
+    removed := false
+    var usedVariant string
+    var usedHeat float64
+    // Remove from the first available missile stack
+    for i := range p.Inventory.Items {
+        it := &p.Inventory.Items[i]
+        if it.Type == "missile" && it.Quantity > 0 {
+            if p.Inventory.RemoveItem("missile", it.VariantID, it.HeatCapacity, 1) {
+                removed = true
+                usedVariant = it.VariantID
+                usedHeat = it.HeatCapacity
+                _ = usedVariant
+                _ = usedHeat
+                break
+            }
+        }
+    }
+    if !removed {
+        return
+    }
+    cfg := SanitizeMissileConfig(c.config)
+    if tr := r.World.Transform(p.Ship); tr != nil {
+        missileID := r.LaunchMissile(p.ID, p.Ship, cfg, c.waypoints, tr.Pos, tr.Vel)
+        if missileID != 0 {
+            speed := tr.Vel.Len()
+            p.MissileReadyAt = now + MissileCooldownForSpeed(speed)
+        }
+    }
 }
 
 func CommandSetShipRoute(waypoints []RouteWaypoint) AICommand {
@@ -74,9 +102,32 @@ func CommandClearShipRoute() AICommand {
 }
 
 func CommandLaunchMissile(cfg MissileConfig, waypoints []RouteWaypoint) AICommand {
-	copied := make([]RouteWaypoint, len(waypoints))
-	copy(copied, waypoints)
-	return aiCommandLaunchMissile{config: cfg, waypoints: copied}
+    copied := make([]RouteWaypoint, len(waypoints))
+    copy(copied, waypoints)
+    return aiCommandLaunchMissile{config: cfg, waypoints: copied}
+}
+
+// aiCommandDagStart attempts to start a DAG node (e.g., craft missiles)
+type aiCommandDagStart struct {
+    nodeID string
+}
+
+func (c aiCommandDagStart) apply(r *Room, p *Player) {
+    if r == nil || p == nil {
+        return
+    }
+    graph := dagpkg.GetGraph()
+    if graph == nil {
+        return
+    }
+    p.EnsureDagState()
+    effects := NewCraftingEffects(p)
+    // Ignore errors; Start is validated and idempotent at DAG layer
+    _ = dagpkg.Start(graph, p.DagState, dagpkg.NodeID(c.nodeID), r.Now, effects)
+}
+
+func CommandDagStart(nodeID string) AICommand {
+    return aiCommandDagStart{nodeID: nodeID}
 }
 
 type AIBehavior interface {
