@@ -1032,9 +1032,9 @@ func spawnMissionWave(room *Room, waveIndex int) {
 		}
 		total := 18 + rand.Intn(7) // 18-24
 		points := []Vec2{
-			lerpVec(beacons[0], beacons[1], 0.25),
-			lerpVec(beacons[0], beacons[1], 0.5),
-			lerpVec(beacons[0], beacons[1], 0.75),
+			lerpVecWithVerticalSpread(beacons[0], beacons[1], 0.25, room.WorldHeight, 0.15),
+			lerpVecWithVerticalSpread(beacons[0], beacons[1], 0.5, room.WorldHeight, 0.15),
+			lerpVecWithVerticalSpread(beacons[0], beacons[1], 0.75, room.WorldHeight, 0.15),
 		}
 		radius := math.Max(room.WorldWidth*0.025, 600)
 		distributed := total
@@ -1070,9 +1070,9 @@ func spawnMissionWave(room *Room, waveIndex int) {
 		}
 		patrollerCount := total - mineCount
 		points := []Vec2{
-			lerpVec(beacons[1], beacons[2], 0.2),
-			lerpVec(beacons[1], beacons[2], 0.45),
-			lerpVec(beacons[1], beacons[2], 0.7),
+			lerpVecWithVerticalSpread(beacons[1], beacons[2], 0.2, room.WorldHeight, 0.15),
+			lerpVecWithVerticalSpread(beacons[1], beacons[2], 0.45, room.WorldHeight, 0.15),
+			lerpVecWithVerticalSpread(beacons[1], beacons[2], 0.7, room.WorldHeight, 0.15),
 		}
 		radius := math.Max(room.WorldWidth*0.02, 500)
 		distributed := mineCount
@@ -1090,9 +1090,9 @@ func spawnMissionWave(room *Room, waveIndex int) {
 		}
 		if patrollerCount > 0 {
 			path := []Vec2{
-				lerpVec(beacons[1], beacons[2], 0.15),
-				lerpVec(beacons[1], beacons[2], 0.5),
-				lerpVec(beacons[1], beacons[2], 0.85),
+				lerpVecWithVerticalSpread(beacons[1], beacons[2], 0.15, room.WorldHeight, 0.15),
+				lerpVecWithVerticalSpread(beacons[1], beacons[2], 0.5, room.WorldHeight, 0.15),
+				lerpVecWithVerticalSpread(beacons[1], beacons[2], 0.85, room.WorldHeight, 0.15),
 			}
 			room.SpawnPatrollers(path, patrollerCount, [2]float64{20, 40}, 320, minesHeat, 200)
 		}
@@ -1107,7 +1107,7 @@ func spawnMissionWave(room *Room, waveIndex int) {
 			Exp:         HeatExp,
 		}
 		seekers := 6 + rand.Intn(5) // 6-10
-		center := lerpVec(beacons[2], beacons[3], 0.55)
+		center := lerpVecWithVerticalSpread(beacons[2], beacons[3], 0.55, room.WorldHeight, 0.15)
 		ring := math.Max(room.WorldWidth*0.035, 900)
 		room.SpawnSeekers(int(center.X), int(center.Y), seekers, ring, [2]float64{60, 100}, [2]float64{600, 900}, seekersHeat, 260)
 
@@ -1139,11 +1139,13 @@ func copyStoryFlags(src map[string]bool) map[string]bool {
 func missionBeaconPositions(room *Room) []Vec2 {
 	w := room.WorldWidth
 	h := room.WorldHeight
+	// Keep horizontal spacing even, but add vertical variance
+	// Y values now range from 0.30 to 0.70 instead of 0.44 to 0.55
 	return []Vec2{
-		{X: 0.15 * w, Y: 0.55 * h},
-		{X: 0.40 * w, Y: 0.50 * h},
-		{X: 0.65 * w, Y: 0.47 * h},
-		{X: 0.85 * w, Y: 0.44 * h},
+		{X: 0.15 * w, Y: (0.50 + (rand.Float64()-0.5)*0.3) * h}, // Y: 0.35 to 0.65
+		{X: 0.40 * w, Y: (0.50 + (rand.Float64()-0.5)*0.3) * h}, // Y: 0.35 to 0.65
+		{X: 0.65 * w, Y: (0.50 + (rand.Float64()-0.5)*0.3) * h}, // Y: 0.35 to 0.65
+		{X: 0.85 * w, Y: (0.50 + (rand.Float64()-0.5)*0.3) * h}, // Y: 0.35 to 0.65
 	}
 }
 
@@ -1152,4 +1154,22 @@ func lerpVec(a, b Vec2, t float64) Vec2 {
 		X: a.X + (b.X-a.X)*t,
 		Y: a.Y + (b.Y-a.Y)*t,
 	}
+}
+
+// lerpVecWithVerticalSpread interpolates between two points and adds vertical variance
+// spreadFactor controls how much vertical spread to add (0.0 = no spread, 1.0 = full world height variance)
+func lerpVecWithVerticalSpread(a, b Vec2, t float64, worldHeight float64, spreadFactor float64) Vec2 {
+	base := lerpVec(a, b, t)
+	// Add vertical offset proportional to spreadFactor
+	// Range is centered around base.Y with variance of ±spreadFactor * worldHeight
+	verticalVariance := (rand.Float64() - 0.5) * 2.0 * spreadFactor * worldHeight
+	base.Y += verticalVariance
+	// Clamp to world bounds
+	if base.Y < 0 {
+		base.Y = 0
+	}
+	if base.Y > worldHeight {
+		base.Y = worldHeight
+	}
+	return base
 }
