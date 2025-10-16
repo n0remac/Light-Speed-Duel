@@ -11,127 +11,6 @@ import { create, toBinary, fromBinary } from "@bufbuild/protobuf";
 import { WsEnvelopeSchema, type WsEnvelope } from "./proto/proto/ws_messages_pb";
 import { protoToState, protoToDagState } from "./proto_helpers";
 
-interface ServerMissileWaypoint {
-  x: number;
-  y: number;
-  speed?: number;
-}
-
-interface ServerMissileRoute {
-  id: string;
-  name?: string;
-  waypoints?: ServerMissileWaypoint[];
-}
-
-interface ServerHeatView {
-  v: number;  // current heat value
-  m: number;  // max
-  w: number;  // warnAt
-  o: number;  // overheatAt
-  ms: number; // markerSpeed
-  su: number; // stallUntil (server time seconds)
-  ku: number; // kUp
-  kd: number; // kDown
-  ex: number; // exp
-}
-
-interface ServerShipState {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  hp?: number;
-  kills?: number;
-  waypoints?: Array<{ x: number; y: number; speed?: number }>;
-  current_waypoint_index?: number;
-  heat?: ServerHeatView;
-}
-
-interface ServerMissileState {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  self?: boolean;
-  agro_radius: number;
-}
-
-interface ServerStateMessage {
-  type: "state";
-  now: number;
-  next_missile_ready?: number;
-  me?: ServerShipState | null;
-  ghosts?: Array<{ x: number; y: number; vx: number; vy: number }>;
-  missiles?: ServerMissileState[];
-  missile_routes?: ServerMissileRoute[];
-  missile_config?: {
-    speed?: number;
-    speed_min?: number;
-    speed_max?: number;
-    agro_radius?: number;
-    agro_min?: number;
-    lifetime?: number;
-    heat_config?: {
-      max?: number;
-      warn_at?: number;
-      overheat_at?: number;
-      marker_speed?: number;
-      k_up?: number;
-      k_down?: number;
-      exp?: number;
-    } | null;
-  } | null;
-  active_missile_route?: string | null;
-  meta?: {
-    c?: number;
-    w?: number;
-    h?: number;
-  };
-  inventory?: {
-    items?: Array<{
-      type: string;
-      variant_id: string;
-      heat_capacity: number;
-      quantity: number;
-    }>;
-  };
-  dag?: {
-    nodes?: Array<{
-      id: string;
-      kind: string;
-      label: string;
-      status: string;
-      remaining_s: number;
-      duration_s: number;
-      repeatable: boolean;
-    }>;
-  };
-  story?: {
-    active_node?: string;
-    dialogue?: {
-      speaker: string;
-      text: string;
-      intent: string;
-      continue_label?: string;
-      choices?: Array<{
-        id: string;
-        text: string;
-      }>;
-      tutorial_tip?: {
-        title: string;
-        text: string;
-      };
-    };
-    available?: string[];
-    flags?: Record<string, boolean>;
-    recent_events?: Array<{
-      chapter: string;
-      node: string;
-      timestamp: number;
-    }>;
-  };
-}
-
 interface ConnectOptions {
   room: string;
   state: AppState;
@@ -325,10 +204,6 @@ export function sendMessage(payload: unknown): void {
         return;
     }
   }
-
-  // Fall back to JSON for DAG, mission, and other messages
-  const data = typeof payload === "string" ? payload : JSON.stringify(payload);
-  ws.send(data);
 }
 
 // ========== Phase 2: DAG Command Functions ==========
@@ -467,196 +342,9 @@ export function connectWebSocket({
       }
       return;
     }
-
-    // Fall back to JSON for legacy/DAG messages
-    const data = safeParse(event.data);
-    if (!data || data.type !== "state") {
-      return;
-    }
-    handleStateMessage(state, data, bus, prevRoutes, prevActiveRoute, prevMissileCount);
-    prevRoutes = new Map(state.missileRoutes.map((route) => [route.id, cloneRoute(route)]));
-    prevActiveRoute = state.activeMissileRouteId;
-    prevMissileCount = state.missiles.length;
-    bus.emit("state:updated");
-    onStateUpdated?.();
   });
 }
 
-function handleStateMessage(
-  state: AppState,
-  msg: ServerStateMessage,
-  bus: EventBus,
-  prevRoutes: Map<string, MissileRoute>,
-  prevActiveRoute: string | null,
-  prevMissileCount: number,
-): void {
-  state.now = msg.now;
-  state.nowSyncedAt = monotonicNow();
-  state.nextMissileReadyAt = Number.isFinite(msg.next_missile_ready) ? msg.next_missile_ready! : 0;
-  state.me = msg.me ? {
-    x: msg.me.x,
-    y: msg.me.y,
-    vx: msg.me.vx,
-    vy: msg.me.vy,
-    hp: msg.me.hp,
-    kills: msg.me.kills ?? 0,
-    waypoints: Array.isArray(msg.me.waypoints)
-      ? msg.me.waypoints.map((wp) => ({ x: wp.x, y: wp.y, speed: Number.isFinite(wp.speed) ? wp.speed! : 180 }))
-      : [],
-    currentWaypointIndex: msg.me.current_waypoint_index ?? 0,
-    heat: msg.me.heat ? convertHeatView(msg.me.heat, state.nowSyncedAt, state.now) : undefined,
-  } : null;
-  state.ghosts = Array.isArray(msg.ghosts) ? msg.ghosts.slice() : [];
-  state.missiles = Array.isArray(msg.missiles) ? msg.missiles.slice() : [];
-
-  const routesFromServer = Array.isArray(msg.missile_routes) ? msg.missile_routes : [];
-  const newRoutes: MissileRoute[] = routesFromServer.map((route) => ({
-    id: route.id,
-    name: route.name || route.id || "Route",
-    waypoints: Array.isArray(route.waypoints)
-      ? route.waypoints.map((wp) => ({
-          x: wp.x,
-          y: wp.y,
-          speed: Number.isFinite(wp.speed) ? wp.speed! : state.missileConfig.speed,
-        }))
-      : [],
-  }));
-
-  diffRoutes(prevRoutes, newRoutes, bus);
-  state.missileRoutes = newRoutes;
-
-  const nextActive = typeof msg.active_missile_route === "string" && msg.active_missile_route.length > 0
-    ? msg.active_missile_route
-    : newRoutes.length > 0
-      ? newRoutes[0].id
-      : null;
-  state.activeMissileRouteId = nextActive;
-  if (nextActive !== prevActiveRoute) {
-    bus.emit("missile:activeRouteChanged", { routeId: nextActive ?? null });
-  }
-
-  if (msg.missile_config) {
-    if (Number.isFinite(msg.missile_config.speed_min) || Number.isFinite(msg.missile_config.speed_max) || Number.isFinite(msg.missile_config.agro_min)) {
-      updateMissileLimits(state, {
-        speedMin: msg.missile_config.speed_min,
-        speedMax: msg.missile_config.speed_max,
-        agroMin: msg.missile_config.agro_min,
-      });
-    }
-    const prevHeat = state.missileConfig.heatParams;
-    let heatParams: { max: number; warnAt: number; overheatAt: number; markerSpeed: number; kUp: number; kDown: number; exp: number } | undefined;
-    const heatConfig = msg.missile_config.heat_config;
-    if (heatConfig) {
-      heatParams = {
-        max: Number.isFinite(heatConfig.max) ? heatConfig.max! : prevHeat?.max ?? 0,
-        warnAt: Number.isFinite(heatConfig.warn_at) ? heatConfig.warn_at! : prevHeat?.warnAt ?? 0,
-        overheatAt: Number.isFinite(heatConfig.overheat_at) ? heatConfig.overheat_at! : prevHeat?.overheatAt ?? 0,
-        markerSpeed: Number.isFinite(heatConfig.marker_speed) ? heatConfig.marker_speed! : prevHeat?.markerSpeed ?? 0,
-        kUp: Number.isFinite(heatConfig.k_up) ? heatConfig.k_up! : prevHeat?.kUp ?? 0,
-        kDown: Number.isFinite(heatConfig.k_down) ? heatConfig.k_down! : prevHeat?.kDown ?? 0,
-        exp: Number.isFinite(heatConfig.exp) ? heatConfig.exp! : prevHeat?.exp ?? 1,
-      };
-    }
-    const sanitized = sanitizeMissileConfig({
-      speed: msg.missile_config.speed,
-      agroRadius: msg.missile_config.agro_radius,
-      heatParams,
-    }, state.missileConfig, state.missileLimits);
-    if (Number.isFinite(msg.missile_config.lifetime)) {
-      sanitized.lifetime = msg.missile_config.lifetime!;
-    }
-    state.missileConfig = sanitized;
-  }
-
-  const meta = msg.meta ?? {};
-  const hasC = typeof meta.c === "number" && Number.isFinite(meta.c);
-  const hasW = typeof meta.w === "number" && Number.isFinite(meta.w);
-  const hasH = typeof meta.h === "number" && Number.isFinite(meta.h);
-  state.worldMeta = {
-    c: hasC ? meta.c! : state.worldMeta.c,
-    w: hasW ? meta.w! : state.worldMeta.w,
-    h: hasH ? meta.h! : state.worldMeta.h,
-  };
-
-  if (msg.inventory && Array.isArray(msg.inventory.items)) {
-    state.inventory = {
-      items: msg.inventory.items.map((item) => ({
-        type: item.type,
-        variant_id: item.variant_id,
-        heat_capacity: item.heat_capacity,
-        quantity: item.quantity,
-      })),
-    };
-  }
-
-  if (msg.dag && Array.isArray(msg.dag.nodes)) {
-    state.dag = {
-      nodes: msg.dag.nodes.map((node) => ({
-        id: node.id,
-        kind: node.kind,
-        label: node.label,
-        status: node.status,
-        remaining_s: node.remaining_s,
-        duration_s: node.duration_s,
-        repeatable: node.repeatable,
-      })),
-    };
-  }
-
-  if (msg.story) {
-
-    const prevActiveNode = state.story?.activeNode ?? null;
-
-    // Convert server dialogue to DialogueContent format
-    let dialogue: DialogueContent | null = null;
-    if (msg.story.dialogue) {
-      const d = msg.story.dialogue;
-      dialogue = {
-        speaker: d.speaker,
-        text: d.text,
-        intent: d.intent as "factory" | "unit",
-        typingSpeedMs: 18, // Default, or could come from server
-        continueLabel: d.continue_label,
-        choices: d.choices?.map(c => ({ id: c.id, text: c.text })),
-        tutorialTip: d.tutorial_tip ? {
-          title: d.tutorial_tip.title,
-          text: d.tutorial_tip.text,
-        } : undefined,
-      };
-    }
-
-    state.story = {
-      activeNode: msg.story.active_node ?? null,
-      dialogue, // Store dialogue
-      available: Array.isArray(msg.story.available) ? msg.story.available : [],
-      flags: msg.story.flags ?? {},
-      recentEvents: Array.isArray(msg.story.recent_events) ? msg.story.recent_events.map((evt) => ({
-        chapter: evt.chapter,
-        node: evt.node,
-        timestamp: evt.timestamp,
-      })) : [],
-    };
-    // Emit event when active story node changes
-    if (state.story.activeNode !== prevActiveNode && state.story.activeNode) {
-      bus.emit("story:nodeActivated", {
-        nodeId: state.story.activeNode,
-        dialogue: state.story.dialogue ?? undefined, // Pass dialogue
-      });
-    }
-  }
-
-  if (state.missiles.length > prevMissileCount) {
-    const activeRouteId = state.activeMissileRouteId;
-    if (activeRouteId) {
-      bus.emit("missile:launched", { routeId: activeRouteId });
-    } else {
-      bus.emit("missile:launched", { routeId: "" });
-    }
-  }
-
-  const cooldownRemaining = Math.max(0, state.nextMissileReadyAt - getApproxServerNow(state));
-  bus.emit("missile:cooldownUpdated", { secondsRemaining: cooldownRemaining });
-}
 
 // Handle protobuf state messages (simplified version of handleStateMessage)
 function handleProtoStateMessage(
@@ -865,16 +553,6 @@ function cloneRoute(route: MissileRoute): MissileRoute {
   };
 }
 
-function safeParse(value: unknown): ServerStateMessage | null {
-  if (typeof value !== "string") return null;
-  try {
-    return JSON.parse(value) as ServerStateMessage;
-  } catch (err) {
-    console.warn("[ws] failed to parse message", err);
-    return null;
-  }
-}
-
 export function getApproxServerNow(state: AppState): number {
   if (!Number.isFinite(state.now)) {
     return 0;
@@ -890,7 +568,7 @@ export function getApproxServerNow(state: AppState): number {
   return state.now + elapsedMs / 1000;
 }
 
-function convertHeatView(serverHeat: ServerHeatView, nowSyncedAtMs: number, serverNowSec: number): import("./state").HeatView {
+function convertHeatView(serverHeat: { v: number; m: number; w: number; o: number; ms: number; su: number; ku: number; kd: number; ex: number }, nowSyncedAtMs: number, serverNowSec: number): import("./state").HeatView {
   // Convert server time (stallUntil in seconds) to client time (milliseconds)
   // stallUntil is absolute server time, so we need to convert it to client time
   const serverStallUntilSec = serverHeat.su;
