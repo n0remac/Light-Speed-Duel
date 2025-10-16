@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"math"
@@ -16,12 +15,39 @@ import (
 	"LightSpeedDuel/internal/dag"
 	"LightSpeedDuel/internal/game"
 	. "LightSpeedDuel/internal/game"
+	pb "LightSpeedDuel/internal/proto/ws"
 
 	"github.com/gorilla/websocket"
+	"google.golang.org/protobuf/proto"
 )
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
+}
+
+// sendProtoMessage wraps a protobuf message in an envelope and sends it as a binary WebSocket frame
+func sendProtoMessage(conn *websocket.Conn, payload proto.Message) error {
+	var envelope pb.WsEnvelope
+
+	switch msg := payload.(type) {
+	case *pb.StateUpdate:
+		envelope.Payload = &pb.WsEnvelope_StateUpdate{StateUpdate: msg}
+	case *pb.RoomFullError:
+		envelope.Payload = &pb.WsEnvelope_RoomFull{RoomFull: msg}
+	case *pb.DagListResponse:
+		envelope.Payload = &pb.WsEnvelope_DagListResponse{DagListResponse: msg}
+	default:
+		return fmt.Errorf("unknown message type: %T", payload)
+	}
+
+	// Marshal to bytes
+	data, err := proto.Marshal(&envelope)
+	if err != nil {
+		return fmt.Errorf("marshal error: %w", err)
+	}
+
+	// Send as binary frame
+	return conn.WriteMessage(websocket.BinaryMessage, data)
 }
 
 func parseFloatOverride(values url.Values, key string) (*float64, bool) {
@@ -85,33 +111,6 @@ func parseHeatOverrides(values url.Values) (HeatParamOverrides, bool) {
 		found = true
 	}
 	return overrides, found
-}
-
-type wsMsg struct {
-	Type string `json:"type"`
-	// join
-	Name string  `json:"name,omitempty"`
-	Room string  `json:"room,omitempty"`
-	MapW float64 `json:"map_w,omitempty"`
-	MapH float64 `json:"map_h,omitempty"`
-	// waypoint
-	X     float64 `json:"x,omitempty"`
-	Y     float64 `json:"y,omitempty"`
-	Speed float64 `json:"speed,omitempty"`
-	Index int     `json:"index,omitempty"`
-	// missile config
-	MissileSpeed float64 `json:"missile_speed,omitempty"`
-	MissileAgro  float64 `json:"missile_agro,omitempty"`
-	RouteID      string  `json:"route_id,omitempty"`
-	RouteName    string  `json:"route_name,omitempty"`
-	// dag
-	NodeID   string `json:"node_id,omitempty"`
-	ChoiceID string `json:"choice_id,omitempty"`
-	// mission wave spawning
-	WaveIndex int `json:"wave_index,omitempty"`
-	// mission story events
-	StoryEvent  string `json:"story_event,omitempty"`
-	StoryBeacon int    `json:"story_beacon,omitempty"`
 }
 
 type stateMsg struct {
@@ -227,7 +226,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 	room.Mu.Lock()
 	if room.HumanPlayerCountLocked() >= RoomMaxPlayers {
 		room.Mu.Unlock()
-		_ = conn.WriteJSON(map[string]any{"type": "full", "message": "room full"})
+		_ = sendProtoMessage(conn, &pb.RoomFullError{Message: "room full"})
 		conn.Close()
 		return
 	}
@@ -283,372 +282,80 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer cancel()
 		for {
-			_, data, err := conn.ReadMessage()
+			msgType, data, err := conn.ReadMessage()
 			if err != nil {
 				return
 			}
-			var m wsMsg
-			if err := json.Unmarshal(data, &m); err != nil {
-				continue
-			}
-			switch m.Type {
-			case "join":
-				name := strings.TrimSpace(m.Name)
-				if name == "" {
-					name = "Anon"
-				}
-				room.Mu.Lock()
-				if p := room.Players[playerID]; p != nil {
-					p.Name = name
-				}
-				room.Mu.Unlock()
-			case "spawn_bot":
-				room.Mu.Lock()
-				if p := room.Players[playerID]; p != nil {
-					// Spawn bot at random location on opposite side from player
-					spawnPos := Vec2{X: room.WorldWidth * 0.75, Y: room.WorldHeight * 0.5}
-					if tr := room.World.Transform(p.Ship); tr != nil {
-						// Spawn on opposite side with some randomness
-						spawnPos = Vec2{
-							X: Clamp(room.WorldWidth-tr.Pos.X, 0, room.WorldWidth),
-							Y: Clamp(room.WorldHeight-tr.Pos.Y, 0, room.WorldHeight),
-						}
-					}
-					room.AddBotLocked("Sentinel AI", NewDefensiveBehavior(), spawnPos)
-				}
-				room.Mu.Unlock()
-			case "add_waypoint":
-				room.Mu.Lock()
-				if p := room.Players[playerID]; p != nil {
-					wp := RouteWaypoint{
-						Pos:   Vec2{X: Clamp(m.X, 0, room.WorldWidth), Y: Clamp(m.Y, 0, room.WorldHeight)},
-						Speed: Clamp(m.Speed, 0, ShipMaxSpeed),
-					}
-					room.AppendRouteWaypoint(p.Ship, wp)
-				}
-				room.Mu.Unlock()
-			case "update_waypoint":
-				room.Mu.Lock()
-				if p := room.Players[playerID]; p != nil {
-					room.UpdateRouteWaypointSpeed(p.Ship, m.Index, m.Speed)
-				}
-				room.Mu.Unlock()
-			case "move_waypoint":
-				room.Mu.Lock()
-				if p := room.Players[playerID]; p != nil {
-					newPos := Vec2{X: Clamp(m.X, 0, room.WorldWidth), Y: Clamp(m.Y, 0, room.WorldHeight)}
-					room.MoveRouteWaypoint(p.Ship, m.Index, newPos)
-				}
-				room.Mu.Unlock()
-			case "delete_waypoint":
-				room.Mu.Lock()
-				if p := room.Players[playerID]; p != nil {
-					room.DeleteRouteWaypointsFrom(p.Ship, m.Index)
-				}
-				room.Mu.Unlock()
-			case "clear_waypoints":
-				room.Mu.Lock()
-				if p := room.Players[playerID]; p != nil {
-					room.ClearRouteWaypoints(p.Ship)
-				}
-				room.Mu.Unlock()
-			case "configure_missile":
-				room.Mu.Lock()
-				if p := room.Players[playerID]; p != nil {
-					cfg := p.MissileConfig
-					if m.MissileSpeed > 0 {
-						cfg.Speed = m.MissileSpeed
-					}
-					if m.MissileAgro >= 0 {
-						cfg.AgroRadius = m.MissileAgro
-					}
-					p.MissileConfig = SanitizeMissileConfig(cfg)
-				}
-				room.Mu.Unlock()
-			case "add_missile_waypoint":
-				room.Mu.Lock()
-				if p := room.Players[playerID]; p != nil {
-					p.EnsureMissileRoutes()
-					routeID := m.RouteID
-					if routeID == "" {
-						routeID = p.ActiveMissileRouteID
-					}
-					point := Vec2{X: Clamp(m.X, 0, room.WorldWidth), Y: Clamp(m.Y, 0, room.WorldHeight)}
-					defaultSpeed := Clamp(p.MissileConfig.Speed, MissileMinSpeed, MissileMaxSpeed)
-					speed := Clamp(m.Speed, MissileMinSpeed, MissileMaxSpeed)
-					if speed <= 0 {
-						speed = defaultSpeed
-					}
-					wp := RouteWaypoint{
-						Pos:   point,
-						Speed: speed,
-					}
-					p.AddWaypointToRoute(routeID, wp)
-				}
-				room.Mu.Unlock()
-			case "update_missile_waypoint_speed":
-				room.Mu.Lock()
-				if p := room.Players[playerID]; p != nil {
-					p.EnsureMissileRoutes()
-					routeID := m.RouteID
-					if routeID == "" {
-						routeID = p.ActiveMissileRouteID
-					}
-					speed := Clamp(m.Speed, MissileMinSpeed, MissileMaxSpeed)
-					if speed <= 0 {
-						speed = Clamp(p.MissileConfig.Speed, MissileMinSpeed, MissileMaxSpeed)
-					}
-					p.UpdateWaypointSpeedInRoute(routeID, m.Index, speed)
-				}
-				room.Mu.Unlock()
-			case "move_missile_waypoint":
-				room.Mu.Lock()
-				if p := room.Players[playerID]; p != nil {
-					p.EnsureMissileRoutes()
-					routeID := m.RouteID
-					if routeID == "" {
-						routeID = p.ActiveMissileRouteID
-					}
-					if route := p.MissileRouteByID(routeID); route != nil {
-						if m.Index >= 0 && m.Index < len(route.Waypoints) {
-							route.Waypoints[m.Index].Pos = Vec2{
-								X: Clamp(m.X, 0, room.WorldWidth),
-								Y: Clamp(m.Y, 0, room.WorldHeight),
-							}
-						}
-					}
-				}
-				room.Mu.Unlock()
-			case "delete_missile_waypoint":
-				room.Mu.Lock()
-				if p := room.Players[playerID]; p != nil {
-					p.EnsureMissileRoutes()
-					routeID := m.RouteID
-					if routeID == "" {
-						routeID = p.ActiveMissileRouteID
-					}
-					if route := p.MissileRouteByID(routeID); route != nil {
-						index := m.Index
-						if index < 0 || index >= len(route.Waypoints) {
-							index = len(route.Waypoints) - 1
-						}
-						if index >= 0 {
-							p.DeleteWaypointFromRoute(routeID, index)
-						}
-					}
-				}
-				room.Mu.Unlock()
-			case "clear_missile_route":
-				room.Mu.Lock()
-				if p := room.Players[playerID]; p != nil {
-					p.EnsureMissileRoutes()
-					routeID := m.RouteID
-					if routeID == "" {
-						routeID = p.ActiveMissileRouteID
-					}
-					p.ClearMissileRoute(routeID)
-				}
-				room.Mu.Unlock()
-			case "add_missile_route":
-				room.Mu.Lock()
-				if p := room.Players[playerID]; p != nil {
-					p.AddMissileRoute(m.RouteName)
-				}
-				room.Mu.Unlock()
-			case "rename_missile_route":
-				room.Mu.Lock()
-				if p := room.Players[playerID]; p != nil {
-					p.RenameMissileRoute(m.RouteID, m.RouteName)
-				}
-				room.Mu.Unlock()
-			case "delete_missile_route":
-				room.Mu.Lock()
-				if p := room.Players[playerID]; p != nil {
-					p.DeleteMissileRoute(m.RouteID)
-				}
-				room.Mu.Unlock()
-			case "set_active_missile_route":
-				room.Mu.Lock()
-				if p := room.Players[playerID]; p != nil {
-					p.SetActiveMissileRoute(m.RouteID)
-				}
-				room.Mu.Unlock()
-			case "launch_missile":
-				room.Mu.Lock()
-				if p := room.Players[playerID]; p != nil {
-					cfg := SanitizeMissileConfig(p.MissileConfig)
-					p.MissileConfig = cfg
-					p.EnsureMissileRoutes()
-					routeID := m.RouteID
-					if routeID == "" {
-						routeID = p.ActiveMissileRouteID
-					}
-					var waypoints []RouteWaypoint
-					if route := p.MissileRouteByID(routeID); route != nil {
-						waypoints = append([]RouteWaypoint(nil), route.Waypoints...)
-					}
-					if len(waypoints) == 0 {
-						room.Mu.Unlock()
-						continue
-					}
-					now := room.Now
-					if p.MissileReadyAt > 0 && now < p.MissileReadyAt {
-						room.Mu.Unlock()
-						continue
-					}
 
-					// Check if player has missiles in inventory
-					p.EnsureInventory()
-					hasMissiles := false
-					var missileToConsume *InventoryItem
-					for i := range p.Inventory.Items {
-						item := &p.Inventory.Items[i]
-						if item.Type == "missile" && item.Quantity > 0 {
-							hasMissiles = true
-							missileToConsume = item
-							break
-						}
-					}
-					if !hasMissiles {
-						log.Printf("Player %s attempted to launch missile but has none in inventory", playerID)
-						room.Mu.Unlock()
-						continue
-					}
-
-					if tr := room.World.Transform(p.Ship); tr != nil {
-						speed := tr.Vel.Len()
-						if id := room.LaunchMissile(playerID, p.Ship, cfg, waypoints, tr.Pos, tr.Vel); id != 0 {
-							p.MissileReadyAt = now + MissileCooldownForSpeed(speed)
-							// Consume one missile from inventory
-							p.Inventory.RemoveItem(missileToConsume.Type, missileToConsume.VariantID, missileToConsume.HeatCapacity, 1)
-							log.Printf("Player %s launched missile, consumed 1x %s (heat: %.0f)", playerID, missileToConsume.VariantID, missileToConsume.HeatCapacity)
-						}
-					}
-				}
-				room.Mu.Unlock()
-			case "mission_spawn_wave":
-				if mode != "campaign" {
+			// Try protobuf first (binary messages)
+			if msgType == websocket.BinaryMessage {
+				var envelope pb.WsEnvelope
+				if err := proto.Unmarshal(data, &envelope); err != nil {
+					log.Printf("protobuf unmarshal error: %v", err)
 					continue
 				}
-				waveIndex := m.WaveIndex
-				if waveIndex < 1 || waveIndex > 3 {
-					continue
-				}
-				room.Mu.Lock()
-				if room.SetMissionWaveSpawnedLocked(waveIndex) {
-					spawnMissionWave(room, waveIndex)
-				}
-				if p := room.Players[playerID]; p != nil {
-					room.HandleMissionStoryEventLocked(p, "mission:beacon-locked", waveIndex)
-				}
-				room.Mu.Unlock()
-			case "mission_story_event":
-				if mode != "campaign" {
-					continue
-				}
-				event := strings.ToLower(strings.TrimSpace(m.StoryEvent))
-				beacon := m.StoryBeacon
-				room.Mu.Lock()
-				if p := room.Players[playerID]; p != nil {
-					room.HandleMissionStoryEventLocked(p, event, beacon)
-				}
-				room.Mu.Unlock()
-			case "dag_start":
-				room.Mu.Lock()
-				if p := room.Players[playerID]; p != nil {
-					p.EnsureDagState()
-					p.EnsureStoryState()
-					graph := dag.GetGraph()
-					if graph != nil {
-						effects := NewRoomDagEffects(room, p)
-						nodeID := dag.NodeID(m.NodeID)
-						if err := dag.Start(graph, p.DagState, nodeID, room.Now, effects); err != nil {
-							log.Printf("dag_start error for player %s node %s: %v", playerID, nodeID, err)
-						}
-					}
-				}
-				room.Mu.Unlock()
-			case "dag_cancel":
-				room.Mu.Lock()
-				if p := room.Players[playerID]; p != nil {
-					p.EnsureDagState()
-					p.EnsureStoryState()
-					graph := dag.GetGraph()
-					if graph != nil {
-						effects := NewRoomDagEffects(room, p)
-						nodeID := dag.NodeID(m.NodeID)
-						if err := dag.Cancel(graph, p.DagState, nodeID, effects); err != nil {
-							log.Printf("dag_cancel error for player %s node %s: %v", playerID, nodeID, err)
-						}
-					}
-				}
-				room.Mu.Unlock()
-			case "dag_story_ack":
-				log.Printf("[story] Received dag_story_ack from player %s for node %s (choice: %s)",
-					playerID, m.NodeID, m.ChoiceID)
 
-				room.Mu.Lock()
-				if p := room.Players[playerID]; p != nil {
-					p.EnsureStoryState()
-					if m.NodeID != "" {
-						nodeID := dag.NodeID(m.NodeID)
-						graph := dag.GetGraph()
-						if graph == nil {
-							log.Printf("[story] No graph available for ack from player %s", playerID)
-							room.Mu.Unlock()
-							continue
-						}
-						node := graph.GetNode(nodeID)
-						effects := NewRoomDagEffects(room, p)
-						if node != nil && node.Kind == dag.NodeKindStory {
-							status := p.DagState.GetStatus(nodeID)
-							if status == dag.StatusInProgress {
-								if err := dag.Complete(graph, p.DagState, nodeID, effects); err != nil {
-									log.Printf("[story] Complete error for player %s node %s: %v", playerID, nodeID, err)
-								} else {
-									log.Printf("[story] Successfully completed node %s for player %s", nodeID, playerID)
-								}
-							}
-						}
-					} else {
-						log.Printf("[story] Empty node ID in ack from player %s", playerID)
-					}
-				} else {
-					log.Printf("[story] Player %s not found when processing ack", playerID)
+				// Dispatch based on payload type
+				switch payload := envelope.Payload.(type) {
+				case *pb.WsEnvelope_Join:
+					handleJoin(room, playerID, payload.Join)
+				case *pb.WsEnvelope_SpawnBot:
+					handleSpawnBot(room, playerID)
+				case *pb.WsEnvelope_AddWaypoint:
+					handleAddWaypoint(room, playerID, payload.AddWaypoint)
+				case *pb.WsEnvelope_UpdateWaypoint:
+					handleUpdateWaypoint(room, playerID, payload.UpdateWaypoint)
+				case *pb.WsEnvelope_MoveWaypoint:
+					handleMoveWaypoint(room, playerID, payload.MoveWaypoint)
+				case *pb.WsEnvelope_DeleteWaypoint:
+					handleDeleteWaypoint(room, playerID, payload.DeleteWaypoint)
+				case *pb.WsEnvelope_ClearWaypoints:
+					handleClearWaypoints(room, playerID)
+				case *pb.WsEnvelope_ConfigureMissile:
+					handleConfigureMissile(room, playerID, payload.ConfigureMissile)
+				case *pb.WsEnvelope_AddMissileWaypoint:
+					handleAddMissileWaypoint(room, playerID, payload.AddMissileWaypoint)
+				case *pb.WsEnvelope_UpdateMissileWaypointSpeed:
+					handleUpdateMissileWaypointSpeed(room, playerID, payload.UpdateMissileWaypointSpeed)
+				case *pb.WsEnvelope_MoveMissileWaypoint:
+					handleMoveMissileWaypoint(room, playerID, payload.MoveMissileWaypoint)
+				case *pb.WsEnvelope_DeleteMissileWaypoint:
+					handleDeleteMissileWaypoint(room, playerID, payload.DeleteMissileWaypoint)
+				case *pb.WsEnvelope_ClearMissileRoute:
+					handleClearMissileRoute(room, playerID, payload.ClearMissileRoute)
+				case *pb.WsEnvelope_AddMissileRoute:
+					handleAddMissileRoute(room, playerID, payload.AddMissileRoute)
+				case *pb.WsEnvelope_RenameMissileRoute:
+					handleRenameMissileRoute(room, playerID, payload.RenameMissileRoute)
+				case *pb.WsEnvelope_DeleteMissileRoute:
+					handleDeleteMissileRoute(room, playerID, payload.DeleteMissileRoute)
+				case *pb.WsEnvelope_SetActiveMissileRoute:
+					handleSetActiveMissileRoute(room, playerID, payload.SetActiveMissileRoute)
+				case *pb.WsEnvelope_LaunchMissile:
+					handleLaunchMissile(room, playerID, payload.LaunchMissile)
+
+				// Phase 2: DAG commands
+				case *pb.WsEnvelope_DagStart:
+					handleDagStart(room, playerID, payload.DagStart)
+				case *pb.WsEnvelope_DagCancel:
+					handleDagCancel(room, playerID, payload.DagCancel)
+				case *pb.WsEnvelope_DagStoryAck:
+					handleDagStoryAck(room, playerID, payload.DagStoryAck)
+				case *pb.WsEnvelope_DagList:
+					handleDagList(room, playerID, conn)
+
+				// Phase 2: Mission commands
+				case *pb.WsEnvelope_MissionSpawnWave:
+					handleMissionSpawnWave(room, playerID, payload.MissionSpawnWave, mode)
+				case *pb.WsEnvelope_MissionStoryEvent:
+					handleMissionStoryEvent(room, playerID, payload.MissionStoryEvent, mode)
+
+				default:
+					log.Printf("unknown protobuf payload type: %T", payload)
 				}
-				room.Mu.Unlock()
-			case "dag_list":
-				room.Mu.Lock()
-				var dagDTO *dagStateDTO
-				if p := room.Players[playerID]; p != nil {
-					p.EnsureDagState()
-					if graph := dag.GetGraph(); graph != nil && p.DagState != nil {
-						now := room.Now
-						var nodes []dagNodeDTO
-						for nodeID, node := range graph.Nodes {
-							status := p.DagState.GetStatus(nodeID)
-							remaining := p.DagState.RemainingTime(nodeID, now)
-							nodes = append(nodes, dagNodeDTO{
-								ID:         string(nodeID),
-								Kind:       string(node.Kind),
-								Label:      node.Label,
-								Status:     string(status),
-								RemainingS: remaining,
-								DurationS:  node.DurationS,
-								Repeatable: node.Repeatable,
-							})
-						}
-						dagDTO = &dagStateDTO{Nodes: nodes}
-					}
-				}
-				room.Mu.Unlock()
-				// Send dag list response
-				if dagDTO != nil {
-					_ = conn.WriteJSON(map[string]any{
-						"type": "dag_list",
-						"dag":  dagDTO,
-					})
-				}
+			} else {
+				// All messages must use protobuf - JSON is no longer supported
+				log.Printf("Received non-binary WebSocket message, ignoring (all messages must use protobuf)")
 			}
 		}
 	}()
@@ -994,7 +701,12 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 					Inventory:          invDTO,
 					Story:              storyDTO,
 				}
-				_ = conn.WriteJSON(msg)
+				// Convert to protobuf and send
+				stateProto := stateToProto(msg)
+				if err := sendProtoMessage(conn, stateProto); err != nil {
+					log.Printf("send error: %v", err)
+					return
+				}
 			}
 		}
 	}()
@@ -1012,6 +724,425 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 		room.RemoveAllBotsLocked()
 	}
 	room.Mu.Unlock()
+}
+
+// Protobuf message handlers
+
+func handleJoin(room *Room, playerID string, msg *pb.ClientJoin) {
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	name := strings.TrimSpace(msg.Name)
+	if name == "" {
+		name = "Anon"
+	}
+	if p := room.Players[playerID]; p != nil {
+		p.Name = name
+	}
+}
+
+func handleSpawnBot(room *Room, playerID string) {
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if p := room.Players[playerID]; p != nil {
+		// Spawn bot at random location on opposite side from player
+		spawnPos := Vec2{X: room.WorldWidth * 0.75, Y: room.WorldHeight * 0.5}
+		if tr := room.World.Transform(p.Ship); tr != nil {
+			// Spawn on opposite side with some randomness
+			spawnPos = Vec2{
+				X: Clamp(room.WorldWidth-tr.Pos.X, 0, room.WorldWidth),
+				Y: Clamp(room.WorldHeight-tr.Pos.Y, 0, room.WorldHeight),
+			}
+		}
+		room.AddBotLocked("Sentinel AI", NewDefensiveBehavior(), spawnPos)
+	}
+}
+
+func handleAddWaypoint(room *Room, playerID string, msg *pb.AddWaypoint) {
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if p := room.Players[playerID]; p != nil {
+		wp := RouteWaypoint{
+			Pos:   Vec2{X: Clamp(msg.X, 0, room.WorldWidth), Y: Clamp(msg.Y, 0, room.WorldHeight)},
+			Speed: Clamp(msg.Speed, 0, ShipMaxSpeed),
+		}
+		room.AppendRouteWaypoint(p.Ship, wp)
+	}
+}
+
+func handleUpdateWaypoint(room *Room, playerID string, msg *pb.UpdateWaypoint) {
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if p := room.Players[playerID]; p != nil {
+		room.UpdateRouteWaypointSpeed(p.Ship, int(msg.Index), msg.Speed)
+	}
+}
+
+func handleMoveWaypoint(room *Room, playerID string, msg *pb.MoveWaypoint) {
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if p := room.Players[playerID]; p != nil {
+		newPos := Vec2{X: Clamp(msg.X, 0, room.WorldWidth), Y: Clamp(msg.Y, 0, room.WorldHeight)}
+		room.MoveRouteWaypoint(p.Ship, int(msg.Index), newPos)
+	}
+}
+
+func handleDeleteWaypoint(room *Room, playerID string, msg *pb.DeleteWaypoint) {
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if p := room.Players[playerID]; p != nil {
+		room.DeleteRouteWaypointsFrom(p.Ship, int(msg.Index))
+	}
+}
+
+func handleClearWaypoints(room *Room, playerID string) {
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if p := room.Players[playerID]; p != nil {
+		room.ClearRouteWaypoints(p.Ship)
+	}
+}
+
+func handleConfigureMissile(room *Room, playerID string, msg *pb.ConfigureMissile) {
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if p := room.Players[playerID]; p != nil {
+		cfg := p.MissileConfig
+		if msg.MissileSpeed > 0 {
+			cfg.Speed = msg.MissileSpeed
+		}
+		if msg.MissileAgro >= 0 {
+			cfg.AgroRadius = msg.MissileAgro
+		}
+		p.MissileConfig = SanitizeMissileConfig(cfg)
+	}
+}
+
+func handleAddMissileWaypoint(room *Room, playerID string, msg *pb.AddMissileWaypoint) {
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if p := room.Players[playerID]; p != nil {
+		p.EnsureMissileRoutes()
+		routeID := msg.RouteId
+		if routeID == "" {
+			routeID = p.ActiveMissileRouteID
+		}
+		if route := p.MissileRouteByID(routeID); route != nil {
+			wp := RouteWaypoint{
+				Pos:   Vec2{X: Clamp(msg.X, 0, room.WorldWidth), Y: Clamp(msg.Y, 0, room.WorldHeight)},
+				Speed: Clamp(msg.Speed, 0, ShipMaxSpeed),
+			}
+			route.Waypoints = append(route.Waypoints, wp)
+		}
+	}
+}
+
+func handleUpdateMissileWaypointSpeed(room *Room, playerID string, msg *pb.UpdateMissileWaypointSpeed) {
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if p := room.Players[playerID]; p != nil {
+		p.EnsureMissileRoutes()
+		routeID := msg.RouteId
+		if routeID == "" {
+			routeID = p.ActiveMissileRouteID
+		}
+		speed := Clamp(msg.Speed, MissileMinSpeed, MissileMaxSpeed)
+		if speed <= 0 {
+			speed = Clamp(p.MissileConfig.Speed, MissileMinSpeed, MissileMaxSpeed)
+		}
+		p.UpdateWaypointSpeedInRoute(routeID, int(msg.Index), speed)
+	}
+}
+
+func handleMoveMissileWaypoint(room *Room, playerID string, msg *pb.MoveMissileWaypoint) {
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if p := room.Players[playerID]; p != nil {
+		p.EnsureMissileRoutes()
+		routeID := msg.RouteId
+		if routeID == "" {
+			routeID = p.ActiveMissileRouteID
+		}
+		if route := p.MissileRouteByID(routeID); route != nil {
+			idx := int(msg.Index)
+			if idx >= 0 && idx < len(route.Waypoints) {
+				route.Waypoints[idx].Pos = Vec2{
+					X: Clamp(msg.X, 0, room.WorldWidth),
+					Y: Clamp(msg.Y, 0, room.WorldHeight),
+				}
+			}
+		}
+	}
+}
+
+func handleDeleteMissileWaypoint(room *Room, playerID string, msg *pb.DeleteMissileWaypoint) {
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if p := room.Players[playerID]; p != nil {
+		p.EnsureMissileRoutes()
+		routeID := msg.RouteId
+		if routeID == "" {
+			routeID = p.ActiveMissileRouteID
+		}
+		p.DeleteWaypointFromRoute(routeID, int(msg.Index))
+	}
+}
+
+func handleClearMissileRoute(room *Room, playerID string, msg *pb.ClearMissileRoute) {
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if p := room.Players[playerID]; p != nil {
+		p.EnsureMissileRoutes()
+		p.ClearMissileRoute(msg.RouteId)
+	}
+}
+
+func handleAddMissileRoute(room *Room, playerID string, msg *pb.AddMissileRoute) {
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if p := room.Players[playerID]; p != nil {
+		p.EnsureMissileRoutes()
+		p.AddMissileRoute(msg.Name)
+	}
+}
+
+func handleRenameMissileRoute(room *Room, playerID string, msg *pb.RenameMissileRoute) {
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if p := room.Players[playerID]; p != nil {
+		p.EnsureMissileRoutes()
+		p.RenameMissileRoute(msg.RouteId, msg.Name)
+	}
+}
+
+func handleDeleteMissileRoute(room *Room, playerID string, msg *pb.DeleteMissileRoute) {
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if p := room.Players[playerID]; p != nil {
+		p.EnsureMissileRoutes()
+		p.DeleteMissileRoute(msg.RouteId)
+	}
+}
+
+func handleSetActiveMissileRoute(room *Room, playerID string, msg *pb.SetActiveMissileRoute) {
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if p := room.Players[playerID]; p != nil {
+		p.EnsureMissileRoutes()
+		p.SetActiveMissileRoute(msg.RouteId)
+	}
+}
+
+func handleLaunchMissile(room *Room, playerID string, msg *pb.LaunchMissile) {
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if p := room.Players[playerID]; p != nil {
+		cfg := SanitizeMissileConfig(p.MissileConfig)
+		p.MissileConfig = cfg
+		p.EnsureMissileRoutes()
+		routeID := msg.RouteId
+		if routeID == "" {
+			routeID = p.ActiveMissileRouteID
+		}
+		var waypoints []RouteWaypoint
+		if route := p.MissileRouteByID(routeID); route != nil {
+			waypoints = append([]RouteWaypoint(nil), route.Waypoints...)
+		}
+		if len(waypoints) == 0 {
+			return
+		}
+		now := room.Now
+		if p.MissileReadyAt > 0 && now < p.MissileReadyAt {
+			return
+		}
+
+		// Check if player has missiles in inventory
+		p.EnsureInventory()
+		hasMissiles := false
+		var missileToConsume *InventoryItem
+		for i := range p.Inventory.Items {
+			item := &p.Inventory.Items[i]
+			if item.Type == "missile" && item.Quantity > 0 {
+				hasMissiles = true
+				missileToConsume = item
+				break
+			}
+		}
+		if !hasMissiles {
+			log.Printf("Player %s attempted to launch missile but has none in inventory", playerID)
+			return
+		}
+
+		if tr := room.World.Transform(p.Ship); tr != nil {
+			speed := tr.Vel.Len()
+			if id := room.LaunchMissile(playerID, p.Ship, cfg, waypoints, tr.Pos, tr.Vel); id != 0 {
+				p.MissileReadyAt = now + MissileCooldownForSpeed(speed)
+				// Consume one missile from inventory
+				p.Inventory.RemoveItem(missileToConsume.Type, missileToConsume.VariantID, missileToConsume.HeatCapacity, 1)
+				log.Printf("Player %s launched missile, consumed 1x %s (heat: %.0f)", playerID, missileToConsume.VariantID, missileToConsume.HeatCapacity)
+			}
+		}
+	}
+}
+
+// ========== Phase 2: DAG Command Handlers ==========
+
+func handleDagStart(room *Room, playerID string, msg *pb.DagStart) {
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if p := room.Players[playerID]; p != nil {
+		p.EnsureDagState()
+		p.EnsureStoryState()
+		graph := dag.GetGraph()
+		if graph != nil {
+			effects := NewRoomDagEffects(room, p)
+			nodeID := dag.NodeID(msg.NodeId)
+			if err := dag.Start(graph, p.DagState, nodeID, room.Now, effects); err != nil {
+				log.Printf("dag_start error for player %s node %s: %v", playerID, nodeID, err)
+			}
+		}
+	}
+}
+
+func handleDagCancel(room *Room, playerID string, msg *pb.DagCancel) {
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if p := room.Players[playerID]; p != nil {
+		p.EnsureDagState()
+		p.EnsureStoryState()
+		graph := dag.GetGraph()
+		if graph != nil {
+			effects := NewRoomDagEffects(room, p)
+			nodeID := dag.NodeID(msg.NodeId)
+			if err := dag.Cancel(graph, p.DagState, nodeID, effects); err != nil {
+				log.Printf("dag_cancel error for player %s node %s: %v", playerID, nodeID, err)
+			}
+		}
+	}
+}
+
+func handleDagStoryAck(room *Room, playerID string, msg *pb.DagStoryAck) {
+	log.Printf("[story] Received dag_story_ack from player %s for node %s (choice: %s)",
+		playerID, msg.NodeId, msg.ChoiceId)
+
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if p := room.Players[playerID]; p != nil {
+		p.EnsureStoryState()
+		if msg.NodeId != "" {
+			nodeID := dag.NodeID(msg.NodeId)
+			graph := dag.GetGraph()
+			if graph == nil {
+				log.Printf("[story] No graph available for ack from player %s", playerID)
+				return
+			}
+			node := graph.GetNode(nodeID)
+			effects := NewRoomDagEffects(room, p)
+			if node != nil && node.Kind == dag.NodeKindStory {
+				status := p.DagState.GetStatus(nodeID)
+				if status == dag.StatusInProgress {
+					if err := dag.Complete(graph, p.DagState, nodeID, effects); err != nil {
+						log.Printf("[story] Complete error for player %s node %s: %v", playerID, nodeID, err)
+					} else {
+						log.Printf("[story] Successfully completed node %s for player %s", nodeID, playerID)
+					}
+				}
+			}
+		}
+	}
+}
+
+func handleDagList(room *Room, playerID string, conn *websocket.Conn) {
+	room.Mu.Lock()
+	var dagProto *pb.DagState
+	if p := room.Players[playerID]; p != nil {
+		p.EnsureDagState()
+		if graph := dag.GetGraph(); graph != nil && p.DagState != nil {
+			now := room.Now
+			var nodes []dagNodeDTO
+			for nodeID, node := range graph.Nodes {
+				status := p.DagState.GetStatus(nodeID)
+				remaining := p.DagState.RemainingTime(nodeID, now)
+				nodes = append(nodes, dagNodeDTO{
+					ID:         string(nodeID),
+					Kind:       string(node.Kind),
+					Label:      node.Label,
+					Status:     string(status),
+					RemainingS: remaining,
+					DurationS:  node.DurationS,
+					Repeatable: node.Repeatable,
+				})
+			}
+			dagDTO := dagStateDTO{Nodes: nodes}
+			dagProto = dagStateToProto(dagDTO)
+		}
+	}
+	room.Mu.Unlock()
+
+	// Send response
+	if dagProto != nil {
+		response := &pb.DagListResponse{Dag: dagProto}
+		sendProtoMessage(conn, response)
+	}
+}
+
+// ========== Phase 2: Mission Event Handlers ==========
+
+func handleMissionSpawnWave(room *Room, playerID string, msg *pb.MissionSpawnWave, mode string) {
+	if mode != "campaign" {
+		return
+	}
+
+	waveIndex := int(msg.WaveIndex)
+	if waveIndex < 1 || waveIndex > 3 {
+		return
+	}
+
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if room.SetMissionWaveSpawnedLocked(waveIndex) {
+		spawnMissionWave(room, waveIndex)
+	}
+	if p := room.Players[playerID]; p != nil {
+		room.HandleMissionStoryEventLocked(p, "mission:beacon-locked", waveIndex)
+	}
+}
+
+func handleMissionStoryEvent(room *Room, playerID string, msg *pb.MissionStoryEvent, mode string) {
+	if mode != "campaign" {
+		return
+	}
+
+	event := strings.ToLower(strings.TrimSpace(msg.Event))
+	beacon := int(msg.Beacon)
+
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if p := room.Players[playerID]; p != nil {
+		room.HandleMissionStoryEventLocked(p, event, beacon)
+	}
 }
 
 func spawnMissionWave(room *Room, waveIndex int) {

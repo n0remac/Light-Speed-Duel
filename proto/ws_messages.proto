@@ -1,0 +1,403 @@
+syntax = "proto3";
+
+package lightspeedduel.ws;
+
+option go_package = "LightSpeedDuel/internal/proto/ws";
+
+// WsEnvelope wraps all WebSocket messages in a discriminated union
+message WsEnvelope {
+  oneof payload {
+    // Server → Client
+    StateUpdate state_update = 1;
+    RoomFullError room_full = 2;
+
+    // Client → Server
+    ClientJoin join = 10;
+    SpawnBot spawn_bot = 11;
+    AddWaypoint add_waypoint = 12;
+    UpdateWaypoint update_waypoint = 13;
+    MoveWaypoint move_waypoint = 14;
+    DeleteWaypoint delete_waypoint = 15;
+    ClearWaypoints clear_waypoints = 16;
+    ConfigureMissile configure_missile = 17;
+    AddMissileWaypoint add_missile_waypoint = 18;
+    UpdateMissileWaypointSpeed update_missile_waypoint_speed = 19;
+    MoveMissileWaypoint move_missile_waypoint = 20;
+    DeleteMissileWaypoint delete_missile_waypoint = 21;
+    ClearMissileRoute clear_missile_route = 22;
+    AddMissileRoute add_missile_route = 23;
+    RenameMissileRoute rename_missile_route = 24;
+    DeleteMissileRoute delete_missile_route = 25;
+    SetActiveMissileRoute set_active_missile_route = 26;
+    LaunchMissile launch_missile = 27;
+
+    // Phase 2: DAG commands
+    DagStart dag_start = 30;
+    DagCancel dag_cancel = 31;
+    DagStoryAck dag_story_ack = 32;
+    DagList dag_list = 33;
+
+    // Phase 2: Mission commands
+    MissionSpawnWave mission_spawn_wave = 40;
+    MissionStoryEvent mission_story_event = 41;
+
+    // Phase 2: Server responses
+    DagListResponse dag_list_response = 50;
+  }
+}
+
+// Server → Client: Full game state
+// Sent every tick (~20Hz) containing the player's view of the game world
+// with light-delayed positions of other ships and missiles
+message StateUpdate {
+  double now = 1;
+  Ghost me = 2;
+  repeated Ghost ghosts = 3;
+  RoomMeta meta = 4;
+  repeated Missile missiles = 5;
+  MissileConfig missile_config = 6;
+  repeated Waypoint missile_waypoints = 7;
+  repeated MissileRoute missile_routes = 8;
+  string active_missile_route = 9;
+  double next_missile_ready = 10;
+
+  // Phase 2 additions:
+  optional DagState dag = 11;
+  optional Inventory inventory = 12;
+  optional StoryState story = 13;
+}
+
+// Server → Client: Room full error
+message RoomFullError {
+  string message = 1;
+}
+
+// Client → Server: Join game
+message ClientJoin {
+  string name = 1;
+  string room = 2;
+  double map_w = 3;
+  double map_h = 4;
+}
+
+// Client → Server: Spawn AI bot
+message SpawnBot {}
+
+// Client → Server: Add waypoint to ship route
+message AddWaypoint {
+  double x = 1;
+  double y = 2;
+  double speed = 3;
+}
+
+// Client → Server: Update waypoint speed
+message UpdateWaypoint {
+  int32 index = 1;
+  double speed = 2;
+}
+
+// Client → Server: Move waypoint position
+message MoveWaypoint {
+  int32 index = 1;
+  double x = 2;
+  double y = 3;
+}
+
+// Client → Server: Delete waypoint from route
+message DeleteWaypoint {
+  int32 index = 1;
+}
+
+// Client → Server: Clear all waypoints
+message ClearWaypoints {}
+
+// Client → Server: Configure missile parameters
+message ConfigureMissile {
+  double missile_speed = 1;
+  double missile_agro = 2;
+}
+
+// Client → Server: Add waypoint to missile route
+message AddMissileWaypoint {
+  string route_id = 1;
+  double x = 2;
+  double y = 3;
+  double speed = 4;
+}
+
+// Client → Server: Update missile waypoint speed
+message UpdateMissileWaypointSpeed {
+  string route_id = 1;
+  int32 index = 2;
+  double speed = 3;
+}
+
+// Client → Server: Move missile waypoint position
+message MoveMissileWaypoint {
+  string route_id = 1;
+  int32 index = 2;
+  double x = 3;
+  double y = 4;
+}
+
+// Client → Server: Delete missile waypoint
+message DeleteMissileWaypoint {
+  string route_id = 1;
+  int32 index = 2;
+}
+
+// Client → Server: Clear missile route waypoints
+message ClearMissileRoute {
+  string route_id = 1;
+}
+
+// Client → Server: Create new missile route
+message AddMissileRoute {
+  string name = 1;
+}
+
+// Client → Server: Rename missile route
+message RenameMissileRoute {
+  string route_id = 1;
+  string name = 2;
+}
+
+// Client → Server: Delete missile route
+message DeleteMissileRoute {
+  string route_id = 1;
+}
+
+// Client → Server: Set active missile route
+message SetActiveMissileRoute {
+  string route_id = 1;
+}
+
+// Client → Server: Launch missile on route
+message LaunchMissile {
+  string route_id = 1;
+}
+
+// Ship/ghost snapshot with position, velocity, and state
+message Ghost {
+  string id = 1;
+  double x = 2;
+  double y = 3;
+  double vx = 4;
+  double vy = 5;
+  double t = 6;
+  bool self = 7;
+  repeated Waypoint waypoints = 8;
+  int32 current_waypoint_index = 9;
+  int32 hp = 10;
+  int32 kills = 11;
+  optional ShipHeatView heat = 12;
+}
+
+// Waypoint with position and target speed
+message Waypoint {
+  double x = 1;
+  double y = 2;
+  double speed = 3;
+}
+
+// Room constants (speed of light, world dimensions)
+message RoomMeta {
+  double c = 1;  // Speed of light
+  double w = 2;  // World width
+  double h = 3;  // World height
+}
+
+// Missile snapshot with position, velocity, and targeting
+message Missile {
+  string id = 1;
+  string owner = 2;
+  bool self = 3;
+  double x = 4;
+  double y = 5;
+  double vx = 6;
+  double vy = 7;
+  double t = 8;
+  double agro_radius = 9;
+  double lifetime = 10;
+  double launch_time = 11;
+  double expires_at = 12;
+  string target_id = 13;
+  optional ShipHeatView heat = 14;
+}
+
+// Missile configuration parameters
+message MissileConfig {
+  double speed = 1;
+  double speed_min = 2;
+  double speed_max = 3;
+  double agro_min = 4;
+  double agro_radius = 5;
+  double lifetime = 6;
+  optional HeatParams heat_config = 7;
+}
+
+// Missile route definition
+message MissileRoute {
+  string id = 1;
+  string name = 2;
+  repeated Waypoint waypoints = 3;
+}
+
+// Heat view (abbreviated field names match JSON)
+// Used for both ships and missiles
+message ShipHeatView {
+  double v = 1;   // value
+  double m = 2;   // max
+  double w = 3;   // warnAt
+  double o = 4;   // overheatAt
+  double ms = 5;  // markerSpeed
+  double su = 6;  // stallUntil
+  double ku = 7;  // kUp
+  double kd = 8;  // kDown
+  double ex = 9;  // exp
+}
+
+// Heat configuration parameters
+message HeatParams {
+  double max = 1;
+  double warn_at = 2;
+  double overheat_at = 3;
+  double marker_speed = 4;
+  double k_up = 5;
+  double k_down = 6;
+  double exp = 7;
+}
+
+// ========== Phase 2: DAG System ==========
+
+// DAG node status enum
+enum DagNodeStatus {
+  DAG_NODE_STATUS_UNSPECIFIED = 0;
+  DAG_NODE_STATUS_LOCKED = 1;
+  DAG_NODE_STATUS_AVAILABLE = 2;
+  DAG_NODE_STATUS_IN_PROGRESS = 3;
+  DAG_NODE_STATUS_COMPLETED = 4;
+}
+
+// DAG node kind enum
+enum DagNodeKind {
+  DAG_NODE_KIND_UNSPECIFIED = 0;
+  DAG_NODE_KIND_FACTORY = 1;
+  DAG_NODE_KIND_UNIT = 2;
+  DAG_NODE_KIND_STORY = 3;
+}
+
+// DAG node state
+message DagNode {
+  string id = 1;
+  DagNodeKind kind = 2;
+  string label = 3;
+  DagNodeStatus status = 4;
+  double remaining_s = 5;  // Time remaining for in-progress jobs
+  double duration_s = 6;   // Total duration
+  bool repeatable = 7;     // Can be repeated after completion
+}
+
+// Full DAG state
+message DagState {
+  repeated DagNode nodes = 1;
+}
+
+// Client → Server: Start a DAG node
+message DagStart {
+  string node_id = 1;
+}
+
+// Client → Server: Cancel a DAG node
+message DagCancel {
+  string node_id = 1;
+}
+
+// Client → Server: Acknowledge story dialogue
+message DagStoryAck {
+  string node_id = 1;
+  string choice_id = 2;  // Empty if just continue (no choice)
+}
+
+// Client → Server: Request full DAG list
+message DagList {}
+
+// Server → Client: DAG list response
+message DagListResponse {
+  DagState dag = 1;
+}
+
+// ========== Phase 2: Inventory System ==========
+
+// Inventory item
+message InventoryItem {
+  string type = 1;            // "missile", "component", etc.
+  string variant_id = 2;      // Specific variant identifier
+  double heat_capacity = 3;   // Heat capacity for this item
+  int32 quantity = 4;         // Stack quantity
+}
+
+// Player inventory
+message Inventory {
+  repeated InventoryItem items = 1;
+}
+
+// ========== Phase 2: Story/Dialogue System ==========
+
+// Story intent enum
+enum StoryIntent {
+  STORY_INTENT_UNSPECIFIED = 0;
+  STORY_INTENT_FACTORY = 1;
+  STORY_INTENT_UNIT = 2;
+}
+
+// Story dialogue choice option
+message StoryDialogueChoice {
+  string id = 1;
+  string text = 2;
+}
+
+// Story tutorial tip
+message StoryTutorialTip {
+  string title = 1;
+  string text = 2;
+}
+
+// Story dialogue content
+message StoryDialogue {
+  string speaker = 1;
+  string text = 2;
+  StoryIntent intent = 3;
+  string continue_label = 4;                    // Empty = default "Continue"
+  repeated StoryDialogueChoice choices = 5;     // Empty = show continue button
+  optional StoryTutorialTip tutorial_tip = 6;   // Optional gameplay hint
+}
+
+// Story event (history entry)
+message StoryEvent {
+  string chapter_id = 1;
+  string node_id = 2;
+  double timestamp = 3;
+}
+
+// Story state
+message StoryState {
+  string active_node = 1;                    // Currently active story node ID
+  optional StoryDialogue dialogue = 2;       // Full dialogue content
+  repeated string available = 3;             // Available story node IDs
+  map<string, bool> flags = 4;               // Story flags for branching
+  repeated StoryEvent recent_events = 5;     // Recent story events
+}
+
+// ========== Phase 2: Mission Events ==========
+
+// Client → Server: Spawn mission wave
+message MissionSpawnWave {
+  int32 wave_index = 1;  // 1, 2, or 3
+}
+
+// Client → Server: Trigger mission story event
+message MissionStoryEvent {
+  string event = 1;      // e.g. "mission:start", "mission:beacon-locked"
+  int32 beacon = 2;      // Beacon index for beacon-specific events
+}
