@@ -202,6 +202,24 @@ export function sendMessage(payload: unknown): void {
           },
         }));
         return;
+
+      case "dag_start":
+        sendProto(create(WsEnvelopeSchema, {
+          payload: {
+            case: "dagStart",
+            value: { nodeId: msg.node_id || "" },
+          },
+        }));
+        return;
+
+      case "clear_missile_waypoints":
+        sendProto(create(WsEnvelopeSchema, {
+          payload: {
+            case: "clearMissileWaypoints",
+            value: { routeId: msg.route_id || "" },
+          },
+        }));
+        return;
     }
   }
 }
