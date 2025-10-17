@@ -203,6 +203,7 @@ export function protoKindToString(kind: DagNodeKind): string {
     case DagNodeKind.FACTORY: return 'factory';
     case DagNodeKind.UNIT: return 'unit';
     case DagNodeKind.STORY: return 'story';
+    case DagNodeKind.CRAFT: return 'craft';
     default: return 'unknown';
   }
 }

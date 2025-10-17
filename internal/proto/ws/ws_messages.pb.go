@@ -85,6 +85,7 @@ const (
 	DagNodeKind_DAG_NODE_KIND_FACTORY     DagNodeKind = 1
 	DagNodeKind_DAG_NODE_KIND_UNIT        DagNodeKind = 2
 	DagNodeKind_DAG_NODE_KIND_STORY       DagNodeKind = 3
+	DagNodeKind_DAG_NODE_KIND_CRAFT       DagNodeKind = 4
 )
 
 // Enum value maps for DagNodeKind.
@@ -94,12 +95,14 @@ var (
 		1: "DAG_NODE_KIND_FACTORY",
 		2: "DAG_NODE_KIND_UNIT",
 		3: "DAG_NODE_KIND_STORY",
+		4: "DAG_NODE_KIND_CRAFT",
 	}
 	DagNodeKind_value = map[string]int32{
 		"DAG_NODE_KIND_UNSPECIFIED": 0,
 		"DAG_NODE_KIND_FACTORY":     1,
 		"DAG_NODE_KIND_UNIT":        2,
 		"DAG_NODE_KIND_STORY":       3,
+		"DAG_NODE_KIND_CRAFT":       4,
 	}
 )
 
@@ -3735,12 +3738,13 @@ const file_proto_ws_messages_proto_rawDesc = "" +
 	"\x16DAG_NODE_STATUS_LOCKED\x10\x01\x12\x1d\n" +
 	"\x19DAG_NODE_STATUS_AVAILABLE\x10\x02\x12\x1f\n" +
 	"\x1bDAG_NODE_STATUS_IN_PROGRESS\x10\x03\x12\x1d\n" +
-	"\x19DAG_NODE_STATUS_COMPLETED\x10\x04*x\n" +
+	"\x19DAG_NODE_STATUS_COMPLETED\x10\x04*\x91\x01\n" +
 	"\vDagNodeKind\x12\x1d\n" +
 	"\x19DAG_NODE_KIND_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15DAG_NODE_KIND_FACTORY\x10\x01\x12\x16\n" +
 	"\x12DAG_NODE_KIND_UNIT\x10\x02\x12\x17\n" +
-	"\x13DAG_NODE_KIND_STORY\x10\x03*\\\n" +
+	"\x13DAG_NODE_KIND_STORY\x10\x03\x12\x17\n" +
+	"\x13DAG_NODE_KIND_CRAFT\x10\x04*\\\n" +
 	"\vStoryIntent\x12\x1c\n" +
 	"\x18STORY_INTENT_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14STORY_INTENT_FACTORY\x10\x01\x12\x15\n" +

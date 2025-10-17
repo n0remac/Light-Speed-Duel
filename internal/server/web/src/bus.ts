@@ -31,6 +31,7 @@ export interface EventMap {
   "missile:toolChanged": { tool: MissileTool };
   "missile:selectionChanged": { selection: MissileSelection | null };
   "missile:waypointAdded": { routeId: string; index: number };
+  "missile:waypointMoved": { routeId: string; index: number; x: number; y: number };
   "missile:waypointDeleted": { routeId: string; index: number };
   "missile:waypointsCleared": { routeId: string };
   "missile:speedChanged": { value: number; index: number };
@@ -42,8 +43,11 @@ export interface EventMap {
   "missile:presetSelected": { presetName: string };
   "missile:heatProjectionUpdated": { willOverheat: boolean; overheatAt?: number };
   "missile:overheated": { missileId: string; x: number; y: number };
+  "missile:craftRequested": { nodeId: string; heatCapacity: number };
   "help:visibleChanged": { visible: boolean };
   "state:updated": void;
+  "connection:error": { message: string };
+  "dag:list": { nodes: Array<{ id: string; kind: string; label: string; status: string; remaining_s: number; duration_s: number; repeatable: boolean }> };
   "tutorial:started": { id: string };
   "tutorial:stepChanged": { id: string; stepIndex: number; total: number };
   "tutorial:completed": { id: string };

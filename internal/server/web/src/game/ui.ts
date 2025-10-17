@@ -207,7 +207,7 @@ export function createUI({
 
   function bindUI(): void {
     spawnBotBtn?.addEventListener("click", () => {
-      if (spawnBotBtn.disabled) return;
+      if (!spawnBotBtn || spawnBotBtn.disabled) return;
 
       sendMessage({ type: "spawn_bot" });
       bus.emit("bot:spawnRequested");
@@ -314,7 +314,7 @@ export function createUI({
       const minSpeed = state.missileLimits.speedMin ?? MISSILE_MIN_SPEED;
       const maxSpeed = state.missileLimits.speedMax ?? MISSILE_MAX_SPEED;
       const clampedValue = clamp(raw, minSpeed, maxSpeed);
-      missileSpeedSlider.value = clampedValue.toFixed(0);
+      slider.value = clampedValue.toFixed(0);
       if (missileSpeedValue) {
         missileSpeedValue.textContent = `${clampedValue.toFixed(0)}`;
       }
@@ -355,11 +355,12 @@ export function createUI({
     });
 
     missileAgroSlider?.addEventListener("input", (event) => {
-      const raw = parseFloat((event.target as HTMLInputElement).value);
+      const slider = event.target as HTMLInputElement;
+      const raw = parseFloat(slider.value);
       if (!Number.isFinite(raw)) return;
       const minAgro = state.missileLimits.agroMin ?? MISSILE_MIN_AGRO;
       const clampedValue = Math.max(minAgro, raw);
-      missileAgroSlider.value = clampedValue.toFixed(0);
+      slider.value = clampedValue.toFixed(0);
       if (missileAgroValue) {
         missileAgroValue.textContent = `${clampedValue.toFixed(0)}`;
       }
@@ -486,6 +487,20 @@ export function createUI({
     });
     bus.on("missile:activeRouteChanged", () => {
       renderMissileRouteControls();
+    });
+    bus.on("missile:craftRequested", () => {
+      // Disable craft button temporarily to prevent double-clicks
+      if (missileCraftBtn) {
+        missileCraftBtn.disabled = true;
+      }
+      // Force immediate timer update
+      updateCraftTimer();
+      // Re-enable after a short delay (server will update state)
+      setTimeout(() => {
+        if (missileCraftBtn) {
+          missileCraftBtn.disabled = false;
+        }
+      }, 500);
     });
   }
 
@@ -916,7 +931,11 @@ export function createUI({
 
     if (state.dag && state.dag.nodes) {
       for (const node of state.dag.nodes) {
+        if (node.kind !== "factory" && node.kind !== "story") {
+          console.log("Checking kind:", node.kind, "status:", node.status);
+        }
         if (node.kind === "craft" && node.status === "in_progress") {
+          console.log("Craft in progress:", node.id, "remaining:", node.remaining_s);
           craftInProgress = true;
           remainingTime = node.remaining_s;
           break;
@@ -1025,7 +1044,9 @@ export function createUI({
   function updatePlannedHeatBar(): void {
     if (!heatBarPlanned) return;
     const resetPlannedBar = () => {
-      heatBarPlanned.style.width = "0%";
+      if (heatBarPlanned) {
+        heatBarPlanned.style.width = "0%";
+      }
     };
 
     const ship = state.me;

@@ -285,6 +285,7 @@ enum DagNodeKind {
   DAG_NODE_KIND_FACTORY = 1;
   DAG_NODE_KIND_UNIT = 2;
   DAG_NODE_KIND_STORY = 3;
+  DAG_NODE_KIND_CRAFT = 4;
 }
 
 // DAG node state

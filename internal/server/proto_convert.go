@@ -193,11 +193,11 @@ func dagStatusToProto(status dag.Status) pb.DagNodeStatus {
 }
 
 // Convert DAG node kind to proto enum
-// Maps internal kinds: craft→factory, upgrade→unit, story→story, story_gate→story
+// Maps internal kinds: craft→craft, upgrade→unit, story→story, story_gate→story
 func dagKindToProto(kind dag.NodeKind) pb.DagNodeKind {
 	switch kind {
 	case dag.NodeKindCraft:
-		return pb.DagNodeKind_DAG_NODE_KIND_FACTORY
+		return pb.DagNodeKind_DAG_NODE_KIND_CRAFT
 	case dag.NodeKindUpgrade:
 		return pb.DagNodeKind_DAG_NODE_KIND_UNIT
 	case dag.NodeKindStory, dag.NodeKindStoryGate:
