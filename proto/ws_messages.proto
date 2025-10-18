@@ -65,6 +65,7 @@ message StateUpdate {
   optional DagState dag = 11;
   optional Inventory inventory = 12;
   optional StoryState story = 13;
+  optional PlayerCapabilities capabilities = 14;
 }
 
 // Server → Client: Room full error
@@ -288,6 +289,32 @@ enum DagNodeKind {
   DAG_NODE_KIND_CRAFT = 4;
 }
 
+// Upgrade effect type enum
+enum UpgradeEffectType {
+  UPGRADE_EFFECT_TYPE_UNSPECIFIED = 0;
+  UPGRADE_EFFECT_TYPE_SPEED_MULTIPLIER = 1;
+  UPGRADE_EFFECT_TYPE_MISSILE_UNLOCK = 2;
+  UPGRADE_EFFECT_TYPE_HEAT_CAPACITY = 3;
+  UPGRADE_EFFECT_TYPE_HEAT_EFFICIENCY = 4;
+}
+
+// Upgrade effect definition
+message UpgradeEffect {
+  UpgradeEffectType type = 1;
+  oneof value {
+    double multiplier = 2;    // For speed/heat multipliers
+    string unlock_id = 3;     // For missile unlocks (e.g., "scout")
+  }
+}
+
+// Player capabilities (computed from completed upgrades)
+message PlayerCapabilities {
+  double speed_multiplier = 1;
+  repeated string unlocked_missiles = 2;
+  double heat_capacity = 3;
+  double heat_efficiency = 4;
+}
+
 // DAG node state
 message DagNode {
   string id = 1;
@@ -297,6 +324,7 @@ message DagNode {
   double remaining_s = 5;  // Time remaining for in-progress jobs
   double duration_s = 6;   // Total duration
   bool repeatable = 7;     // Can be repeated after completion
+  repeated UpgradeEffect effects = 8;  // Only populated for upgrade nodes
 }
 
 // Full DAG state

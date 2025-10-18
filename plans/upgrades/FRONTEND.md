@@ -6,8 +6,9 @@
 
 ## UI Architecture
 
-### New Screen: `/upgrades.html`
-- Separate page linked from lobby (new "Upgrades" button)
+### Upgrades Panel (Overlay)
+- Modal overlay accessible from **both lobby and game screens**
+- Toggle open/close with "Upgrades" button
 - Visual tech tree showing DAG nodes filtered by `kind === 'unit'`
 - Node states map directly from DAG status:
   - **Available** (green, clickable) - `status === 'available'`
@@ -15,27 +16,32 @@
   - **In-progress** (yellow, countdown timer) - `status === 'in_progress'`
   - **Completed** (blue, checkmark) - `status === 'completed'`
 - Node cards display: label, description (from payload), duration, effects
+- Close button or click outside to dismiss
+- **Game pauses** when panel is open (prevents actions while browsing upgrades)
 
 ### Lobby Integration
 - Add "Upgrades" button alongside Campaign/Freeplay
 - Badge showing active upgrade count (e.g., "⚙️ 1 in progress")
+- Button toggles panel visibility
+
+### Game Screen Integration
+- Add "Upgrades" button in top frame/HUD (near mission info or settings)
+- Badge showing active upgrade count
+- Opening panel pauses game input (no ship commands while browsing)
+- Keyboard shortcut (e.g., 'U' key) to toggle panel
 
 ## Frontend Changes
 
 ### State Management
 
-**IMPORTANT:** Use existing `DagNode` and `DagState` interfaces from state.ts, don't create new ones.
+**CURRENT STATE:** The codebase has `DagNode` and `DagState` interfaces in state.ts (lines 108-120), but they are **missing the effects field**. The proto_helpers.ts has the correct types with effects.
 
-Extend existing interfaces in `internal/server/web/src/state.ts`:
+**REQUIRED CHANGES:**
+
+1. **Add effects field to DagNode interface** in `internal/server/web/src/state.ts` (lines 108-116):
 
 ```typescript
-// ADD new interface for upgrade effects (after line 102)
-export interface UpgradeEffectData {
-  type: string;                // 'speed_multiplier', 'missile_unlock', etc.
-  value: number | string;
-}
-
-// MODIFY existing DagNode interface (lines 108-116) to add effects field
+// MODIFY existing DagNode interface to add effects field
 export interface DagNode {
   id: string;
   kind: string;
@@ -46,16 +52,34 @@ export interface DagNode {
   repeatable: boolean;
   effects?: UpgradeEffectData[];  // NEW - add this line
 }
+```
 
-// ADD new interface for capabilities (after DagState)
+2. **Add UpgradeEffectData interface** before DagNode (after line 107):
+
+```typescript
+// ADD new interface for upgrade effects
+export interface UpgradeEffectData {
+  type: string;                // 'speed_multiplier', 'missile_unlock', etc.
+  value: number | string;
+}
+```
+
+3. **Add PlayerCapabilities interface** after DagState (after line 120):
+
+```typescript
+// ADD new interface for capabilities
 export interface PlayerCapabilities {
   speedMultiplier: number;
   unlockedMissiles: string[];
   heatCapacity: number;
   heatEfficiency: number;
 }
+```
 
-// MODIFY existing AppState interface (line 206) to add capabilities
+4. **Add capabilities field to AppState** in `internal/server/web/src/state.ts` (line 206-223):
+
+```typescript
+// MODIFY existing AppState interface to add capabilities
 export interface AppState {
   now: number;
   nowSyncedAt: number;
@@ -77,13 +101,36 @@ export interface AppState {
 }
 ```
 
-### Update Network Message Handling
-
-Modify `internal/server/web/src/net.ts` to map the `effects` field when receiving DAG state:
+5. **Update createInitialState** to include capabilities (line 268-298):
 
 ```typescript
-// In handleProtoStateMessage (around line 464-477)
-// MODIFY the DAG state mapping to include effects
+export function createInitialState(limits: MissileLimits = {
+  // ...
+}): AppState {
+  return {
+    // ... existing fields ...
+    capabilities: null, // NEW - add this line
+  };
+}
+```
+
+### Update Network Message Handling
+
+**CURRENT STATE:** In `internal/server/web/src/net.ts`, the handleProtoStateMessage function (lines 464-477) maps DAG state but **does NOT map the effects field**. The capabilities field is also **not mapped**.
+
+**REQUIRED CHANGES:**
+
+1. **Import helper functions** from proto_helpers.ts (add to top of file around line 12):
+
+```typescript
+import { protoToState, protoToDagState, protoToUpgradeEffect } from "./proto_helpers";
+```
+
+2. **Update DAG mapping in handleProtoStateMessage** (around lines 464-477):
+
+```typescript
+// REPLACE the existing DAG mapping block:
+// Phase 2: Update DAG
 if (msg.dag) {
   state.dag = {
     nodes: msg.dag.nodes.map((node) => ({
@@ -94,44 +141,29 @@ if (msg.dag) {
       remaining_s: node.remainingS,
       duration_s: node.durationS,
       repeatable: node.repeatable,
-      effects: node.effects?.map(e => ({  // NEW - map effects field
-        type: protoEffectTypeToString(e.type),
-        value: e.value.case === "multiplier" ? e.value.value : e.value.value
-      })) || []
+      effects: node.effects || [],  // NEW - include effects field
     })),
   };
 }
+```
 
-// ADD helper function (use existing from proto_helpers.ts or add locally)
-function protoEffectTypeToString(type: UpgradeEffectType): string {
-  switch (type) {
-    case UpgradeEffectType.SPEED_MULTIPLIER: return "speed_multiplier";
-    case UpgradeEffectType.MISSILE_UNLOCK: return "missile_unlock";
-    case UpgradeEffectType.HEAT_CAPACITY: return "heat_capacity";
-    case UpgradeEffectType.HEAT_EFFICIENCY: return "heat_efficiency";
-    default: return "unknown";
-  }
-}
+**NOTE:** The proto_helpers.ts already has protoToDagNode which includes effects mapping (line 324-335), but the current code doesn't use it. The mapping should include the effects field.
 
-// ALSO map capabilities field (after DAG mapping)
+3. **Add capabilities mapping** after DAG mapping (after line 477):
+
+```typescript
+// Phase 2: Update capabilities
 if (msg.capabilities) {
   state.capabilities = {
     speedMultiplier: msg.capabilities.speedMultiplier,
     unlockedMissiles: msg.capabilities.unlockedMissiles,
     heatCapacity: msg.capabilities.heatCapacity,
-    heatEfficiency: msg.capabilities.heatEfficiency
+    heatEfficiency: msg.capabilities.heatEfficiency,
   };
 }
 ```
 
-Alternatively, use the helper from `proto_helpers.ts` if it's exported:
-
-```typescript
-import { protoToUpgradeEffect } from "./proto_helpers";
-
-// In DAG mapping
-effects: node.effects?.map(protoToUpgradeEffect) || []
-```
+**IMPORTANT:** The msg object comes from protoToState() which already converts effects (proto_helpers.ts line 186-189 includes capabilities). Check if the conversion is already happening at that level.
 
 ### New Module: `upgrades.ts`
 
@@ -142,22 +174,49 @@ import type { EventBus } from "./bus";
 import type { AppState, DagNode } from "./state";
 import { sendDagStart } from "./net";
 
-export function initUpgradesScreen(
+export function initUpgradesPanel(
   state: AppState,
-  bus: EventBus,
-  container: HTMLElement
+  bus: EventBus
 ): void {
+  // Create panel DOM structure
+  const panel = createPanelElement();
+  document.body.appendChild(panel);
+
+  const container = panel.querySelector('.tech-tree-container') as HTMLElement;
+  const closeBtn = panel.querySelector('.close-btn') as HTMLElement;
+  const overlay = panel.querySelector('.panel-overlay') as HTMLElement;
+
   // Render function
   function renderUpgrades() {
     const upgradeNodes = state.dag?.nodes.filter(n => n.kind === 'unit') || [];
     renderTechTree(upgradeNodes, container);
   }
 
-  // Initial render
-  renderUpgrades();
+  // Toggle panel visibility
+  function togglePanel(visible: boolean) {
+    panel.classList.toggle('visible', visible);
+    if (visible) {
+      renderUpgrades();
+    }
+  }
+
+  // Event listeners
+  bus.on("upgrades:toggle", () => {
+    togglePanel(!panel.classList.contains('visible'));
+  });
+
+  bus.on("upgrades:show", () => togglePanel(true));
+  bus.on("upgrades:hide", () => togglePanel(false));
+
+  closeBtn.addEventListener("click", () => togglePanel(false));
+  overlay.addEventListener("click", () => togglePanel(false));
 
   // Subscribe to DAG updates (event-driven pattern)
-  bus.on("state:updated", renderUpgrades);
+  bus.on("state:updated", () => {
+    if (panel.classList.contains('visible')) {
+      renderUpgrades();
+    }
+  });
 
   // Handle node click
   container.addEventListener("click", (e) => {
@@ -171,6 +230,22 @@ export function initUpgradesScreen(
       sendDagStart(nodeId!); // Use existing DAG start message
     }
   });
+}
+
+function createPanelElement(): HTMLElement {
+  const panel = document.createElement('div');
+  panel.className = 'upgrades-panel';
+  panel.innerHTML = `
+    <div class="panel-overlay"></div>
+    <div class="panel-content">
+      <div class="panel-header">
+        <h2>Ship Upgrades</h2>
+        <button class="close-btn">×</button>
+      </div>
+      <div class="tech-tree-container"></div>
+    </div>
+  `;
+  return panel;
 }
 
 function renderTechTree(nodes: DagNode[], container: HTMLElement): void {
@@ -242,6 +317,10 @@ export function startCountdownTimer(state: AppState, bus: EventBus): void {
         el.textContent = formatTime(node.remaining_s);
       }
     });
+
+    // Update badge count in lobby
+    const inProgressCount = upgradeNodes.length;
+    bus.emit("upgrades:countUpdated", { count: inProgressCount });
   }, 1000);
 }
 
@@ -306,74 +385,171 @@ function renderSpeedBonus(state: AppState): void {
 }
 ```
 
-## Tech Tree Rendering (HTML/CSS Approach)
-
-### HTML Structure
-
-```html
-<!-- internal/server/web/upgrades.html -->
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Upgrades - Light Speed Duel</title>
-  <link rel="stylesheet" href="upgrades.css">
-</head>
-<body>
-  <div id="upgrades-container">
-    <h1>Ship Upgrades</h1>
-    <div id="tech-tree"></div>
-    <a href="/lobby.html" class="back-button">Back to Lobby</a>
-  </div>
-  <script type="module" src="upgrades.js"></script>
-</body>
-</html>
-```
+## Tech Tree Panel Styling
 
 ### CSS Styling
 
+Add to shared CSS or both lobby/game stylesheets:
+
 ```css
-/* internal/server/web/upgrades.css */
+/* Game HUD Top Bar */
+#game-top-bar {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 10px;
+  z-index: 100;
+}
+
+.hud-button {
+  background: rgba(26, 26, 46, 0.9);
+  border: 2px solid #00d9ff;
+  border-radius: 6px;
+  color: #00d9ff;
+  padding: 8px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: monospace;
+}
+
+.hud-button:hover {
+  background: rgba(0, 217, 255, 0.2);
+  transform: scale(1.05);
+}
+
+.badge {
+  display: inline-block;
+  background: #ff9800;
+  color: #fff;
+  border-radius: 10px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: bold;
+  margin-left: 4px;
+  min-width: 18px;
+  text-align: center;
+}
+
+/* Upgrades Panel Overlay */
+.upgrades-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2000; /* Above game HUD */
+  display: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.upgrades-panel.visible {
+  display: flex;
+  opacity: 1;
+}
+
+.panel-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+}
+
+.panel-content {
+  position: relative;
+  width: 80%;
+  max-width: 1200px;
+  height: 80%;
+  margin: auto;
+  background: #1a1a2e;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 2px solid #16213e;
+  background: #0f0f1e;
+}
+
+.panel-header h2 {
+  margin: 0;
+  color: #00d9ff;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 32px;
+  color: #fff;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  line-height: 1;
+}
+
+.close-btn:hover {
+  color: #00d9ff;
+}
+
+.tech-tree-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
 .tech-tree {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 20px;
-  padding: 20px;
 }
 
 .node {
   border: 2px solid #ccc;
   border-radius: 8px;
   padding: 15px;
-  background: #f9f9f9;
+  background: #2a2a3e;
   transition: all 0.3s;
+  color: #fff;
 }
 
 .node-available {
   border-color: #4caf50;
-  background: #e8f5e9;
+  background: #1e3a1e;
   cursor: pointer;
 }
 
 .node-available:hover {
   transform: scale(1.05);
-  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.5);
 }
 
 .node-locked {
-  border-color: #999;
-  background: #e0e0e0;
-  opacity: 0.6;
+  border-color: #555;
+  background: #1a1a2e;
+  opacity: 0.5;
 }
 
 .node-in_progress {
   border-color: #ff9800;
-  background: #fff3e0;
+  background: #3a2a1e;
   animation: pulse 2s infinite;
 }
 
 .node-completed {
   border-color: #2196f3;
-  background: #e3f2fd;
+  background: #1e2a3a;
 }
 
 .countdown {
@@ -388,38 +564,156 @@ function renderSpeedBonus(state: AppState): void {
 }
 ```
 
-### Entry Point Script
+### Lobby Integration
+
+Add to `internal/server/web/src/lobby.ts`:
 
 ```typescript
-// internal/server/web/src/upgrades_main.ts
-import { createEventBus } from "./bus";
-import { createAppState } from "./state";
-import { connectWebSocket } from "./net";
-import { initUpgradesScreen, startCountdownTimer } from "./upgrades";
+import { initUpgradesPanel, startCountdownTimer } from "./upgrades";
 
-const bus = createEventBus();
-const state = createAppState();
+// After existing lobby initialization
+initUpgradesPanel(state, bus);
+startCountdownTimer(state, bus);
 
-// Connect to server
-const urlParams = new URLSearchParams(window.location.search);
-const room = urlParams.get("room") || "lobby";
+// Add upgrades button handler
+const upgradesBtn = document.getElementById("upgrades-btn");
+if (upgradesBtn) {
+  upgradesBtn.addEventListener("click", () => {
+    bus.emit("upgrades:toggle");
+  });
+}
 
-connectWebSocket({
-  room,
-  state,
-  bus,
-  onStateUpdated: () => {
-    // DAG state updated, UI will refresh via bus listeners
-  },
+// Update badge with in-progress count
+bus.on("upgrades:countUpdated", ({ count }) => {
+  const badge = document.getElementById("upgrades-badge");
+  if (badge) {
+    badge.textContent = count > 0 ? `⚙️ ${count}` : "";
+    badge.style.display = count > 0 ? "inline" : "none";
+  }
+});
+```
+
+Add button to `internal/server/web/lobby.html`:
+
+```html
+<!-- Add alongside Campaign/Freeplay buttons -->
+<button id="upgrades-btn" class="lobby-button">
+  Upgrades <span id="upgrades-badge"></span>
+</button>
+```
+
+### Game Screen Integration
+
+Add to `internal/server/web/src/main.ts`:
+
+```typescript
+import { initUpgradesPanel, startCountdownTimer } from "./upgrades";
+
+// After existing game initialization
+initUpgradesPanel(state, bus);
+startCountdownTimer(state, bus);
+
+// Add keyboard shortcut (U key)
+window.addEventListener("keydown", (e) => {
+  if (e.key === "u" || e.key === "U") {
+    bus.emit("upgrades:toggle");
+  }
 });
 
-// Initialize upgrades UI
-const container = document.getElementById("tech-tree")!;
-initUpgradesScreen(state, bus, container);
-startCountdownTimer(state, bus);
+// Update badge with in-progress count
+bus.on("upgrades:countUpdated", ({ count }) => {
+  const badge = document.getElementById("game-upgrades-badge");
+  if (badge) {
+    badge.textContent = count > 0 ? `${count}` : "";
+    badge.style.display = count > 0 ? "inline" : "none";
+  }
+});
+
+// Pause game input when panel is open
+let panelOpen = false;
+bus.on("upgrades:toggle", () => {
+  panelOpen = !panelOpen;
+});
+bus.on("upgrades:show", () => {
+  panelOpen = true;
+});
+bus.on("upgrades:hide", () => {
+  panelOpen = false;
+});
+
+// Prevent game input when panel is open
+bus.on("game:input", (event) => {
+  if (panelOpen) {
+    event.preventDefault?.();
+    return false;
+  }
+});
+```
+
+Add to game HUD in `internal/server/web/index.html` (or render dynamically):
+
+```html
+<!-- Add to top frame/HUD area -->
+<div id="game-top-bar">
+  <!-- Other HUD elements... -->
+  <button id="game-upgrades-btn" class="hud-button" title="Upgrades (U)">
+    ⚙️ Upgrades <span id="game-upgrades-badge" class="badge"></span>
+  </button>
+</div>
+
+<script>
+  // Wire up button in main.ts or inline
+  document.getElementById("game-upgrades-btn")?.addEventListener("click", () => {
+    bus.emit("upgrades:toggle");
+  });
+</script>
+```
+
+Alternative: Render HUD button dynamically in `main.ts`:
+
+```typescript
+// Create upgrades button in HUD
+function createUpgradesButton(): void {
+  const topBar = document.getElementById("game-top-bar") || createTopBar();
+
+  const button = document.createElement("button");
+  button.id = "game-upgrades-btn";
+  button.className = "hud-button";
+  button.title = "Upgrades (U)";
+  button.innerHTML = `⚙️ Upgrades <span id="game-upgrades-badge" class="badge"></span>`;
+
+  button.addEventListener("click", () => {
+    bus.emit("upgrades:toggle");
+  });
+
+  topBar.appendChild(button);
+}
+
+function createTopBar(): HTMLElement {
+  const topBar = document.createElement("div");
+  topBar.id = "game-top-bar";
+  topBar.className = "game-hud-top";
+  document.body.appendChild(topBar);
+  return topBar;
+}
 ```
 
 ## Event Integration
+
+### Add Upgrade Events to EventBus
+
+**REQUIRED CHANGE:** Add upgrade-related events to `internal/server/web/src/bus.ts` EventMap interface (around line 8-73):
+
+```typescript
+export interface EventMap {
+  // ... existing events ...
+  "upgrades:toggle": void;
+  "upgrades:show": void;
+  "upgrades:hide": void;
+  "upgrades:countUpdated": { count: number };
+  // ... rest of events ...
+}
+```
 
 ### Listen for DAG Updates
 
@@ -443,24 +737,7 @@ bus.on("state:updated", () => {
 
 ## Build Configuration
 
-Add new entry point to esbuild config:
-
-```go
-// internal/server/cmd/webbuild/main.go
-err := api.Build(api.BuildOptions{
-    EntryPoints: []string{
-        "internal/server/web/src/main.ts",
-        "internal/server/web/src/lobby.ts",
-        "internal/server/web/src/upgrades_main.ts", // NEW
-    },
-    Bundle:  true,
-    Outdir:  "internal/server/web",
-    Format:  "esm",
-    // ... other options
-})
-```
-
-This generates `internal/server/web/upgrades.js` referenced in `upgrades.html`.
+No changes needed to esbuild configuration - upgrades module will be bundled into both `lobby.js` and `client.js` since it's imported by both `lobby.ts` and `main.ts`.
 
 ## Polish Phase
 
@@ -549,9 +826,11 @@ function showTooltip(node: DagNodeSnapshot, x: number, y: number): void {
 |-----------|----------------|
 | **State** | ✅ Reuse `AppState.dag`, filter by `kind === 'unit'` |
 | **Networking** | ✅ Use existing `sendDagStart()`, no new messages |
-| **UI** | ✅ HTML/CSS tech tree, render from DAG state |
-| **Entry Point** | ✅ New `upgrades_main.ts` → `upgrades.js` |
-| **Build** | ✅ Add to esbuild entry points |
+| **UI** | ✅ Panel overlay accessible from both lobby and game |
+| **Entry Points** | ✅ Integrate into `lobby.ts` and `main.ts` |
+| **Game HUD** | ✅ Add upgrades button in top frame with badge |
+| **Keyboard** | ✅ 'U' key shortcut to toggle panel in-game |
+| **Build** | ✅ No changes needed (bundled with lobby + client) |
 | **Integration** | ✅ Show unlocked missiles, speed bonuses in game |
 
-This approach reuses 100% of the existing DAG networking and state management, only adding UI presentation logic specific to upgrades.
+This approach reuses 100% of the existing DAG networking and state management, only adding UI presentation logic specific to upgrades as a panel overlay accessible from both lobby and game screens.

@@ -27,6 +27,22 @@ const (
 	NodeKindStory NodeKind = "story"
 )
 
+// EffectType describes the type of effect an upgrade provides.
+type EffectType int
+
+const (
+	EffectSpeedMultiplier EffectType = iota
+	EffectMissileUnlock
+	EffectHeatCapacity
+	EffectHeatEfficiency
+)
+
+// UpgradeEffect describes what an upgrade does when completed.
+type UpgradeEffect struct {
+	Type  EffectType  `json:"type"`
+	Value interface{} `json:"value"` // float64 for multipliers, string for unlocks
+}
+
 // Node represents a single node in the DAG.
 type Node struct {
 	ID         NodeID            `json:"id"`
@@ -37,6 +53,7 @@ type Node struct {
 	Payload    map[string]string `json:"payload"`    // Arbitrary key-value data
 	Requires   []NodeID          `json:"requires"`   // Dependencies (must be completed)
 	Dialogue   *DialogueContent  `json:"dialogue,omitempty"` // Story nodes only - dialogue content to display
+	Effects    []UpgradeEffect   `json:"effects,omitempty"`  // Upgrade nodes only - effects to apply when completed
 }
 
 // Graph represents the complete DAG.

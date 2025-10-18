@@ -1,3 +1,8 @@
+import { createEventBus } from "./bus";
+import { createInitialState } from "./state";
+import { initUpgradesPanel, startCountdownTimer } from "./upgrades";
+import { connectWebSocket } from "./net";
+
 const STORAGE_KEY = "lsd:callsign";
 
 type Maybe<T> = T | null | undefined;
@@ -10,6 +15,43 @@ const campaignButton = document.getElementById("campaign-button");
 const tutorialButton = document.getElementById("tutorial-button");
 const freeplayButton = document.getElementById("freeplay-button");
 const mapSizeSelect = document.querySelector<HTMLSelectElement>("#map-size-select");
+const upgradesBtn = document.getElementById("upgrades-btn");
+
+// Initialize state and bus for upgrades
+const bus = createEventBus();
+const state = createInitialState();
+
+// Initialize upgrades panel
+initUpgradesPanel(state, bus);
+startCountdownTimer(state, bus);
+
+// Handle upgrades button
+upgradesBtn?.addEventListener("click", () => {
+  bus.emit("upgrades:toggle");
+});
+
+// Update badge with in-progress count
+bus.on("upgrades:countUpdated", ({ count }) => {
+  const badge = document.getElementById("upgrades-badge");
+  if (badge) {
+    badge.textContent = count > 0 ? `⚙️ ${count}` : "";
+    badge.style.display = count > 0 ? "inline" : "none";
+  }
+});
+
+// Connect to server to get DAG state (for lobby room)
+const urlParams = new URLSearchParams(window.location.search);
+const lobbyRoom = urlParams.get("lobbyRoom") || "lobby-shared";
+if (typeof WebSocket !== "undefined") {
+  connectWebSocket({
+    room: lobbyRoom,
+    state,
+    bus,
+    onStateUpdated: () => {
+      bus.emit("state:updated");
+    },
+  });
+}
 
 bootstrap();
 

@@ -12,6 +12,8 @@ import type {
   StoryEvent,
   StoryDialogueChoice,
   StoryTutorialTip,
+  UpgradeEffect,
+  PlayerCapabilities,
 } from './proto/proto/ws_messages_pb';
 // Import enums as values, not types
 import {
@@ -183,6 +185,7 @@ export function protoToState(proto: StateUpdate) {
     dag: proto.dag ? protoToDagState(proto.dag) : undefined,
     inventory: proto.inventory ? protoToInventory(proto.inventory) : undefined,
     story: proto.story ? protoToStoryState(proto.story) : undefined,
+    capabilities: proto.capabilities ? protoToPlayerCapabilities(proto.capabilities) : undefined,
   };
 }
 
@@ -216,7 +219,24 @@ export function protoIntentToString(intent: StoryIntent): string {
   }
 }
 
+export function protoEffectTypeToString(type: any): string {
+  // Map proto enum values to strings
+  // TODO: Use proper enum when proto is regenerated
+  const typeMap: Record<number, string> = {
+    1: 'speed_multiplier',
+    2: 'missile_unlock',
+    3: 'heat_capacity',
+    4: 'heat_efficiency',
+  };
+  return typeMap[type] || 'unknown';
+}
+
 // ========== Phase 2: Type Definitions ==========
+
+export interface UpgradeEffectData {
+  type: string;
+  value: number | string;
+}
 
 export interface DagNodeData {
   id: string;
@@ -226,6 +246,14 @@ export interface DagNodeData {
   remainingS: number;
   durationS: number;
   repeatable: boolean;
+  effects?: UpgradeEffectData[];
+}
+
+export interface PlayerCapabilitiesData {
+  speedMultiplier: number;
+  unlockedMissiles: string[];
+  heatCapacity: number;
+  heatEfficiency: number;
 }
 
 export interface DagStateData {
@@ -278,6 +306,22 @@ export interface StoryStateData {
 
 // ========== Phase 2: Conversion Functions ==========
 
+export function protoToUpgradeEffect(proto: UpgradeEffect): UpgradeEffectData {
+  return {
+    type: protoEffectTypeToString(proto.type),
+    value: proto.value.case === 'multiplier' ? proto.value.value : proto.value.value,
+  };
+}
+
+export function protoToPlayerCapabilities(proto: PlayerCapabilities): PlayerCapabilitiesData {
+  return {
+    speedMultiplier: proto.speedMultiplier,
+    unlockedMissiles: proto.unlockedMissiles,
+    heatCapacity: proto.heatCapacity,
+    heatEfficiency: proto.heatEfficiency,
+  };
+}
+
 export function protoToDagNode(proto: DagNode): DagNodeData {
   return {
     id: proto.id,
@@ -287,6 +331,7 @@ export function protoToDagNode(proto: DagNode): DagNodeData {
     remainingS: proto.remainingS,
     durationS: proto.durationS,
     repeatable: proto.repeatable,
+    effects: proto.effects?.map(protoToUpgradeEffect) || [],
   };
 }
 

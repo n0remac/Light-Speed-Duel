@@ -11,6 +11,7 @@ import { AudioEngine } from "./audio/engine";
 import { MusicDirector } from "./audio/music";
 import { registerAudioBusBindings } from "./audio/cues";
 import { mountMissionController } from "./mission/controller";
+import { initUpgradesPanel, startCountdownTimer } from "./upgrades";
 
 const CALL_SIGN_STORAGE_KEY = "lsd:callsign";
 
@@ -61,6 +62,32 @@ const CALL_SIGN_STORAGE_KEY = "lsd:callsign";
 
   const game = initGame({ state, uiState, bus });
   mountMissionController({ state, bus, mode, missionId });
+
+  // Initialize upgrades panel
+  initUpgradesPanel(state, bus);
+  startCountdownTimer(state, bus);
+
+  // Add keyboard shortcut (U key)
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "u" || e.key === "U") {
+      bus.emit("upgrades:toggle");
+    }
+  });
+
+  // Wire up upgrades button
+  const upgradesBtn = document.getElementById("game-upgrades-btn");
+  upgradesBtn?.addEventListener("click", () => {
+    bus.emit("upgrades:toggle");
+  });
+
+  // Update badge with in-progress count
+  bus.on("upgrades:countUpdated", ({ count }) => {
+    const badge = document.getElementById("game-upgrades-badge");
+    if (badge) {
+      badge.textContent = count > 0 ? `${count}` : "";
+      badge.style.display = count > 0 ? "inline" : "none";
+    }
+  });
 
   // Mount tutorial and story based on game mode
   const enableTutorial = mode === "campaign" || mode === "tutorial";

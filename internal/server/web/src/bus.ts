@@ -70,6 +70,10 @@ export interface EventMap {
   "audio:music:set-scene": { scene: "ambient" | "combat" | "lobby"; seed?: number };
   "audio:music:param": { key: string; value: number };
   "audio:music:transport": { cmd: "start" | "stop" | "pause" };
+  "upgrades:toggle": void;
+  "upgrades:show": void;
+  "upgrades:hide": void;
+  "upgrades:countUpdated": { count: number };
 }
 
 export type EventKey = keyof EventMap;

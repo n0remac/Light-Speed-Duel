@@ -10,6 +10,7 @@ proto-go:
 	PATH="$(PATH):$(shell go env GOPATH)/bin" protoc --go_out=. \
 		--go_opt=paths=source_relative \
 		proto/ws_messages.proto
+	@mv proto/ws_messages.pb.go internal/proto/ws/
 	@echo "Go protobuf code generated successfully"
 
 # Generate TypeScript protobuf code

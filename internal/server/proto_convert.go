@@ -221,6 +221,50 @@ func storyIntentToProto(intent string) pb.StoryIntent {
 
 // ========== Phase 2: DAG Conversions ==========
 
+// Convert upgrade effect type to proto enum
+func effectTypeToProto(t dag.EffectType) pb.UpgradeEffectType {
+	switch t {
+	case dag.EffectSpeedMultiplier:
+		return pb.UpgradeEffectType_UPGRADE_EFFECT_TYPE_SPEED_MULTIPLIER
+	case dag.EffectMissileUnlock:
+		return pb.UpgradeEffectType_UPGRADE_EFFECT_TYPE_MISSILE_UNLOCK
+	case dag.EffectHeatCapacity:
+		return pb.UpgradeEffectType_UPGRADE_EFFECT_TYPE_HEAT_CAPACITY
+	case dag.EffectHeatEfficiency:
+		return pb.UpgradeEffectType_UPGRADE_EFFECT_TYPE_HEAT_EFFICIENCY
+	default:
+		return pb.UpgradeEffectType_UPGRADE_EFFECT_TYPE_UNSPECIFIED
+	}
+}
+
+// Convert upgrade effects to protobuf
+func effectsToProto(effects []dag.UpgradeEffect) []*pb.UpgradeEffect {
+	if len(effects) == 0 {
+		return nil
+	}
+
+	result := make([]*pb.UpgradeEffect, len(effects))
+	for i, effect := range effects {
+		protoEffect := &pb.UpgradeEffect{
+			Type: effectTypeToProto(effect.Type),
+		}
+
+		switch effect.Type {
+		case dag.EffectSpeedMultiplier, dag.EffectHeatCapacity, dag.EffectHeatEfficiency:
+			if multiplier, ok := effect.Value.(float64); ok {
+				protoEffect.Value = &pb.UpgradeEffect_Multiplier{Multiplier: multiplier}
+			}
+		case dag.EffectMissileUnlock:
+			if unlockID, ok := effect.Value.(string); ok {
+				protoEffect.Value = &pb.UpgradeEffect_UnlockId{UnlockId: unlockID}
+			}
+		}
+
+		result[i] = protoEffect
+	}
+	return result
+}
+
 // Convert internal dagNodeDTO to protobuf DagNode
 func dagNodeToProto(node dagNodeDTO) *pb.DagNode {
 	return &pb.DagNode{
@@ -231,6 +275,7 @@ func dagNodeToProto(node dagNodeDTO) *pb.DagNode {
 		RemainingS: node.RemainingS,
 		DurationS:  node.DurationS,
 		Repeatable: node.Repeatable,
+		Effects:    effectsToProto(node.Effects),
 	}
 }
 

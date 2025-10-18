@@ -496,6 +496,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 								RemainingS: remaining,
 								DurationS:  node.DurationS,
 								Repeatable: node.Repeatable,
+								Effects:    node.Effects,
 							})
 							if node.Kind == dag.NodeKindStory && status == dag.StatusAvailable {
 								storyAvailable = append(storyAvailable, string(nodeID))
@@ -1091,6 +1092,7 @@ func handleDagList(room *Room, playerID string, conn *websocket.Conn) {
 					RemainingS: remaining,
 					DurationS:  node.DurationS,
 					Repeatable: node.Repeatable,
+					Effects:    node.Effects,
 				})
 			}
 			dagDTO := dagStateDTO{Nodes: nodes}

@@ -105,6 +105,11 @@ export interface Inventory {
   items: InventoryItem[];
 }
 
+export interface UpgradeEffectData {
+  type: string; // 'speed_multiplier', 'missile_unlock', etc.
+  value: number | string;
+}
+
 export interface DagNode {
   id: string;
   kind: string;
@@ -113,10 +118,18 @@ export interface DagNode {
   remaining_s: number;
   duration_s: number;
   repeatable: boolean;
+  effects?: UpgradeEffectData[];
 }
 
 export interface DagState {
   nodes: DagNode[];
+}
+
+export interface PlayerCapabilities {
+  speedMultiplier: number;
+  unlockedMissiles: string[];
+  heatCapacity: number;
+  heatEfficiency: number;
 }
 
 // Missile preset definitions matching backend
@@ -220,6 +233,7 @@ export interface AppState {
   mission: MissionState | null;
   story: StoryState | null;
   craftHeatCapacity: number; // Heat capacity slider value for crafting
+  capabilities: PlayerCapabilities | null;
 }
 
 export interface Selection {
@@ -294,6 +308,7 @@ export function createInitialState(limits: MissileLimits = {
     mission: null,
     story: null,
     craftHeatCapacity: 80, // Default to basic missile heat capacity
+    capabilities: null,
   };
 }
 

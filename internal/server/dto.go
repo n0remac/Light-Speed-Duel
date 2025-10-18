@@ -1,5 +1,9 @@
 package server
 
+import (
+	"LightSpeedDuel/internal/dag"
+)
+
 
 type missileDTO struct {
 	ID         string            `json:"id"`
@@ -65,13 +69,14 @@ type shipHeatViewDTO struct {
 
 // dagNodeDTO represents a node in the DAG for client serialization
 type dagNodeDTO struct {
-	ID         string  `json:"id"`
-	Kind       string  `json:"kind"`
-	Label      string  `json:"label"`
-	Status     string  `json:"status"`      // locked, available, in_progress, completed
-	RemainingS float64 `json:"remaining_s"` // Time remaining for in-progress jobs
-	DurationS  float64 `json:"duration_s"`  // Total duration of the node
-	Repeatable bool    `json:"repeatable"`  // Whether the node can be repeated
+	ID         string                `json:"id"`
+	Kind       string                `json:"kind"`
+	Label      string                `json:"label"`
+	Status     string                `json:"status"`      // locked, available, in_progress, completed
+	RemainingS float64               `json:"remaining_s"` // Time remaining for in-progress jobs
+	DurationS  float64               `json:"duration_s"`  // Total duration of the node
+	Repeatable bool                  `json:"repeatable"`  // Whether the node can be repeated
+	Effects    []dag.UpgradeEffect   `json:"effects,omitempty"`  // Only for upgrade nodes
 }
 
 // dagStateDTO contains the full DAG state for a player

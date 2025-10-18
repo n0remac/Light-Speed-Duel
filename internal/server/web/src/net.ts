@@ -472,7 +472,18 @@ function handleProtoStateMessage(
         remaining_s: node.remainingS,
         duration_s: node.durationS,
         repeatable: node.repeatable,
+        effects: node.effects || [],
       })),
+    };
+  }
+
+  // Phase 2: Update capabilities
+  if (msg.capabilities) {
+    state.capabilities = {
+      speedMultiplier: msg.capabilities.speedMultiplier,
+      unlockedMissiles: msg.capabilities.unlockedMissiles,
+      heatCapacity: msg.capabilities.heatCapacity,
+      heatEfficiency: msg.capabilities.heatEfficiency,
     };
   }
 
