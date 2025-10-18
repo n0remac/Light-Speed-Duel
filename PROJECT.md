@@ -32,15 +32,19 @@ The application follows a client-server architecture with an authoritative serve
 
 3. **Event-Driven Frontend**: The TypeScript client uses a central event bus for decoupled component communication.
 
-4. **Embedded Deployment**: The frontend is compiled to JavaScript and embedded directly into the Go binary using `//go:embed`, creating a single deployable artifact.
+4. **Binary Protocol (Protobuf)**: Client and server exchange WebSocket messages using Protocol Buffers for compact, strongly-typed payloads.
+
+5. **Embedded Deployment**: The frontend is compiled to JavaScript and embedded directly into the Go binary using `//go:embed`, creating a single deployable artifact.
 
 ### Component Architecture
 
 #### Backend (Go)
 
 **Package Structure:**
-- `internal/game/`: Core game logic (ECS, physics, AI)
-- `internal/server/`: HTTP/WebSocket networking layer
+- `internal/game/`: Core game logic (ECS, physics, AI, missions)
+- `internal/dag/`: Deterministic DAG for upgrades, crafting, and story gating
+- `internal/server/`: HTTP/WebSocket networking layer and protobuf conversion
+- `internal/proto/ws/`: Generated Go protobuf types
 
 **Game Engine (ECS Pattern):**
 ```
@@ -75,18 +79,30 @@ World
 
 #### Frontend (TypeScript)
 
-**Module Organization:**
+**Module Organization (refactored):**
 ```
 src/
-  ├── main.ts          # Game entry point
-  ├── lobby.ts         # Lobby entry point
-  ├── game.ts          # Rendering engine, input handling
-  ├── net.ts           # WebSocket client
-  ├── bus.ts           # Event bus (pub/sub)
-  ├── state.ts         # Centralized app state
-  ├── tutorial/        # Tutorial system
-  ├── story/           # Story/dialogue system
-  └── audio/           # Audio engine
+  ├── main.ts                 # Game entry point
+  ├── lobby.ts                # Lobby entry point
+  ├── net.ts                  # WebSocket (protobuf) client
+  ├── bus.ts                  # Event bus (pub/sub)
+  ├── state.ts                # Centralized app state
+  ├── route.ts                # Shared route helpers (ship + missile)
+  ├── game/                   # Game modules
+  │   ├── logic.ts            # Core client-side logic
+  │   ├── render.ts           # Canvas rendering
+  │   ├── input.ts            # Input + map tools
+  │   ├── ui.ts               # HUD widgets, heat bars, overlays
+  │   └── camera.ts           # Camera + pan/zoom
+  ├── mission/                # Campaign beacons + HUD
+  │   ├── controller.ts       # Beacon hold/lock logic
+  │   └── hud.ts              # Mission status UI
+  ├── upgrades.ts             # Upgrades/crafting panel (DAG driven)
+  ├── proto_helpers.ts        # Protobuf ↔ state adapters
+  ├── proto/proto/ws_messages_pb.ts # Generated TS protobuf types
+  ├── tutorial/               # Tutorial system
+  ├── story/                  # Story/dialogue system
+  └── audio/                  # Audio engine
 ```
 
 **Event-Driven Architecture:**
@@ -111,12 +127,14 @@ bus.on("ship:waypointAdded", updateWaypointUI);
 |-----------|------------|---------|
 | Language | Go 1.22+ | High-performance server, concurrent handling |
 | WebSocket | Gorilla WebSocket | Real-time bidirectional communication |
+| Protocol | Protobuf (google.golang.org/protobuf) | Compact, typed WS payloads |
 | Build | esbuild (embedded) | TypeScript compilation at build time |
 | Deployment | Systemd service | Linux server process management |
 
 **Key Libraries:**
 - Standard library for HTTP/JSON
 - Gorilla WebSocket for upgrade handling
+- Protobuf runtime for Go
 - No external game engine dependencies
 
 ### Frontend
@@ -125,6 +143,7 @@ bus.on("ship:waypointAdded", updateWaypointUI);
 |-----------|------------|---------|
 | Language | TypeScript | Type-safe client code |
 | Rendering | Canvas 2D API | High-performance 2D graphics |
+| Protocol | Protobuf (@bufbuild/protobuf) | Typed binary WS messages |
 | Build | esbuild | Fast bundling and minification |
 | Audio | Web Audio API | Music and sound effects |
 
@@ -157,14 +176,17 @@ The build process is integrated into Go tooling, making deployment a single stat
 - **ECS**: Entity-component-system for scalable entity management
 - **Movement**: Waypoint-based navigation with automatic speed curves
 - **Missile System**: Homing missiles with configurable speed/agro radius
-- **Heat System**: Speed-based heat accumulation with overheat stalls and time dilation effects
+- **Heat System**: Speed-based heat accumulation with overheat stalls (ships) and heat-driven limits (missiles)
 
 **Key Files:**
 - `core.go`: Vec2 math, History circular buffer
 - `ecs.go`: Entity component system implementation
 - `systems.go`: Movement, missile, and physics systems
+- `routes.go`: Unified route utilities (ship + missile)
 - `heat.go`: Heat accumulation physics and stall mechanics
 - `perception.go`: Light-time delay calculations
+- `mission.go`: Campaign spawners (beacons, seekers, patrols)
+- `story_effects.go`: Story DAG effect hooks
 - `room.go`: Game room/lobby management
 - `consts.go`: Game constants including heat parameters
 
@@ -193,21 +215,30 @@ func PerceiveEntity(observerPos Vec2, target EntityID, world *World, now float64
 
 **Location**: `internal/server/ws.go`
 
-**Message Types:**
-- `join`: Player connects to room
-- `waypoint`: Add navigation waypoint
-- `missile_config`: Configure missile parameters
-- `missile_route`: Launch missile on route
-- `spawn_bot`: Add AI opponent
+**Protocol:**
+- WebSocket frames are binary Protobuf envelopes (`proto/ws_messages.proto`).
+- Go server uses generated types in `internal/proto/ws`; client uses generated TS in `internal/server/web/src/proto/proto/ws_messages_pb.ts`.
+
+**Client → Server:**
+- `join`, `spawn_bot`
+- Ship routing: `add_waypoint`, `update_waypoint`, `move_waypoint`, `delete_waypoint`, `clear_waypoints`
+- Missile routing: `add_missile_route`, `rename_missile_route`, `delete_missile_route`, `set_active_missile_route`, `add_missile_waypoint`, `update_missile_waypoint_speed`, `move_missile_waypoint`, `delete_missile_waypoint`, `clear_missile_route`, `launch_missile`
+- DAG progression: `dag_start`, `dag_cancel`, `dag_story_ack`, `dag_list`
+- Missions: `mission_spawn_wave`, `mission_story_event`
+
+**Server → Client:**
+- `state_update` (authoritative per-player view)
+- `room_full` error
+- `dag_list_response`
 
 **Per-Player Updates:**
 - Server calculates unique light-delayed view for each player
-- 60 FPS update rate
-- Efficient JSON serialization
+- Simulation: 20 Hz; WebSocket pushes: 10 Hz
+- Compact Protobuf serialization
 
 ### 4. Frontend Renderer
 
-**Location**: `internal/server/web/src/game.ts`
+**Location**: `internal/server/web/src/game/`
 
 **Rendering Pipeline:**
 1. Receive state updates via WebSocket
@@ -218,11 +249,12 @@ func PerceiveEntity(observerPos Vec2, target EntityID, world *World, now float64
    - Ships (delayed positions)
    - Missiles (with trails)
    - Waypoints and routes
-   - UI overlays (dual heat bars, speed marker, stall warning, crosshair)
+   - UI overlays (dual heat bars, speed markers, stall warning, crosshair)
 
 **Input Handling:**
 - Click to add waypoints
 - Right-click to launch missiles
+- Drag to move waypoints; in-place speed edit
 - Keyboard shortcuts for zooming, map selection
 - Mobile touch/pinch support
 
@@ -270,6 +302,21 @@ func PerceiveEntity(observerPos Vec2, target EntityID, world *World, now float64
 - Crossfading between tracks
 - Mute/unmute controls
 
+### 8. Progression System (DAG)
+
+**Locations**:
+- Backend: `internal/dag/*`, hooks in `internal/server/ws.go`, effects in `internal/game/story_effects.go` and `internal/game/crafting.go`
+- Frontend: `internal/server/web/src/upgrades.ts`, `internal/server/web/src/proto_helpers.ts`
+
+**Concepts:**
+- Validated, deterministic directed acyclic graph of nodes (craft, upgrade, story).
+- Effects: speed multipliers, missile unlocks, heat capacity/efficiency.
+- Player capabilities aggregated from completed upgrade nodes and included in state updates.
+- Crafting nodes yield items into inventory (missile variants with heat capacity); progress persists client-side for missions.
+
+**Client UX:**
+- Upgrades panel renders available/in-progress/completed nodes and triggers `dag_start` actions. Repeatable craft nodes show timers and quantities.
+
 ## Unique Features
 
 ### 1. Relativistic Light-Time Delay
@@ -282,7 +329,7 @@ Every object in the game world is visible only at its **delayed position**, dete
 Delay = Distance / C
 ```
 
-Where C = 299 units/second (speed of light in game units).
+Where C = 600 units/second (speed of light in game units).
 
 **Implementation Details:**
 
@@ -339,7 +386,7 @@ else:
 2. **Heat Spikes**: Missile hits have a 35% chance to add 6-18 heat units
 3. **Time Dilation**: Faster ships experience slower cooldowns for missile reloads (relativistic effect simulation)
 
-**UI Features** (`internal/server/web/src/game.ts`):
+**UI Features** (`internal/server/web/src/game/ui.ts`):
 
 - **Dual Heat Bars**:
   - Current heat bar (green → yellow → red)
@@ -381,7 +428,7 @@ This system creates a resource management layer on top of the movement system, f
 **Feature**: The frontend provides live heat projection across the entire planned route.
 
 **Implementation Details**:
-- `projectPlannedHeat()` in `game.ts` simulates the full waypoint path
+- `projectPlannedHeat()` in `game/ui.ts` simulates the full waypoint path (using helpers in `route.ts`)
 - Uses the same physics formula as the server for accurate prediction
 - Updates in real-time as waypoints are added/modified
 - Displays as a secondary "planned" heat bar overlay
