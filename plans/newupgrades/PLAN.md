@@ -70,22 +70,13 @@ Increases missile heat capacity, allowing missiles to travel at higher speeds.
 
 ## Effect Types
 
-Add new effect types to `internal/dag/graph.go`:
+Reuse existing DAG effect types; no new enums needed. Target (ship vs missile) is inferred from node IDs (`upgrade.ship.*`, `upgrade.missile.*`) or a `payload.target` hint.
 
-```go
-const (
-    EffectSpeedMultiplier EffectType = iota
-    EffectMissileUnlock
-    EffectHeatCapacity
-    EffectHeatEfficiency
-    EffectShipSpeedMultiplier    // NEW - for ship max speed
-    EffectMissileSpeedMultiplier // NEW - for missile max speed
-    EffectShipHeatCapacity       // NEW - for ship heat max
-    EffectMissileHeatCapacity    // NEW - for missile heat max
-)
-```
-
-**Note**: We could reuse existing `EffectSpeedMultiplier` and `EffectHeatCapacity` types if we track which upgrades apply to ships vs missiles separately, or create distinct types for clarity.
+Existing effect types:
+- `EffectSpeedMultiplier`
+- `EffectMissileUnlock`
+- `EffectHeatCapacity`
+- `EffectHeatEfficiency`
 
 ## Progression Design
 
@@ -114,10 +105,7 @@ const (
    - Add all 20 upgrade nodes (4 paths × 5 tiers)
    - Use appropriate effect types for each upgrade
 
-2. Update `internal/dag/graph.go`:
-   - Add new effect types (if needed)
-
-3. Update `internal/server/app.go`:
+2. Update `internal/server/app.go`:
    - Call `dag.SeedUpgradeNodes()` and include in DAG initialization
 
 ### Phase 2: Backend - Apply Upgrade Effects
@@ -131,31 +119,17 @@ const (
    - Apply capabilities when creating/updating ships
    - Apply capabilities to missile configuration
 
-3. Update `internal/server/proto_convert.go`:
-   - Map new effect types to protobuf enums
-   - Include new effect types in conversion functions
+3. No protobuf enum changes required; effects are applied server‑side based on node IDs and existing types.
 
 ### Phase 3: Frontend - Display Upgrades
 
 1. Update `internal/server/web/src/upgrades.ts`:
-   - Add rendering for new effect types:
-     - `ship_speed_multiplier`
-     - `missile_speed_multiplier`
-     - `ship_heat_capacity`
-     - `missile_heat_capacity`
-   - Display as "+X% Ship Speed", "+X% Missile Speed", etc.
+   - Keep existing effect types; vary display by inferring target from `node.id`.
+   - Render as "+X% Ship Speed" or "+X% Missile Speed" for `speed_multiplier`, and similar for `heat_capacity`.
 
-2. Update `proto/ws_messages.proto`:
-   - Add new enum values to `UpgradeEffectType`:
-     ```protobuf
-     UPGRADE_EFFECT_TYPE_SHIP_SPEED_MULTIPLIER = 5;
-     UPGRADE_EFFECT_TYPE_MISSILE_SPEED_MULTIPLIER = 6;
-     UPGRADE_EFFECT_TYPE_SHIP_HEAT_CAPACITY = 7;
-     UPGRADE_EFFECT_TYPE_MISSILE_HEAT_CAPACITY = 8;
-     ```
+2. No changes to `proto/ws_messages.proto` are required for effect types.
 
-3. Update `internal/server/web/src/proto_helpers.ts` (if exists):
-   - Handle new effect types in any helper functions
+3. No changes needed in proto helpers for new effect types.
 
 ### Phase 4: Testing & Balancing
 
@@ -164,23 +138,9 @@ const (
 3. Balance time durations if needed
 4. Test multiplayer: upgrades should be per-player
 
-## Alternative: Simplified Effect Types
+## Display Logic Tip
 
-Instead of creating 4 new effect types, we could use a **category + type** approach:
-
-```go
-type UpgradeEffect struct {
-    Type     EffectType
-    Category string // "ship" or "missile"
-    Value    interface{}
-}
-```
-
-Then reuse existing types:
-- `EffectSpeedMultiplier` with `Category: "ship"` or `"missile"`
-- `EffectHeatCapacity` with `Category: "ship"` or `"missile"`
-
-This reduces code duplication but adds complexity to effect evaluation. **Recommendation**: Use distinct effect types for clarity and type safety.
+When rendering effects, use `node.id` to tailor labels. Example: if `node.id` starts with `upgrade.ship.` and effect is `speed_multiplier`, display "+X% Ship Speed"; if it starts with `upgrade.missile.`, display "+X% Missile Speed".
 
 ## Summary
 

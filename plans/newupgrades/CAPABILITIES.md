@@ -2,11 +2,11 @@
 
 ## Overview
 
-Implement the capabilities system that aggregates completed upgrades and applies their effects to ships and missiles.
+Implement server-side application of upgrade effects. Reuse existing effect types and avoid proto schema changes; enforce gameplay limits on the server regardless of what the client displays.
 
-## Step 1: Define Capabilities Structure
+## Step 1: Define Internal Capabilities Helper (Server)
 
-Create `internal/dag/capabilities.go`:
+Create `internal/dag/capabilities.go` (or an equivalent helper within game/server packages) to compute per-player multipliers from completed upgrades:
 
 ```go
 package dag
@@ -53,27 +53,26 @@ func CalculateCapabilities(state *PlayerState) PlayerCapabilities {
 
         for _, effect := range node.Effects {
             switch effect.Type {
-            case EffectShipSpeedMultiplier:
-                if multiplier, ok := effect.Value.(float64); ok {
-                    if multiplier > highestShipSpeed {
+            case EffectSpeedMultiplier:
+                // infer target via node ID or payload
+                if strings.HasPrefix(string(node.ID), "upgrade.ship.") {
+                    if multiplier, ok := effect.Value.(float64); ok && multiplier > highestShipSpeed {
                         highestShipSpeed = multiplier
                     }
                 }
-            case EffectMissileSpeedMultiplier:
-                if multiplier, ok := effect.Value.(float64); ok {
-                    if multiplier > highestMissileSpeed {
+                if strings.HasPrefix(string(node.ID), "upgrade.missile.") {
+                    if multiplier, ok := effect.Value.(float64); ok && multiplier > highestMissileSpeed {
                         highestMissileSpeed = multiplier
                     }
                 }
-            case EffectShipHeatCapacity:
-                if multiplier, ok := effect.Value.(float64); ok {
-                    if multiplier > highestShipHeat {
+            case EffectHeatCapacity:
+                if strings.HasPrefix(string(node.ID), "upgrade.ship.") {
+                    if multiplier, ok := effect.Value.(float64); ok && multiplier > highestShipHeat {
                         highestShipHeat = multiplier
                     }
                 }
-            case EffectMissileHeatCapacity:
-                if multiplier, ok := effect.Value.(float64); ok {
-                    if multiplier > highestMissileHeat {
+                if strings.HasPrefix(string(node.ID), "upgrade.missile.") {
+                    if multiplier, ok := effect.Value.(float64); ok && multiplier > highestMissileHeat {
                         highestMissileHeat = multiplier
                     }
                 }
@@ -94,37 +93,9 @@ func CalculateCapabilities(state *PlayerState) PlayerCapabilities {
 }
 ```
 
-## Step 2: Update Proto Definitions
+## Step 2: Networking
 
-Update `proto/ws_messages.proto` to include capabilities in StateUpdate:
-
-```protobuf
-// Player capabilities (computed from completed upgrades)
-message PlayerCapabilities {
-  double ship_speed_multiplier = 1;
-  double missile_speed_multiplier = 2;
-  double ship_heat_capacity = 3;
-  double missile_heat_capacity = 4;
-  repeated string unlocked_missiles = 5;
-}
-
-message StateUpdate {
-  double now = 1;
-  Ghost me = 2;
-  repeated Ghost ghosts = 3;
-  RoomMeta meta = 4;
-  repeated Missile missiles = 5;
-  MissileConfig missile_config = 6;
-  repeated Waypoint missile_waypoints = 7;
-  repeated MissileRoute missile_routes = 8;
-  string active_missile_route = 9;
-  double next_missile_ready = 10;
-  optional DagState dag = 11;
-  optional Inventory inventory = 12;
-  optional StoryState story = 13;
-  optional PlayerCapabilities capabilities = 14; // NEW
-}
-```
+No changes are required to protobuf enums. Optionally, you may populate the existing `PlayerCapabilities` message in state updates as a convenience view, but ensure all effects are enforced server‑side.
 
 ## Step 3: Store Capabilities in Player State
 

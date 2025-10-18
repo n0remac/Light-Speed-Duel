@@ -13,7 +13,7 @@ Each path has 5 tiers, providing +10% per tier (10%, 20%, 30%, 40%, 50%).
 ## Documents
 
 1. **PLAN.md** - High-level design and progression overview
-2. **BACKEND.md** - Backend implementation (DAG nodes, proto definitions)
+2. **BACKEND.md** - Backend implementation (DAG nodes, server application)
 3. **FRONTEND.md** - Frontend implementation (UI rendering, TypeScript)
 4. **CAPABILITIES.md** - Capabilities system (applying upgrade effects to gameplay)
 
@@ -21,12 +21,10 @@ Each path has 5 tiers, providing +10% per tier (10%, 20%, 30%, 40%, 50%).
 
 ### Phase 1: Define Upgrades (Backend)
 Follow **BACKEND.md**:
-- [ ] Add new effect types to `internal/dag/graph.go`
 - [ ] Create `internal/dag/upgrades.go` with 20 upgrade nodes
 - [ ] Update `internal/server/app.go` to initialize upgrade nodes
-- [ ] Update `proto/ws_messages.proto` with new effect types
-- [ ] Update `internal/server/proto_convert.go` to handle new effects
-- [ ] Run `make proto` and `go build` to verify
+- [ ] Reuse existing effect types (no proto enum changes)
+- [ ] `go build` to verify
 
 **Result**: Upgrades appear in the upgrade panel but don't affect gameplay yet.
 
@@ -42,16 +40,14 @@ Follow **FRONTEND.md**:
 
 ### Phase 3: Apply Effects (Capabilities System)
 Follow **CAPABILITIES.md**:
-- [ ] Create `internal/dag/capabilities.go` with `CalculateCapabilities()`
-- [ ] Update `proto/ws_messages.proto` to include `PlayerCapabilities`
+- [ ] Create `internal/dag/capabilities.go` (or equivalent helper)
 - [ ] Add `Capabilities` field to `Player` struct in `internal/game/room.go`
 - [ ] Apply ship speed multiplier to waypoint handling
-- [ ] Apply missile speed multiplier to missile configuration
+- [ ] Apply missile speed multiplier by raising `missile_config.speed_max`
 - [ ] Apply ship heat capacity to ship heat initialization
 - [ ] Apply missile heat capacity to missile heat initialization
-- [ ] Send capabilities to client in state updates
-- [ ] Refresh capabilities when upgrades complete
-- [ ] Run `make proto`, rebuild, test in-game
+- [ ] Optionally populate existing `PlayerCapabilities` in state updates
+- [ ] Rebuild and test in-game
 
 **Result**: Upgrades now affect gameplay! Ships/missiles benefit from completed upgrades.
 
@@ -63,9 +59,7 @@ If you want to get started immediately, run these commands:
 # 1. Implement backend
 # Follow BACKEND.md to create internal/dag/upgrades.go
 
-# 2. Update proto and rebuild
-make proto
-go generate ./internal/server
+# 2. Build
 go build -o LightSpeedDuel
 
 # 3. Test
@@ -95,7 +89,7 @@ After full implementation:
 
 **Capabilities**:
 - [ ] Ship speed upgrade increases max ship speed
-- [ ] Missile speed upgrade increases max missile speed
+- [ ] Missile speed upgrade increases missile speed max (slider reflects server value)
 - [ ] Ship heat upgrade allows higher speed before overheat
 - [ ] Missile heat upgrade allows missiles to travel faster
 - [ ] Tier 2 overrides tier 1 (not additive)

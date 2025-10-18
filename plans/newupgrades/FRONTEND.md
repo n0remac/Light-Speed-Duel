@@ -2,11 +2,11 @@
 
 ## Overview
 
-Update the TypeScript frontend to display and handle the new upgrade effect types for ship/missile speed and heat capacity.
+Update the TypeScript frontend to display existing effect types, labeling them per target (ship vs missile) based on node IDs. No new proto enums are required.
 
 ## Step 1: Update Effect Type Rendering
 
-Update `internal/server/web/src/upgrades.ts` in the `renderNode` function:
+Update `internal/server/web/src/upgrades.ts` in the `renderNode` function. Infer target from `node.id` (prefix `upgrade.ship.` vs `upgrade.missile.`) and tailor the label for `speed_multiplier` and `heat_capacity` accordingly:
 
 ```typescript
 function renderNode(node: DagNode): string {
@@ -61,27 +61,9 @@ function renderNode(node: DagNode): string {
 }
 ```
 
-## Step 2: Update TypeScript Types
+## Step 2: Types
 
-If there's a `state.ts` or types file that defines effect types, update it:
-
-```typescript
-// In state.ts or types.ts
-export type UpgradeEffectType =
-  | 'speed_multiplier'
-  | 'missile_unlock'
-  | 'heat_capacity'
-  | 'heat_efficiency'
-  | 'ship_speed_multiplier'
-  | 'missile_speed_multiplier'
-  | 'ship_heat_capacity'
-  | 'missile_heat_capacity';
-
-export interface UpgradeEffect {
-  type: UpgradeEffectType;
-  value: number | string;
-}
-```
+No changes needed. Continue consuming `UpgradeEffect` values provided by existing proto helpers.
 
 ## Step 3: Organize Upgrades by Category (Optional Enhancement)
 
@@ -221,36 +203,9 @@ Add to `internal/server/web/lobby.html` or wherever upgrade styles are defined:
 }
 ```
 
-## Step 5: Handle Proto Message Parsing
+## Step 5: Proto Message Parsing
 
-Update `internal/server/web/src/proto_helpers.ts` (if it exists) to handle new effect types:
-
-```typescript
-import { UpgradeEffectType } from './proto/proto/ws_messages_pb';
-
-export function parseUpgradeEffectType(protoType: UpgradeEffectType): string {
-  switch (protoType) {
-    case UpgradeEffectType.UPGRADE_EFFECT_TYPE_SPEED_MULTIPLIER:
-      return 'speed_multiplier';
-    case UpgradeEffectType.UPGRADE_EFFECT_TYPE_MISSILE_UNLOCK:
-      return 'missile_unlock';
-    case UpgradeEffectType.UPGRADE_EFFECT_TYPE_HEAT_CAPACITY:
-      return 'heat_capacity';
-    case UpgradeEffectType.UPGRADE_EFFECT_TYPE_HEAT_EFFICIENCY:
-      return 'heat_efficiency';
-    case UpgradeEffectType.UPGRADE_EFFECT_TYPE_SHIP_SPEED_MULTIPLIER:
-      return 'ship_speed_multiplier';
-    case UpgradeEffectType.UPGRADE_EFFECT_TYPE_MISSILE_SPEED_MULTIPLIER:
-      return 'missile_speed_multiplier';
-    case UpgradeEffectType.UPGRADE_EFFECT_TYPE_SHIP_HEAT_CAPACITY:
-      return 'ship_heat_capacity';
-    case UpgradeEffectType.UPGRADE_EFFECT_TYPE_MISSILE_HEAT_CAPACITY:
-      return 'missile_heat_capacity';
-    default:
-      return 'unknown';
-  }
-}
-```
+No changes required; the existing enums and helpers already cover the effect types in use.
 
 ## Step 6: Build Frontend
 
