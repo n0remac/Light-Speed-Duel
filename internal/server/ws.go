@@ -402,7 +402,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
                     effMissileMax = MissileMaxSpeed * p.Capabilities.MissileSpeedMultiplier
                 }
                 cfg := p.MissileConfig
-                // Scale heat capacity thresholds
+                // Scale heat capacity thresholds and marker speed
                 if p.Capabilities.MissileHeatCapacity > 0 {
                     scale := p.Capabilities.MissileHeatCapacity
                     hp := cfg.HeatParams
@@ -412,6 +412,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
                     hp.Max *= scale
                     hp.WarnAt *= scale
                     hp.OverheatAt *= scale
+                    hp.MarkerSpeed *= scale
                     cfg.HeatParams = hp
                 }
                 cfg = SanitizeMissileConfigWithCap(cfg, MissileMinSpeed, effMissileMax)
@@ -987,7 +988,7 @@ func handleLaunchMissile(room *Room, playerID string, msg *pb.LaunchMissile) {
                     effMissileMax = MissileMaxSpeed * p.Capabilities.MissileSpeedMultiplier
                 }
                 cfg := p.MissileConfig
-                // Scale missile heat capacity
+                // Scale missile heat capacity and marker speed
                 if p.Capabilities.MissileHeatCapacity > 0 {
                     scale := p.Capabilities.MissileHeatCapacity
                     hp := cfg.HeatParams
@@ -997,6 +998,7 @@ func handleLaunchMissile(room *Room, playerID string, msg *pb.LaunchMissile) {
                     hp.Max *= scale
                     hp.WarnAt *= scale
                     hp.OverheatAt *= scale
+                    hp.MarkerSpeed *= scale
                     cfg.HeatParams = hp
                 }
                 cfg = SanitizeMissileConfigWithCap(cfg, MissileMinSpeed, effMissileMax)

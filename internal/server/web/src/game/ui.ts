@@ -124,6 +124,7 @@ export function createUI({
   let heatValueText: HTMLElement | null = null;
   let speedMarker: HTMLElement | null = null;
   let stallOverlay: HTMLElement | null = null;
+  let baseShipSpeedMax: number | null = null;
 
   let markerAligned = false;
   let heatWarnActive = false;
@@ -148,6 +149,10 @@ export function createUI({
     shipSpeedCard = document.getElementById("ship-speed-card");
     shipSpeedSlider = document.getElementById("ship-speed-slider") as HTMLInputElement | null;
     shipSpeedValue = document.getElementById("ship-speed-value");
+    if (shipSpeedSlider && baseShipSpeedMax === null) {
+      const parsed = parseFloat(shipSpeedSlider.max);
+      baseShipSpeedMax = Number.isFinite(parsed) ? parsed : 250;
+    }
 
     missileControlsCard = document.getElementById("missile-controls");
     missileAddRouteBtn = document.getElementById("missile-add-route") as HTMLButtonElement | null;
@@ -950,6 +955,28 @@ export function createUI({
   function updateStatusIndicators(): void {
     const meta = state.worldMeta ?? {};
     camera.updateWorldFromMeta(meta);
+
+    // Update ship speed slider max based on completed upgrades (client-side inference)
+    if (shipSpeedSlider && baseShipSpeedMax) {
+      let multiplier = 1.0;
+      const dag = state.dag;
+      if (dag && Array.isArray(dag.nodes)) {
+        for (const n of dag.nodes) {
+          if (n && n.status === "completed" && typeof n.id === "string" && n.id.startsWith("upgrade.ship.speed_")) {
+            const eff = Array.isArray(n.effects) ? n.effects : [];
+            for (const e of eff) {
+              if (e && e.type === "speed_multiplier" && typeof e.value === "number") {
+                if (e.value > multiplier) multiplier = e.value;
+              }
+            }
+          }
+        }
+      }
+      const intendedMax = (baseShipSpeedMax * multiplier).toFixed(0);
+      if (shipSpeedSlider.max !== intendedMax) {
+        shipSpeedSlider.max = intendedMax;
+      }
+    }
 
     if (HPspan) {
       if (state.me && Number.isFinite(state.me.hp)) {

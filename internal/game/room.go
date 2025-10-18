@@ -245,7 +245,9 @@ func (r *Room) EvaluatePlayerDagLocked(graph *dag.Graph, player *Player, effects
             heat.P.Max = base.Max * scale
             heat.P.WarnAt = base.WarnAt * scale
             heat.P.OverheatAt = base.OverheatAt * scale
-            // keep marker speed and dynamics unchanged
+            // also scale marker speed so the neutral marker reflects increased capacity
+            heat.P.MarkerSpeed = base.MarkerSpeed * scale
+            // keep dynamics unchanged
         }
     }
 }
