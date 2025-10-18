@@ -35,15 +35,16 @@ func StartApp(addr string, cfg AppConfig) {
 	heat := resolveHeatParams(cfg)
 	hub := NewHub(heat)
 
-	// Initialize DAG system with missile crafting graph
-	craftNodes := dag.SeedMissileCraftNodes()
-	storyNodes := dag.SeedStoryNodes()
-	nodes := append(craftNodes, storyNodes...)
+    // Initialize DAG system with missile crafting, story, and upgrades
+    craftNodes := dag.SeedMissileCraftNodes()
+    storyNodes := dag.SeedStoryNodes()
+    upgradeNodes := dag.SeedUpgradeNodes()
+    nodes := append(append(craftNodes, storyNodes...), upgradeNodes...)
 	if err := dag.Init(nodes); err != nil {
 		log.Fatalf("failed to initialize DAG: %v", err)
 	}
-	log.Printf("DAG system initialized with %d nodes (%d craft, %d story)",
-		len(nodes), len(craftNodes), len(storyNodes))
+    log.Printf("DAG system initialized with %d nodes (%d craft, %d story, %d upgrade)",
+        len(nodes), len(craftNodes), len(storyNodes), len(upgradeNodes))
 
 	// Periodic cleanup of empty rooms (every 60 seconds)
 	go func() {

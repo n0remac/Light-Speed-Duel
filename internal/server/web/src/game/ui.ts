@@ -931,11 +931,7 @@ export function createUI({
 
     if (state.dag && state.dag.nodes) {
       for (const node of state.dag.nodes) {
-        if (node.kind !== "factory" && node.kind !== "story") {
-          console.log("Checking kind:", node.kind, "status:", node.status);
-        }
         if (node.kind === "craft" && node.status === "in_progress") {
-          console.log("Craft in progress:", node.id, "remaining:", node.remaining_s);
           craftInProgress = true;
           remainingTime = node.remaining_s;
           break;

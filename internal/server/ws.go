@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -370,11 +371,16 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 				now := room.Now
 				p := room.Players[playerID]
 
-				missileCfg := missileConfigDTO{
-					SpeedMin: MissileMinSpeed,
-					SpeedMax: MissileMaxSpeed,
-					AgroMin:  MissileMinAgroRadius,
-				}
+            // Compute per-player missile speed cap from capabilities
+            effMissileMax := MissileMaxSpeed
+            if p != nil && p.Capabilities.MissileSpeedMultiplier > 0 {
+                effMissileMax = MissileMaxSpeed * p.Capabilities.MissileSpeedMultiplier
+            }
+            missileCfg := missileConfigDTO{
+                SpeedMin: MissileMinSpeed,
+                SpeedMax: effMissileMax,
+                AgroMin:  MissileMinAgroRadius,
+            }
 				var missileWaypoints []waypointDTO
 				var missileRoutesDTO []missileRouteDTO
 				var activeRouteID string
@@ -390,8 +396,26 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 				var meTransform *Transform
 
 				if p != nil {
-					cfg := SanitizeMissileConfig(p.MissileConfig)
-					p.MissileConfig = cfg
+                // Apply missile heat capacity scaling and speed cap based on capabilities
+                effMissileMax := MissileMaxSpeed
+                if p.Capabilities.MissileSpeedMultiplier > 0 {
+                    effMissileMax = MissileMaxSpeed * p.Capabilities.MissileSpeedMultiplier
+                }
+                cfg := p.MissileConfig
+                // Scale heat capacity thresholds
+                if p.Capabilities.MissileHeatCapacity > 0 {
+                    scale := p.Capabilities.MissileHeatCapacity
+                    hp := cfg.HeatParams
+                    if hp.Max <= 0 {
+                        hp = DefaultMissileHeatParams()
+                    }
+                    hp.Max *= scale
+                    hp.WarnAt *= scale
+                    hp.OverheatAt *= scale
+                    cfg.HeatParams = hp
+                }
+                cfg = SanitizeMissileConfigWithCap(cfg, MissileMinSpeed, effMissileMax)
+                p.MissileConfig = cfg
 					p.EnsureMissileRoutes()
 					missileCfg.Speed = cfg.Speed
 					missileCfg.AgroRadius = cfg.AgroRadius
@@ -502,6 +526,8 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 								storyAvailable = append(storyAvailable, string(nodeID))
 							}
 						}
+						// Stable ordering for client rendering
+						sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
 						dagDTO = &dagStateDTO{Nodes: nodes}
 					}
 
@@ -955,8 +981,26 @@ func handleLaunchMissile(room *Room, playerID string, msg *pb.LaunchMissile) {
 	defer room.Mu.Unlock()
 
 	if p := room.Players[playerID]; p != nil {
-		cfg := SanitizeMissileConfig(p.MissileConfig)
-		p.MissileConfig = cfg
+                // Apply capabilities at launch time too
+                effMissileMax := MissileMaxSpeed
+                if p.Capabilities.MissileSpeedMultiplier > 0 {
+                    effMissileMax = MissileMaxSpeed * p.Capabilities.MissileSpeedMultiplier
+                }
+                cfg := p.MissileConfig
+                // Scale missile heat capacity
+                if p.Capabilities.MissileHeatCapacity > 0 {
+                    scale := p.Capabilities.MissileHeatCapacity
+                    hp := cfg.HeatParams
+                    if hp.Max <= 0 {
+                        hp = DefaultMissileHeatParams()
+                    }
+                    hp.Max *= scale
+                    hp.WarnAt *= scale
+                    hp.OverheatAt *= scale
+                    cfg.HeatParams = hp
+                }
+                cfg = SanitizeMissileConfigWithCap(cfg, MissileMinSpeed, effMissileMax)
+                p.MissileConfig = cfg
 		p.EnsureMissileRoutes()
 		routeID := msg.RouteId
 		if routeID == "" {
@@ -1095,6 +1139,8 @@ func handleDagList(room *Room, playerID string, conn *websocket.Conn) {
 					Effects:    node.Effects,
 				})
 			}
+			// Stable ordering for client rendering
+			sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
 			dagDTO := dagStateDTO{Nodes: nodes}
 			dagProto = dagStateToProto(dagDTO)
 		}

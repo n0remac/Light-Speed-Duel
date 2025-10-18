@@ -461,18 +461,18 @@ function handleProtoStateMessage(
     };
   }
 
-  // Phase 2: Update DAG
+  // Phase 2: Update DAG (protoToState already normalized via proto_helpers)
   if (msg.dag) {
     state.dag = {
-      nodes: msg.dag.nodes.map((node) => ({
-        id: node.id,
-        kind: node.kind,
-        label: node.label,
-        status: node.status,
-        remaining_s: node.remainingS,
-        duration_s: node.durationS,
-        repeatable: node.repeatable,
-        effects: node.effects || [],
+      nodes: msg.dag.nodes.map((n) => ({
+        id: n.id,
+        kind: n.kind,
+        label: n.label,
+        status: n.status,
+        remaining_s: n.remainingS,
+        duration_s: n.durationS,
+        repeatable: n.repeatable,
+        effects: n.effects,
       })),
     };
   }

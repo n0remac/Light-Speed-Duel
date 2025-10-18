@@ -30,24 +30,24 @@ Follow **BACKEND.md**:
 
 ### Phase 2: Display Upgrades (Frontend)
 Follow **FRONTEND.md**:
-- [ ] Update `internal/server/web/src/upgrades.ts` to render new effect types
+- [x] Update `internal/server/web/src/upgrades.ts` to render existing effect types with ship/missile labels
 - [ ] (Optional) Organize upgrades by category with grouped layout
 - [ ] (Optional) Add CSS styling for better UX
-- [ ] Run `go generate ./internal/server` and rebuild
+- [x] Normalize DAG effects via `proto_helpers` in `net.ts`
 - [ ] Test in browser: verify all 20 upgrades display correctly
 
 **Result**: Upgrades are visible, can be started/completed, but still don't affect gameplay.
 
 ### Phase 3: Apply Effects (Capabilities System)
 Follow **CAPABILITIES.md**:
-- [ ] Create `internal/dag/capabilities.go` (or equivalent helper)
-- [ ] Add `Capabilities` field to `Player` struct in `internal/game/room.go`
-- [ ] Apply ship speed multiplier to waypoint handling
-- [ ] Apply missile speed multiplier by raising `missile_config.speed_max`
-- [ ] Apply ship heat capacity to ship heat initialization
-- [ ] Apply missile heat capacity to missile heat initialization
+- [x] Create `internal/dag/capabilities.go` (or equivalent helper)
+- [x] Add `Capabilities` field to `Player` struct in `internal/game/room.go`
+- [x] Apply ship speed multiplier (movement cap + waypoint clamp)
+- [x] Apply missile speed multiplier by raising `missile_config.speed_max`
+- [x] Apply ship heat capacity to ship heat parameters
+- [x] Apply missile heat capacity to missile heat parameters at launch
 - [ ] Optionally populate existing `PlayerCapabilities` in state updates
-- [ ] Rebuild and test in-game
+- [x] Rebuild and test in-game
 
 **Result**: Upgrades now affect gameplay! Ships/missiles benefit from completed upgrades.
 

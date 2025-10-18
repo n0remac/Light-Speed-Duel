@@ -18,20 +18,21 @@ type MissileRouteDef struct {
 }
 
 type Player struct {
-	ID                   string
-	Name                 string
-	Ship                 EntityID
-	MissileConfig        MissileConfig
-	MissileRoutes        []*MissileRouteDef
-	ActiveMissileRouteID string
-	MissileReadyAt       float64
-	IsBot                bool
-	Kills                int
-	DagState             *dag.State // Progression state for crafting/upgrades
-	Inventory            *Inventory // Player's crafted items
-	StoryFlags           map[string]bool
-	ActiveStoryNodeID    string
-	PendingStoryEvents   []StoryEvent
+    ID                   string
+    Name                 string
+    Ship                 EntityID
+    MissileConfig        MissileConfig
+    MissileRoutes        []*MissileRouteDef
+    ActiveMissileRouteID string
+    MissileReadyAt       float64
+    IsBot                bool
+    Kills                int
+    DagState             *dag.State // Progression state for crafting/upgrades
+    Inventory            *Inventory // Player's crafted items
+    StoryFlags           map[string]bool
+    ActiveStoryNodeID    string
+    PendingStoryEvents   []StoryEvent
+    Capabilities         dag.PlayerCapabilities
 }
 
 type Room struct {
@@ -206,20 +207,47 @@ func (r *Room) updateDagStates() {
 }
 
 func (r *Room) EvaluatePlayerDagLocked(graph *dag.Graph, player *Player, effects dag.Effects) {
-	if graph == nil || player == nil {
-		return
-	}
-	player.EnsureDagState()
-	player.EnsureStoryState()
-	result := dag.Evaluator(graph, player.DagState, r.Now)
-	for nodeID, newStatus := range result.StatusUpdates {
-		player.DagState.SetStatus(nodeID, newStatus)
-	}
-	for _, nodeID := range result.DueCompletions {
-		if err := dag.Complete(graph, player.DagState, nodeID, effects); err != nil {
-			log.Printf("dag completion error for player %s node %s: %v", player.ID, nodeID, err)
-		}
-	}
+    if graph == nil || player == nil {
+        return
+    }
+    player.EnsureDagState()
+    player.EnsureStoryState()
+    result := dag.Evaluator(graph, player.DagState, r.Now)
+    for nodeID, newStatus := range result.StatusUpdates {
+        player.DagState.SetStatus(nodeID, newStatus)
+    }
+    for _, nodeID := range result.DueCompletions {
+        if err := dag.Complete(graph, player.DagState, nodeID, effects); err != nil {
+            log.Printf("dag completion error for player %s node %s: %v", player.ID, nodeID, err)
+        }
+    }
+
+    // Recompute and apply capabilities each tick (cheap; small node set)
+    caps := dag.CalculateCapabilities(player.DagState)
+    player.Capabilities = caps
+
+    // Apply ship movement cap
+    if player.Ship != 0 {
+        if mov := r.World.Movement(player.Ship); mov != nil {
+            base := ShipMaxSpeed
+            if caps.ShipSpeedMultiplier <= 0 {
+                caps.ShipSpeedMultiplier = 1.0
+            }
+            mov.MaxSpeed = base * caps.ShipSpeedMultiplier
+        }
+        // Apply ship heat capacity scaling relative to room defaults
+        if heat := r.World.HeatData(player.Ship); heat != nil {
+            base := r.heatDefaults
+            scale := caps.ShipHeatCapacity
+            if scale <= 0 {
+                scale = 1.0
+            }
+            heat.P.Max = base.Max * scale
+            heat.P.WarnAt = base.WarnAt * scale
+            heat.P.OverheatAt = base.OverheatAt * scale
+            // keep marker speed and dynamics unchanged
+        }
+    }
 }
 
 func (r *Room) tryStartStoryNodeLocked(player *Player, nodeID dag.NodeID) {
@@ -736,25 +764,26 @@ func (p *Player) SetActiveMissileRoute(id string) bool {
 }
 
 func (p *Player) AddWaypointToRoute(id string, wp RouteWaypoint) bool {
-	if route := p.MissileRouteByID(id); route != nil {
-		if wp.Speed <= 0 {
-			wp.Speed = Clamp(p.MissileConfig.Speed, MissileMinSpeed, MissileMaxSpeed)
-		}
-		route.Waypoints = append(route.Waypoints, wp)
-		return true
-	}
-	return false
+    if route := p.MissileRouteByID(id); route != nil {
+        if wp.Speed <= 0 {
+            max := MissileMaxSpeed * p.Capabilities.MissileSpeedMultiplier
+            wp.Speed = Clamp(p.MissileConfig.Speed, MissileMinSpeed, max)
+        }
+        route.Waypoints = append(route.Waypoints, wp)
+        return true
+    }
+    return false
 }
 
 func (p *Player) UpdateWaypointSpeedInRoute(id string, index int, speed float64) bool {
-	if route := p.MissileRouteByID(id); route != nil {
-		if index >= 0 && index < len(route.Waypoints) {
-			maxSpeed := Clamp(p.MissileConfig.Speed, MissileMinSpeed, MissileMaxSpeed)
-			route.Waypoints[index].Speed = Clamp(speed, MissileMinSpeed, maxSpeed)
-			return true
-		}
-	}
-	return false
+    if route := p.MissileRouteByID(id); route != nil {
+        if index >= 0 && index < len(route.Waypoints) {
+            max := MissileMaxSpeed * p.Capabilities.MissileSpeedMultiplier
+            route.Waypoints[index].Speed = Clamp(speed, MissileMinSpeed, max)
+            return true
+        }
+    }
+    return false
 }
 
 func (p *Player) MoveWaypointInRoute(id string, index int, pos Vec2) bool {

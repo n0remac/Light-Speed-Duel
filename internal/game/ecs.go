@@ -60,10 +60,10 @@ type DestroyedComponent struct {
 }
 
 type MissileConfig struct {
-	Speed      float64
-	AgroRadius float64
-	Lifetime   float64
-	HeatParams HeatParams // Heat configuration for this missile
+    Speed      float64
+    AgroRadius float64
+    Lifetime   float64
+    HeatParams HeatParams // Heat configuration for this missile
 }
 
 const (
@@ -80,7 +80,7 @@ const (
 )
 
 func SanitizeMissileConfig(cfg MissileConfig) MissileConfig {
-	speed := Clamp(cfg.Speed, MissileMinSpeed, MissileMaxSpeed)
+    speed := Clamp(cfg.Speed, MissileMinSpeed, MissileMaxSpeed)
 	agro := cfg.AgroRadius
 	if agro < MissileMinAgroRadius {
 		agro = MissileMinAgroRadius
@@ -95,12 +95,37 @@ func SanitizeMissileConfig(cfg MissileConfig) MissileConfig {
 		heatParams = SanitizeHeatParams(heatParams)
 	}
 
-	return MissileConfig{
-		Speed:      speed,
-		AgroRadius: agro,
-		Lifetime:   lifetime,
-		HeatParams: heatParams,
-	}
+    return MissileConfig{
+        Speed:      speed,
+        AgroRadius: agro,
+        Lifetime:   lifetime,
+        HeatParams: heatParams,
+    }
+}
+
+// SanitizeMissileConfigWithCap clamps speed to a provided [min,max] instead of global constants
+// and computes lifetime using the global lifetime model.
+func SanitizeMissileConfigWithCap(cfg MissileConfig, minSpeed, maxSpeed float64) MissileConfig {
+    speed := Clamp(cfg.Speed, minSpeed, maxSpeed)
+    agro := cfg.AgroRadius
+    if agro < MissileMinAgroRadius {
+        agro = MissileMinAgroRadius
+    }
+    lifetime := MissileLifetimeFor(speed, agro)
+
+    heatParams := cfg.HeatParams
+    if heatParams.Max <= 0 {
+        heatParams = DefaultMissileHeatParams()
+    } else {
+        heatParams = SanitizeHeatParams(heatParams)
+    }
+
+    return MissileConfig{
+        Speed:      speed,
+        AgroRadius: agro,
+        Lifetime:   lifetime,
+        HeatParams: heatParams,
+    }
 }
 
 func MissileLifetimeFor(speed, agro float64) float64 {

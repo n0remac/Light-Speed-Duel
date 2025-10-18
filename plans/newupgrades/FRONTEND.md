@@ -205,7 +205,12 @@ Add to `internal/server/web/lobby.html` or wherever upgrade styles are defined:
 
 ## Step 5: Proto Message Parsing
 
-No changes required; the existing enums and helpers already cover the effect types in use.
+Normalize DAG nodes during state updates so effect types are strings (matches upgrades.ts renderer):
+
+- File: `internal/server/web/src/net.ts`
+- In "Phase 2: Update DAG", use `protoToDagState(msg.dag)` and map to `state.dag` fields (`remaining_s`, `duration_s`).
+
+This mirrors how `dag:list` is handled and keeps effect type handling consistent.
 
 ## Step 6: Build Frontend
 
