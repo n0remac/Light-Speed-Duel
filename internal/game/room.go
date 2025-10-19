@@ -18,51 +18,58 @@ type MissileRouteDef struct {
 }
 
 type Player struct {
-    ID                   string
-    Name                 string
-    Ship                 EntityID
-    MissileConfig        MissileConfig
-    MissileRoutes        []*MissileRouteDef
-    ActiveMissileRouteID string
-    MissileReadyAt       float64
-    IsBot                bool
-    Kills                int
-    DagState             *dag.State // Progression state for crafting/upgrades
-    Inventory            *Inventory // Player's crafted items
-    StoryFlags           map[string]bool
-    ActiveStoryNodeID    string
-    PendingStoryEvents   []StoryEvent
-    Capabilities         dag.PlayerCapabilities
+	ID                   string
+	Name                 string
+	Ship                 EntityID
+	MissileConfig        MissileConfig
+	MissileRoutes        []*MissileRouteDef
+	ActiveMissileRouteID string
+	MissileReadyAt       float64
+	IsBot                bool
+	Kills                int
+	DagState             *dag.State // Progression state for crafting/upgrades
+	Inventory            *Inventory // Player's crafted items
+	StoryFlags           map[string]bool
+	ActiveStoryNodeID    string
+	PendingStoryEvents   []StoryEvent
+	Capabilities         dag.PlayerCapabilities
 }
 
 type Room struct {
-	ID           string
-	Now          float64
-	World        *World
-	Players      map[string]*Player
-	Mu           sync.Mutex
-	Bots         map[string]*AIAgent
-	stopChan     chan struct{}
-	stopped      bool
-	WorldWidth   float64
-	WorldHeight  float64
-	heatDefaults HeatParams
-	missionWaves map[int]bool
+	ID                     string
+	Now                    float64
+	World                  *World
+	Players                map[string]*Player
+	Mu                     sync.Mutex
+	Bots                   map[string]*AIAgent
+	stopChan               chan struct{}
+	stopped                bool
+	WorldWidth             float64
+	WorldHeight            float64
+	heatDefaults           HeatParams
+	missionWaves           map[int]bool
+	missionDirector        *BeaconDirector
+	missionSnapshotVersion uint64
+	missionSnapshot        BeaconSnapshot
+	missionFrameVersion    uint64
+	missionFrameDeltas     []BeaconDelta
+	missionFrameEncounters []EncounterDelta
 }
 
 func newRoom(id string, defaults HeatParams) *Room {
 	sanitized := SanitizeHeatParams(defaults)
 	return &Room{
-		ID:           id,
-		World:        newWorld(),
-		Players:      map[string]*Player{},
-		Bots:         map[string]*AIAgent{},
-		stopChan:     make(chan struct{}),
-		stopped:      false,
-		WorldWidth:   WorldW,
-		WorldHeight:  WorldH,
-		heatDefaults: sanitized,
-		missionWaves: map[int]bool{},
+		ID:              id,
+		World:           newWorld(),
+		Players:         map[string]*Player{},
+		Bots:            map[string]*AIAgent{},
+		stopChan:        make(chan struct{}),
+		stopped:         false,
+		WorldWidth:      WorldW,
+		WorldHeight:     WorldH,
+		heatDefaults:    sanitized,
+		missionWaves:    map[int]bool{},
+		missionDirector: nil,
 	}
 }
 
@@ -108,6 +115,9 @@ func (r *Room) SetWorldSize(w, h float64) {
 	}
 	if h > 0 {
 		r.WorldHeight = h
+	}
+	if r.missionDirector != nil {
+		r.missionDirector.MarkLayoutDirty()
 	}
 }
 
@@ -171,10 +181,93 @@ func (r *Room) SetHeatParamsLocked(params HeatParams) {
 	r.applyHeatParams(params)
 }
 
+func (r *Room) EnsureBeaconDirectorLocked(missionID string) *BeaconDirector {
+	if missionID == "" {
+		missionID = "campaign-1"
+	}
+	if r.missionDirector != nil && r.missionDirector.MissionID() == missionID {
+		return r.missionDirector
+	}
+	director, ok := NewBeaconDirector(r.ID, missionID)
+	if !ok {
+		return nil
+	}
+	r.missionDirector = director
+	return director
+}
+
+func (r *Room) BeaconDirectorLocked() *BeaconDirector {
+	return r.missionDirector
+}
+
+func (r *Room) MissionSnapshotForBroadcastLocked() (BeaconSnapshot, uint64) {
+	snapshot := BeaconSnapshot{
+		MissionID:  r.missionSnapshot.MissionID,
+		LayoutSeed: r.missionSnapshot.LayoutSeed,
+		ServerTime: r.missionSnapshot.ServerTime,
+	}
+	if len(r.missionSnapshot.Beacons) > 0 {
+		snapshot.Beacons = make([]BeaconSnapshotBeacon, len(r.missionSnapshot.Beacons))
+		copy(snapshot.Beacons, r.missionSnapshot.Beacons)
+	}
+	if len(r.missionSnapshot.Players) > 0 {
+		snapshot.Players = make([]BeaconSnapshotPlayer, len(r.missionSnapshot.Players))
+		copy(snapshot.Players, r.missionSnapshot.Players)
+	}
+	if len(r.missionSnapshot.Encounters) > 0 {
+		snapshot.Encounters = make([]EncounterSummary, len(r.missionSnapshot.Encounters))
+		copy(snapshot.Encounters, r.missionSnapshot.Encounters)
+	}
+	return snapshot, r.missionSnapshotVersion
+}
+
+func (r *Room) MissionFrameForBroadcastLocked() ([]BeaconDelta, []EncounterDelta, uint64) {
+	var deltasCopy []BeaconDelta
+	var encountersCopy []EncounterDelta
+	if len(r.missionFrameDeltas) > 0 {
+		deltasCopy = make([]BeaconDelta, len(r.missionFrameDeltas))
+		copy(deltasCopy, r.missionFrameDeltas)
+	}
+	if len(r.missionFrameEncounters) > 0 {
+		encountersCopy = make([]EncounterDelta, len(r.missionFrameEncounters))
+		copy(encountersCopy, r.missionFrameEncounters)
+	}
+	return deltasCopy, encountersCopy, r.missionFrameVersion
+}
+
 func (r *Room) Tick() {
 	r.Mu.Lock()
 	defer r.Mu.Unlock()
 	r.Now += Dt
+
+	if r.missionDirector != nil {
+		r.missionDirector.Tick(r)
+
+		snapshotDirty := r.missionDirector.SnapshotDirty()
+		if r.missionSnapshotVersion == 0 || snapshotDirty {
+			r.missionSnapshotVersion++
+			r.missionSnapshot = r.missionDirector.Snapshot(r.Now, r.WorldWidth, r.WorldHeight)
+			r.missionDirector.ClearSnapshotDirty()
+		}
+
+		deltas := r.missionDirector.PendingDeltas()
+		encounters := r.missionDirector.PendingEncounterDeltas()
+		if len(deltas) > 0 || len(encounters) > 0 {
+			r.missionFrameVersion++
+			if len(deltas) > 0 {
+				r.missionFrameDeltas = make([]BeaconDelta, len(deltas))
+				copy(r.missionFrameDeltas, deltas)
+			} else {
+				r.missionFrameDeltas = nil
+			}
+			if len(encounters) > 0 {
+				r.missionFrameEncounters = make([]EncounterDelta, len(encounters))
+				copy(r.missionFrameEncounters, encounters)
+			} else {
+				r.missionFrameEncounters = nil
+			}
+		}
+	}
 
 	r.updateAI()
 	updateMissileGuidance(r, Dt)
@@ -207,49 +300,49 @@ func (r *Room) updateDagStates() {
 }
 
 func (r *Room) EvaluatePlayerDagLocked(graph *dag.Graph, player *Player, effects dag.Effects) {
-    if graph == nil || player == nil {
-        return
-    }
-    player.EnsureDagState()
-    player.EnsureStoryState()
-    result := dag.Evaluator(graph, player.DagState, r.Now)
-    for nodeID, newStatus := range result.StatusUpdates {
-        player.DagState.SetStatus(nodeID, newStatus)
-    }
-    for _, nodeID := range result.DueCompletions {
-        if err := dag.Complete(graph, player.DagState, nodeID, effects); err != nil {
-            log.Printf("dag completion error for player %s node %s: %v", player.ID, nodeID, err)
-        }
-    }
+	if graph == nil || player == nil {
+		return
+	}
+	player.EnsureDagState()
+	player.EnsureStoryState()
+	result := dag.Evaluator(graph, player.DagState, r.Now)
+	for nodeID, newStatus := range result.StatusUpdates {
+		player.DagState.SetStatus(nodeID, newStatus)
+	}
+	for _, nodeID := range result.DueCompletions {
+		if err := dag.Complete(graph, player.DagState, nodeID, effects); err != nil {
+			log.Printf("dag completion error for player %s node %s: %v", player.ID, nodeID, err)
+		}
+	}
 
-    // Recompute and apply capabilities each tick (cheap; small node set)
-    caps := dag.CalculateCapabilities(player.DagState)
-    player.Capabilities = caps
+	// Recompute and apply capabilities each tick (cheap; small node set)
+	caps := dag.CalculateCapabilities(player.DagState)
+	player.Capabilities = caps
 
-    // Apply ship movement cap
-    if player.Ship != 0 {
-        if mov := r.World.Movement(player.Ship); mov != nil {
-            base := ShipMaxSpeed
-            if caps.ShipSpeedMultiplier <= 0 {
-                caps.ShipSpeedMultiplier = 1.0
-            }
-            mov.MaxSpeed = base * caps.ShipSpeedMultiplier
-        }
-        // Apply ship heat capacity scaling relative to room defaults
-        if heat := r.World.HeatData(player.Ship); heat != nil {
-            base := r.heatDefaults
-            scale := caps.ShipHeatCapacity
-            if scale <= 0 {
-                scale = 1.0
-            }
-            heat.P.Max = base.Max * scale
-            heat.P.WarnAt = base.WarnAt * scale
-            heat.P.OverheatAt = base.OverheatAt * scale
-            // also scale marker speed so the neutral marker reflects increased capacity
-            heat.P.MarkerSpeed = base.MarkerSpeed * scale
-            // keep dynamics unchanged
-        }
-    }
+	// Apply ship movement cap
+	if player.Ship != 0 {
+		if mov := r.World.Movement(player.Ship); mov != nil {
+			base := ShipMaxSpeed
+			if caps.ShipSpeedMultiplier <= 0 {
+				caps.ShipSpeedMultiplier = 1.0
+			}
+			mov.MaxSpeed = base * caps.ShipSpeedMultiplier
+		}
+		// Apply ship heat capacity scaling relative to room defaults
+		if heat := r.World.HeatData(player.Ship); heat != nil {
+			base := r.heatDefaults
+			scale := caps.ShipHeatCapacity
+			if scale <= 0 {
+				scale = 1.0
+			}
+			heat.P.Max = base.Max * scale
+			heat.P.WarnAt = base.WarnAt * scale
+			heat.P.OverheatAt = base.OverheatAt * scale
+			// also scale marker speed so the neutral marker reflects increased capacity
+			heat.P.MarkerSpeed = base.MarkerSpeed * scale
+			// keep dynamics unchanged
+		}
+	}
 }
 
 func (r *Room) tryStartStoryNodeLocked(player *Player, nodeID dag.NodeID) {
@@ -283,7 +376,7 @@ func (r *Room) HandleMissionStoryEventLocked(player *Player, event string, beaco
 	if nodeID == "" {
 		return
 	}
-	
+
 	r.tryStartStoryNodeLocked(player, nodeID)
 }
 
@@ -766,26 +859,26 @@ func (p *Player) SetActiveMissileRoute(id string) bool {
 }
 
 func (p *Player) AddWaypointToRoute(id string, wp RouteWaypoint) bool {
-    if route := p.MissileRouteByID(id); route != nil {
-        if wp.Speed <= 0 {
-            max := MissileMaxSpeed * p.Capabilities.MissileSpeedMultiplier
-            wp.Speed = Clamp(p.MissileConfig.Speed, MissileMinSpeed, max)
-        }
-        route.Waypoints = append(route.Waypoints, wp)
-        return true
-    }
-    return false
+	if route := p.MissileRouteByID(id); route != nil {
+		if wp.Speed <= 0 {
+			max := MissileMaxSpeed * p.Capabilities.MissileSpeedMultiplier
+			wp.Speed = Clamp(p.MissileConfig.Speed, MissileMinSpeed, max)
+		}
+		route.Waypoints = append(route.Waypoints, wp)
+		return true
+	}
+	return false
 }
 
 func (p *Player) UpdateWaypointSpeedInRoute(id string, index int, speed float64) bool {
-    if route := p.MissileRouteByID(id); route != nil {
-        if index >= 0 && index < len(route.Waypoints) {
-            max := MissileMaxSpeed * p.Capabilities.MissileSpeedMultiplier
-            route.Waypoints[index].Speed = Clamp(speed, MissileMinSpeed, max)
-            return true
-        }
-    }
-    return false
+	if route := p.MissileRouteByID(id); route != nil {
+		if index >= 0 && index < len(route.Waypoints) {
+			max := MissileMaxSpeed * p.Capabilities.MissileSpeedMultiplier
+			route.Waypoints[index].Speed = Clamp(speed, MissileMinSpeed, max)
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Player) MoveWaypointInRoute(id string, index int, pos Vec2) bool {

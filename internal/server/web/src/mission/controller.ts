@@ -1,6 +1,6 @@
 import type { EventBus } from "../bus";
-import type { AppState, BeaconDefinition, MissionState, WorldMeta } from "../state";
-import { monotonicNow } from "../state";
+import type { AppState, MissionPlayerState } from "../state";
+import { clamp, monotonicNow } from "../state";
 
 export interface MissionController {
   destroy(): void;
@@ -13,257 +13,151 @@ interface MissionControllerOptions {
   missionId: string | null;
 }
 
-interface MissionSpec {
-  id: string;
-  holdSeconds: number;
-  defaultWorldSize: { w: number; h: number };
-  beacons: Array<{ fx: number; fy: number; radius: number }>;
-}
+const HOLD_SMOOTH_RATE = 6;
+const HOLD_EPSILON = 0.01;
 
-interface PersistedProgress {
-  beaconIndex: number;
-  holdAccum: number;
-}
-
-const STORAGE_PREFIX = "lsd:mission:";
-const HOLD_EPSILON = 0.0001;
-
-const CAMPAIGN_MISSIONS: Record<string, MissionSpec> = {
-  "1": {
-    id: "campaign-1",
-    holdSeconds: 10,
-    defaultWorldSize: { w: 32000, h: 18000 },
-    beacons: [
-      { fx: 0.15, fy: 0.55, radius: 420 },
-      { fx: 0.40, fy: 0.50, radius: 360 },
-      { fx: 0.65, fy: 0.47, radius: 300 },
-      { fx: 0.85, fy: 0.44, radius: 260 },
-    ],
-  },
-};
-
-export function mountMissionController({ state, bus, mode, missionId }: MissionControllerOptions): MissionController {
+export function mountMissionController({ state, bus, mode }: MissionControllerOptions): MissionController {
   if (mode !== "campaign") {
     return { destroy() {} };
   }
 
-  const spec = missionId && CAMPAIGN_MISSIONS[missionId] ? CAMPAIGN_MISSIONS[missionId] : CAMPAIGN_MISSIONS["1"];
-  if (!spec) {
-    return { destroy() {} };
+  let knownMissionId: string | null = null;
+  let missionStarted = false;
+  let missionCompleted = false;
+  let activeBeaconId: string | null = null;
+  const discoveredBeacons = new Set<string>();
+  const completedBeacons = new Set<string>();
+
+  function reset(): void {
+    knownMissionId = null;
+    missionStarted = false;
+    missionCompleted = false;
+    activeBeaconId = null;
+    discoveredBeacons.clear();
+    completedBeacons.clear();
   }
 
-  const storageKey = `${STORAGE_PREFIX}${spec.id}`;
-  let persisted = loadProgress(storageKey);
-  const completedBefore = persisted.beaconIndex >= spec.beacons.length;
-  if (completedBefore) {
-    persisted = { beaconIndex: 0, holdAccum: 0 };
-    try {
-      saveProgress(storageKey, JSON.stringify(persisted));
-    } catch {
-      // ignore storage errors
-    }
-  }
-
-  let mission: MissionState = {
-    active: true,
-    missionId: spec.id,
-    beaconIndex: clampBeaconIndex(persisted.beaconIndex, spec.beacons.length),
-    holdAccum: clampHold(persisted.holdAccum, spec.holdSeconds),
-    holdRequired: spec.holdSeconds,
-    beacons: [],
-  };
-
-  let lastWorldKey = "";
-  let lastPersistedJSON = completedBefore ? JSON.stringify(persisted) : "";
-  let lastServerNow: number | null = null;
-
-  state.mission = mission;
-  bus.emit("mission:start");
-  // Prime beacon coordinates immediately using whatever world meta is available.
-  // Subsequent state updates will refine if the world size changes.
-  syncBeacons(state.worldMeta);
-
-  function syncBeacons(meta: WorldMeta | undefined): void {
-    const worldW = resolveWorldValue(meta?.w, spec.defaultWorldSize.w);
-    const worldH = resolveWorldValue(meta?.h, spec.defaultWorldSize.h);
-    const key = `${worldW.toFixed(2)}:${worldH.toFixed(2)}`;
-    if (key === lastWorldKey && mission.beacons.length === spec.beacons.length) {
+  function handleMissionUpdate(): void {
+    const mission = state.mission;
+    if (!mission) {
+      reset();
       return;
     }
-    lastWorldKey = key;
-    mission.beacons = spec.beacons.map((def): BeaconDefinition => ({
-      cx: def.fx * worldW,
-      cy: def.fy * worldH,
-      radius: def.radius,
-    }));
-  }
-
-  function persist(force = false): void {
-    if (!mission.active && mission.beaconIndex >= mission.beacons.length) {
-      // Mission complete, store completion with zero hold.
-      const payload = JSON.stringify({ beaconIndex: mission.beaconIndex, holdAccum: 0 });
-      if (!force && payload === lastPersistedJSON) return;
-      lastPersistedJSON = payload;
-      saveProgress(storageKey, payload);
+    const player = mission.player;
+    if (!player) {
+      missionStarted = false;
+      missionCompleted = false;
+      activeBeaconId = null;
       return;
     }
-    const payload = JSON.stringify({
-      beaconIndex: mission.beaconIndex,
-      holdAccum: clampHold(mission.holdAccum, mission.holdRequired),
-    });
-    if (!force && payload === lastPersistedJSON) return;
-    lastPersistedJSON = payload;
-    saveProgress(storageKey, payload);
-  }
 
-  function computeDt(nowSec: number | undefined | null): number {
-    if (!Number.isFinite(nowSec)) {
-      return 0;
+    if (mission.missionId !== knownMissionId) {
+      knownMissionId = mission.missionId;
+      missionStarted = false;
+      missionCompleted = false;
+      activeBeaconId = null;
+      discoveredBeacons.clear();
+      completedBeacons.clear();
     }
-    if (lastServerNow === null || !Number.isFinite(lastServerNow)) {
-      lastServerNow = nowSec!;
-      return 0;
+
+    if (!missionStarted && mission.status !== "idle") {
+      missionStarted = true;
+      bus.emit("mission:start");
     }
-    const dt = nowSec! - lastServerNow;
-    lastServerNow = nowSec!;
-    if (!Number.isFinite(dt) || dt <= 0) {
-      return 0;
+
+    for (const beacon of mission.beacons) {
+      if (beacon.discovered && !discoveredBeacons.has(beacon.id)) {
+        discoveredBeacons.add(beacon.id);
+        bus.emit("beacon:discovered", { id: beacon.id, ordinal: beacon.ordinal });
+      }
     }
-    return dt;
-  }
 
-  function isInsideBeacon(cx: number, cy: number, radius: number): boolean {
-    const me = state.me;
-    if (!me) return false;
-    const dx = me.x - cx;
-    const dy = me.y - cy;
-    const distSq = dx * dx + dy * dy;
-    return distSq <= radius * radius;
-  }
+    for (const beacon of mission.beacons) {
+      if (beacon.completed && !completedBeacons.has(beacon.id)) {
+        completedBeacons.add(beacon.id);
+        bus.emit("mission:beacon-locked", { index: beacon.ordinal });
+      }
+    }
 
-  function isStalled(): boolean {
-    const heat = state.me?.heat;
-    if (!heat) return false;
-    const now = monotonicNow();
-    return Number.isFinite(heat.stallUntilMs) && now < heat.stallUntilMs;
-  }
-
-  function lockCurrentBeacon(): void {
-    const lockedIndex = mission.beaconIndex;
-    bus.emit("mission:beacon-locked", { index: lockedIndex });
-    mission.beaconIndex = Math.min(mission.beaconIndex + 1, mission.beacons.length);
-    mission.holdAccum = 0;
-    persist(true);
-    if (mission.beaconIndex >= mission.beacons.length) {
-      mission.active = false;
-      persist(true);
+    if (!missionCompleted && mission.status === "completed") {
+      missionCompleted = true;
       bus.emit("mission:completed");
+    } else if (mission.status !== "completed") {
+      missionCompleted = false;
     }
+
+    if (player.activeBeaconId && player.activeBeaconId !== activeBeaconId) {
+      activeBeaconId = player.activeBeaconId;
+      const beacon = mission.beacons.find((b) => b.id === player.activeBeaconId);
+      bus.emit("beacon:activated", {
+        id: player.activeBeaconId,
+        ordinal: beacon?.ordinal ?? player.currentIndex,
+      });
+    } else if (!player.activeBeaconId) {
+      activeBeaconId = null;
+    }
+
+    synchronizeHoldDisplay(player);
+    updateInsideFlag(player);
   }
 
-  function resetHoldIfNeeded(): void {
-    if (mission.holdAccum > 0) {
-      mission.holdAccum = 0;
-      persist();
-    }
+  function handleTick(): void {
+    const mission = state.mission;
+    if (!mission?.player) return;
+    synchronizeHoldDisplay(mission.player);
+    updateInsideFlag(mission.player);
   }
 
-  const unsubscribe = bus.on("state:updated", () => {
-    if (!state.mission || !state.mission.active) {
+  function synchronizeHoldDisplay(player: MissionPlayerState): void {
+    if (!Number.isFinite(player.holdAccum)) {
+      player.holdAccum = 0;
+    }
+    if (!Number.isFinite(player.displayHold)) {
+      player.displayHold = player.holdAccum;
+    }
+    const nowMs = monotonicNow();
+    const previousSync = Number.isFinite(player.lastDisplaySync) ? player.lastDisplaySync : nowMs;
+    const dt = Math.max(0, (nowMs - previousSync) / 1000);
+    player.lastDisplaySync = nowMs;
+
+    const target = clamp(player.holdAccum, 0, Math.max(player.holdRequired, player.holdAccum));
+    const smoothing = 1 - Math.exp(-dt * HOLD_SMOOTH_RATE);
+    if (smoothing > 0) {
+      player.displayHold = player.displayHold + (target - player.displayHold) * smoothing;
+    }
+    if (Math.abs(player.displayHold - target) < HOLD_EPSILON) {
+      player.displayHold = target;
+    }
+    player.displayHold = clamp(player.displayHold, 0, Math.max(player.holdRequired, target));
+  }
+
+  function updateInsideFlag(player: MissionPlayerState): void {
+    const mission = state.mission;
+    if (!mission) {
+      player.insideActiveBeacon = false;
       return;
     }
-
-    mission = state.mission;
-    syncBeacons(state.worldMeta);
-
-    if (mission.beaconIndex >= mission.beacons.length) {
-      mission.active = false;
-      persist(true);
-      bus.emit("mission:completed");
+    if (!player.activeBeaconId || !state.me) {
+      player.insideActiveBeacon = false;
       return;
     }
-
-    const beacon = mission.beacons[mission.beaconIndex];
+    const beacon = mission.beacons.find((b) => b.id === player.activeBeaconId);
     if (!beacon) {
-      mission.active = false;
-      persist(true);
-      bus.emit("mission:completed");
+      player.insideActiveBeacon = false;
       return;
     }
+    const dx = state.me.x - beacon.x;
+    const dy = state.me.y - beacon.y;
+    player.insideActiveBeacon = dx * dx + dy * dy <= beacon.radius * beacon.radius;
+  }
 
-    const dt = computeDt(state.now);
-    if (!state.me) {
-      lastServerNow = state.now;
-      resetHoldIfNeeded();
-      return;
-    }
-
-    if (isInsideBeacon(beacon.cx, beacon.cy, beacon.radius) && !isStalled()) {
-      const nextHold = Math.min(mission.holdRequired, mission.holdAccum + dt);
-      if (Math.abs(nextHold - mission.holdAccum) > HOLD_EPSILON) {
-        mission.holdAccum = nextHold;
-        persist();
-      }
-      if (mission.holdAccum + HOLD_EPSILON >= mission.holdRequired) {
-        lockCurrentBeacon();
-      }
-    } else {
-      resetHoldIfNeeded();
-    }
-  });
+  const unsubMission = bus.on("mission:update", () => handleMissionUpdate());
+  const unsubState = bus.on("state:updated", () => handleTick());
 
   return {
     destroy() {
-      unsubscribe();
+      unsubMission();
+      unsubState();
     },
   };
-}
-
-function resolveWorldValue(value: number | undefined, fallback: number): number {
-  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
-    return value;
-  }
-  return fallback;
-}
-
-function clampBeaconIndex(index: number, total: number): number {
-  if (!Number.isFinite(index)) {
-    return 0;
-  }
-  if (index < 0) return 0;
-  if (index > total) return total;
-  return Math.floor(index);
-}
-
-function clampHold(hold: number, holdRequired: number): number {
-  if (!Number.isFinite(hold) || hold < 0) return 0;
-  if (hold > holdRequired) return holdRequired;
-  return hold;
-}
-
-function loadProgress(storageKey: string): PersistedProgress {
-  try {
-    const raw = window.localStorage.getItem(storageKey);
-    if (!raw) {
-      return { beaconIndex: 0, holdAccum: 0 };
-    }
-    const parsed = JSON.parse(raw) as Partial<PersistedProgress> | null;
-    if (!parsed) {
-      return { beaconIndex: 0, holdAccum: 0 };
-    }
-    return {
-      beaconIndex: clampBeaconIndex(parsed.beaconIndex ?? 0, Number.MAX_SAFE_INTEGER),
-      holdAccum: typeof parsed.holdAccum === "number" ? Math.max(0, parsed.holdAccum) : 0,
-    };
-  } catch {
-    return { beaconIndex: 0, holdAccum: 0 };
-  }
-}
-
-function saveProgress(storageKey: string, payload: string): void {
-  try {
-    window.localStorage.setItem(storageKey, payload);
-  } catch {
-    // Local storage may be unavailable; ignore.
-  }
 }

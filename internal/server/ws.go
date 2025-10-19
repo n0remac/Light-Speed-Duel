@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"sort"
@@ -37,6 +35,10 @@ func sendProtoMessage(conn *websocket.Conn, payload proto.Message) error {
 		envelope.Payload = &pb.WsEnvelope_RoomFull{RoomFull: msg}
 	case *pb.DagListResponse:
 		envelope.Payload = &pb.WsEnvelope_DagListResponse{DagListResponse: msg}
+	case *pb.MissionBeaconSnapshot:
+		envelope.Payload = &pb.WsEnvelope_MissionBeaconSnapshot{MissionBeaconSnapshot: msg}
+	case *pb.MissionBeaconDelta:
+		envelope.Payload = &pb.WsEnvelope_MissionBeaconDelta{MissionBeaconDelta: msg}
 	default:
 		return fmt.Errorf("unknown message type: %T", payload)
 	}
@@ -180,12 +182,17 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 	}
 
 	mode := strings.ToLower(query.Get("mode"))
+	missionKey := ""
 
 	mapW := WorldW
 	mapH := WorldH
 	if mode == "campaign" {
 		mapW = 32000
 		mapH = 18000
+		missionKey = normalizeMissionID(query.Get("mission"))
+		if missionKey == "" {
+			missionKey = normalizeMissionID("1")
+		}
 	} else {
 		if mapWStr := query.Get("mapW"); mapWStr != "" {
 			if parsed, err := fmt.Sscanf(mapWStr, "%f", &mapW); err == nil && parsed == 1 && mapW > 0 {
@@ -241,6 +248,9 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 			room.SetHeatParamsLocked(newParams)
 			log.Printf("room %s heat overrides: marker %.1f warn %.1f overheat %.1f", room.ID, newParams.MarkerSpeed, newParams.WarnAt, newParams.OverheatAt)
 		}
+	}
+	if mode == "campaign" {
+		room.EnsureBeaconDirectorLocked(missionKey)
 	}
 
 	defaultMissileSpeed := ShipMaxSpeed * 0.75
@@ -362,6 +372,8 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 	}()
 
 	go func() {
+		var lastMissionSnapshotVersion uint64
+		var lastMissionFrameVersion uint64
 		for {
 			select {
 			case <-ctx.Done():
@@ -371,16 +383,16 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 				now := room.Now
 				p := room.Players[playerID]
 
-            // Compute per-player missile speed cap from capabilities
-            effMissileMax := MissileMaxSpeed
-            if p != nil && p.Capabilities.MissileSpeedMultiplier > 0 {
-                effMissileMax = MissileMaxSpeed * p.Capabilities.MissileSpeedMultiplier
-            }
-            missileCfg := missileConfigDTO{
-                SpeedMin: MissileMinSpeed,
-                SpeedMax: effMissileMax,
-                AgroMin:  MissileMinAgroRadius,
-            }
+				// Compute per-player missile speed cap from capabilities
+				effMissileMax := MissileMaxSpeed
+				if p != nil && p.Capabilities.MissileSpeedMultiplier > 0 {
+					effMissileMax = MissileMaxSpeed * p.Capabilities.MissileSpeedMultiplier
+				}
+				missileCfg := missileConfigDTO{
+					SpeedMin: MissileMinSpeed,
+					SpeedMax: effMissileMax,
+					AgroMin:  MissileMinAgroRadius,
+				}
 				var missileWaypoints []waypointDTO
 				var missileRoutesDTO []missileRouteDTO
 				var activeRouteID string
@@ -396,27 +408,27 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 				var meTransform *Transform
 
 				if p != nil {
-                // Apply missile heat capacity scaling and speed cap based on capabilities
-                effMissileMax := MissileMaxSpeed
-                if p.Capabilities.MissileSpeedMultiplier > 0 {
-                    effMissileMax = MissileMaxSpeed * p.Capabilities.MissileSpeedMultiplier
-                }
-                cfg := p.MissileConfig
-                // Scale heat capacity thresholds and marker speed
-                if p.Capabilities.MissileHeatCapacity > 0 {
-                    scale := p.Capabilities.MissileHeatCapacity
-                    hp := cfg.HeatParams
-                    if hp.Max <= 0 {
-                        hp = DefaultMissileHeatParams()
-                    }
-                    hp.Max *= scale
-                    hp.WarnAt *= scale
-                    hp.OverheatAt *= scale
-                    hp.MarkerSpeed *= scale
-                    cfg.HeatParams = hp
-                }
-                cfg = SanitizeMissileConfigWithCap(cfg, MissileMinSpeed, effMissileMax)
-                p.MissileConfig = cfg
+					// Apply missile heat capacity scaling and speed cap based on capabilities
+					effMissileMax := MissileMaxSpeed
+					if p.Capabilities.MissileSpeedMultiplier > 0 {
+						effMissileMax = MissileMaxSpeed * p.Capabilities.MissileSpeedMultiplier
+					}
+					cfg := p.MissileConfig
+					// Scale heat capacity thresholds and marker speed
+					if p.Capabilities.MissileHeatCapacity > 0 {
+						scale := p.Capabilities.MissileHeatCapacity
+						hp := cfg.HeatParams
+						if hp.Max <= 0 {
+							hp = DefaultMissileHeatParams()
+						}
+						hp.Max *= scale
+						hp.WarnAt *= scale
+						hp.OverheatAt *= scale
+						hp.MarkerSpeed *= scale
+						cfg.HeatParams = hp
+					}
+					cfg = SanitizeMissileConfigWithCap(cfg, MissileMinSpeed, effMissileMax)
+					p.MissileConfig = cfg
 					p.EnsureMissileRoutes()
 					missileCfg.Speed = cfg.Speed
 					missileCfg.AgroRadius = cfg.AgroRadius
@@ -711,6 +723,23 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 					})
 				}
 
+				var snapshotProto *pb.MissionBeaconSnapshot
+				var deltaProto *pb.MissionBeaconDelta
+				var nextSnapshotVersion uint64
+				var nextDeltaVersion uint64
+				if room.BeaconDirectorLocked() != nil {
+					snapshot, snapVersion := room.MissionSnapshotForBroadcastLocked()
+					if snapVersion > 0 && snapVersion != lastMissionSnapshotVersion {
+						snapshotProto = missionSnapshotToProto(snapshot, room.Now)
+						nextSnapshotVersion = snapVersion
+					}
+					deltas, encounters, frameVersion := room.MissionFrameForBroadcastLocked()
+					if frameVersion > 0 && frameVersion != lastMissionFrameVersion {
+						deltaProto = missionDeltaToProto(deltas, encounters, room.Now)
+						nextDeltaVersion = frameVersion
+					}
+				}
+
 				room.Mu.Unlock()
 
 				msg := stateMsg{
@@ -734,6 +763,20 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 				if err := sendProtoMessage(conn, stateProto); err != nil {
 					log.Printf("send error: %v", err)
 					return
+				}
+				if snapshotProto != nil {
+					if err := sendProtoMessage(conn, snapshotProto); err != nil {
+						log.Printf("send snapshot error: %v", err)
+						return
+					}
+					lastMissionSnapshotVersion = nextSnapshotVersion
+				}
+				if deltaProto != nil {
+					if err := sendProtoMessage(conn, deltaProto); err != nil {
+						log.Printf("send beacon delta error: %v", err)
+						return
+					}
+					lastMissionFrameVersion = nextDeltaVersion
 				}
 			}
 		}
@@ -982,27 +1025,27 @@ func handleLaunchMissile(room *Room, playerID string, msg *pb.LaunchMissile) {
 	defer room.Mu.Unlock()
 
 	if p := room.Players[playerID]; p != nil {
-                // Apply capabilities at launch time too
-                effMissileMax := MissileMaxSpeed
-                if p.Capabilities.MissileSpeedMultiplier > 0 {
-                    effMissileMax = MissileMaxSpeed * p.Capabilities.MissileSpeedMultiplier
-                }
-                cfg := p.MissileConfig
-                // Scale missile heat capacity and marker speed
-                if p.Capabilities.MissileHeatCapacity > 0 {
-                    scale := p.Capabilities.MissileHeatCapacity
-                    hp := cfg.HeatParams
-                    if hp.Max <= 0 {
-                        hp = DefaultMissileHeatParams()
-                    }
-                    hp.Max *= scale
-                    hp.WarnAt *= scale
-                    hp.OverheatAt *= scale
-                    hp.MarkerSpeed *= scale
-                    cfg.HeatParams = hp
-                }
-                cfg = SanitizeMissileConfigWithCap(cfg, MissileMinSpeed, effMissileMax)
-                p.MissileConfig = cfg
+		// Apply capabilities at launch time too
+		effMissileMax := MissileMaxSpeed
+		if p.Capabilities.MissileSpeedMultiplier > 0 {
+			effMissileMax = MissileMaxSpeed * p.Capabilities.MissileSpeedMultiplier
+		}
+		cfg := p.MissileConfig
+		// Scale missile heat capacity and marker speed
+		if p.Capabilities.MissileHeatCapacity > 0 {
+			scale := p.Capabilities.MissileHeatCapacity
+			hp := cfg.HeatParams
+			if hp.Max <= 0 {
+				hp = DefaultMissileHeatParams()
+			}
+			hp.Max *= scale
+			hp.WarnAt *= scale
+			hp.OverheatAt *= scale
+			hp.MarkerSpeed *= scale
+			cfg.HeatParams = hp
+		}
+		cfg = SanitizeMissileConfigWithCap(cfg, MissileMinSpeed, effMissileMax)
+		p.MissileConfig = cfg
 		p.EnsureMissileRoutes()
 		routeID := msg.RouteId
 		if routeID == "" {
@@ -1158,6 +1201,14 @@ func handleDagList(room *Room, playerID string, conn *websocket.Conn) {
 
 // ========== Phase 2: Mission Event Handlers ==========
 
+func normalizeMissionID(raw string) string {
+	trimmed := strings.TrimSpace(strings.ToLower(raw))
+	if trimmed == "" || trimmed == "1" {
+		return "campaign-1"
+	}
+	return trimmed
+}
+
 func handleMissionSpawnWave(room *Room, playerID string, msg *pb.MissionSpawnWave, mode string) {
 	if mode != "campaign" {
 		return
@@ -1171,8 +1222,15 @@ func handleMissionSpawnWave(room *Room, playerID string, msg *pb.MissionSpawnWav
 	room.Mu.Lock()
 	defer room.Mu.Unlock()
 
-	if room.SetMissionWaveSpawnedLocked(waveIndex) {
-		spawnMissionWave(room, waveIndex)
+	director := room.BeaconDirectorLocked()
+	if director == nil {
+		director = room.EnsureBeaconDirectorLocked("campaign-1")
+	}
+	if director != nil {
+		director.TriggerEncounterForWaveLocked(room, waveIndex)
+	} else if room.SetMissionWaveSpawnedLocked(waveIndex) {
+		positions := missionBeaconFallbackPositions(room)
+		room.SpawnMissionWave(waveIndex, positions)
 	}
 	if p := room.Players[playerID]; p != nil {
 		room.HandleMissionStoryEventLocked(p, "mission:beacon-locked", waveIndex)
@@ -1195,117 +1253,6 @@ func handleMissionStoryEvent(room *Room, playerID string, msg *pb.MissionStoryEv
 	}
 }
 
-func spawnMissionWave(room *Room, waveIndex int) {
-	beacons := missionBeaconPositions(room)
-	if len(beacons) < 4 {
-		return
-	}
-	switch waveIndex {
-	case 1:
-		heat := HeatParams{
-			Max:         40,
-			WarnAt:      28,
-			OverheatAt:  40,
-			MarkerSpeed: 60,
-			KUp:         20,
-			KDown:       14,
-			Exp:         HeatExp,
-		}
-		total := 18 + rand.Intn(7) // 18-24
-		points := []Vec2{
-			lerpVecWithVerticalSpread(beacons[0], beacons[1], 0.25, room.WorldHeight, 0.15),
-			lerpVecWithVerticalSpread(beacons[0], beacons[1], 0.5, room.WorldHeight, 0.15),
-			lerpVecWithVerticalSpread(beacons[0], beacons[1], 0.75, room.WorldHeight, 0.15),
-		}
-		radius := math.Max(room.WorldWidth*0.025, 600)
-		distributed := total
-		for idx, center := range points {
-			if distributed <= 0 {
-				break
-			}
-			remainingSlots := len(points) - idx
-			group := distributed / remainingSlots
-			if group <= 0 {
-				group = distributed
-			}
-			room.SpawnMinefield(int(center.X), int(center.Y), group, radius, heat, 160)
-			distributed -= group
-		}
-	case 2:
-		minesHeat := HeatParams{
-			Max:         50,
-			WarnAt:      35,
-			OverheatAt:  50,
-			MarkerSpeed: 100,
-			KUp:         24,
-			KDown:       12,
-			Exp:         HeatExp,
-		}
-		total := 28 + rand.Intn(9) // 28-36
-		mineCount := int(math.Round(float64(total) * 0.65))
-		if mineCount < 12 {
-			mineCount = 12
-		}
-		if mineCount > total {
-			mineCount = total
-		}
-		patrollerCount := total - mineCount
-		points := []Vec2{
-			lerpVecWithVerticalSpread(beacons[1], beacons[2], 0.2, room.WorldHeight, 0.15),
-			lerpVecWithVerticalSpread(beacons[1], beacons[2], 0.45, room.WorldHeight, 0.15),
-			lerpVecWithVerticalSpread(beacons[1], beacons[2], 0.7, room.WorldHeight, 0.15),
-		}
-		radius := math.Max(room.WorldWidth*0.02, 500)
-		distributed := mineCount
-		for idx, center := range points {
-			if distributed <= 0 {
-				break
-			}
-			remainingSlots := len(points) - idx
-			group := distributed / remainingSlots
-			if group <= 0 {
-				group = distributed
-			}
-			room.SpawnMinefield(int(center.X), int(center.Y), group, radius, minesHeat, 200)
-			distributed -= group
-		}
-		if patrollerCount > 0 {
-			path := []Vec2{
-				lerpVecWithVerticalSpread(beacons[1], beacons[2], 0.15, room.WorldHeight, 0.15),
-				lerpVecWithVerticalSpread(beacons[1], beacons[2], 0.5, room.WorldHeight, 0.15),
-				lerpVecWithVerticalSpread(beacons[1], beacons[2], 0.85, room.WorldHeight, 0.15),
-			}
-			room.SpawnPatrollers(path, patrollerCount, [2]float64{20, 40}, 320, minesHeat, 200)
-		}
-	case 3:
-		seekersHeat := HeatParams{
-			Max:         68,
-			WarnAt:      46,
-			OverheatAt:  68,
-			MarkerSpeed: 120,
-			KUp:         20,
-			KDown:       15,
-			Exp:         HeatExp,
-		}
-		seekers := 6 + rand.Intn(5) // 6-10
-		center := lerpVecWithVerticalSpread(beacons[2], beacons[3], 0.55, room.WorldHeight, 0.15)
-		ring := math.Max(room.WorldWidth*0.035, 900)
-		room.SpawnSeekers(int(center.X), int(center.Y), seekers, ring, [2]float64{60, 100}, [2]float64{600, 900}, seekersHeat, 260)
-
-		supportHeat := HeatParams{
-			Max:         55,
-			WarnAt:      38,
-			OverheatAt:  55,
-			MarkerSpeed: 90,
-			KUp:         22,
-			KDown:       13,
-			Exp:         HeatExp,
-		}
-		mines := 12 + rand.Intn(5)
-		room.SpawnMinefield(int(center.X), int(center.Y), mines, ring*0.8, supportHeat, 220)
-	}
-}
-
 func copyStoryFlags(src map[string]bool) map[string]bool {
 	if len(src) == 0 {
 		return nil
@@ -1317,40 +1264,139 @@ func copyStoryFlags(src map[string]bool) map[string]bool {
 	return dst
 }
 
-func missionBeaconPositions(room *Room) []Vec2 {
+func missionBeaconFallbackPositions(room *Room) []Vec2 {
+	if room == nil {
+		return nil
+	}
 	w := room.WorldWidth
 	h := room.WorldHeight
-	// Keep horizontal spacing even, but add vertical variance
-	// Y values now range from 0.30 to 0.70 instead of 0.44 to 0.55
 	return []Vec2{
-		{X: 0.15 * w, Y: (0.50 + (rand.Float64()-0.5)*0.3) * h}, // Y: 0.35 to 0.65
-		{X: 0.40 * w, Y: (0.50 + (rand.Float64()-0.5)*0.3) * h}, // Y: 0.35 to 0.65
-		{X: 0.65 * w, Y: (0.50 + (rand.Float64()-0.5)*0.3) * h}, // Y: 0.35 to 0.65
-		{X: 0.85 * w, Y: (0.50 + (rand.Float64()-0.5)*0.3) * h}, // Y: 0.35 to 0.65
+		{X: 0.15 * w, Y: 0.55 * h},
+		{X: 0.40 * w, Y: 0.50 * h},
+		{X: 0.65 * w, Y: 0.47 * h},
+		{X: 0.85 * w, Y: 0.44 * h},
 	}
 }
 
-func lerpVec(a, b Vec2, t float64) Vec2 {
-	return Vec2{
-		X: a.X + (b.X-a.X)*t,
-		Y: a.Y + (b.Y-a.Y)*t,
+func missionSnapshotToProto(snapshot BeaconSnapshot, now float64) *pb.MissionBeaconSnapshot {
+	beacons := make([]*pb.MissionBeaconDefinition, len(snapshot.Beacons))
+	for i, b := range snapshot.Beacons {
+		beacons[i] = &pb.MissionBeaconDefinition{
+			Id:      b.ID,
+			Ordinal: int32(b.Ordinal),
+			X:       b.X,
+			Y:       b.Y,
+			Radius:  b.Radius,
+			Seed:    b.Seed,
+		}
+	}
+	players := make([]*pb.MissionBeaconPlayer, len(snapshot.Players))
+	for i, p := range snapshot.Players {
+		cooldowns := make(map[string]float64, len(p.Cooldowns))
+		for k, v := range p.Cooldowns {
+			cooldowns[k] = v
+		}
+		players[i] = &pb.MissionBeaconPlayer{
+			PlayerId:     p.PlayerID,
+			CurrentIndex: int32(p.CurrentIndex),
+			HoldAccum:    p.HoldAccum,
+			HoldRequired: p.HoldRequired,
+			ActiveBeacon: p.ActiveBeacon,
+			Discovered:   append([]string(nil), p.Discovered...),
+			Completed:    append([]string(nil), p.Completed...),
+			Cooldowns:    cooldowns,
+		}
+	}
+	encounters := make([]*pb.MissionBeaconEncounter, len(snapshot.Encounters))
+	for i, enc := range snapshot.Encounters {
+		encounters[i] = &pb.MissionBeaconEncounter{
+			EncounterId: enc.ID,
+			BeaconId:    enc.BeaconID,
+			WaveIndex:   int32(enc.WaveIndex),
+			SpawnedAt:   enc.SpawnedAt,
+			ExpiresAt:   enc.ExpiresAt,
+		}
+	}
+	serverTime := snapshot.ServerTime
+	if serverTime == 0 {
+		serverTime = now
+	}
+	return &pb.MissionBeaconSnapshot{
+		MissionId:  snapshot.MissionID,
+		LayoutSeed: snapshot.LayoutSeed,
+		ServerTime: serverTime,
+		Beacons:    beacons,
+		Players:    players,
+		Encounters: encounters,
 	}
 }
 
-// lerpVecWithVerticalSpread interpolates between two points and adds vertical variance
-// spreadFactor controls how much vertical spread to add (0.0 = no spread, 1.0 = full world height variance)
-func lerpVecWithVerticalSpread(a, b Vec2, t float64, worldHeight float64, spreadFactor float64) Vec2 {
-	base := lerpVec(a, b, t)
-	// Add vertical offset proportional to spreadFactor
-	// Range is centered around base.Y with variance of ±spreadFactor * worldHeight
-	verticalVariance := (rand.Float64() - 0.5) * 2.0 * spreadFactor * worldHeight
-	base.Y += verticalVariance
-	// Clamp to world bounds
-	if base.Y < 0 {
-		base.Y = 0
+func missionDeltaToProto(deltas []BeaconDelta, encounters []EncounterDelta, now float64) *pb.MissionBeaconDelta {
+	if len(deltas) == 0 && len(encounters) == 0 {
+		return nil
 	}
-	if base.Y > worldHeight {
-		base.Y = worldHeight
+	msg := &pb.MissionBeaconDelta{}
+	for _, d := range deltas {
+		ts := d.Timestamp
+		if ts == 0 {
+			ts = now
+		}
+		msg.Players = append(msg.Players, &pb.MissionBeaconPlayerDelta{
+			Type:          missionDeltaTypeToProto(d.Type),
+			PlayerId:      d.PlayerID,
+			BeaconId:      d.BeaconID,
+			Ordinal:       int32(d.Ordinal),
+			HoldAccum:     d.HoldAccum,
+			HoldRequired:  d.HoldRequired,
+			CooldownUntil: d.CooldownUntil,
+			ServerTime:    ts,
+		})
 	}
-	return base
+	for _, enc := range encounters {
+		evt := &pb.MissionBeaconEncounterEvent{
+			Type:        missionEncounterTypeToProto(enc.Type),
+			EncounterId: enc.Encounter.ID,
+			BeaconId:    enc.Encounter.BeaconID,
+			WaveIndex:   int32(enc.Encounter.WaveIndex),
+			SpawnedAt:   enc.Encounter.SpawnedAt,
+			ExpiresAt:   enc.Encounter.ExpiresAt,
+			Reason:      enc.Reason,
+		}
+		msg.Encounters = append(msg.Encounters, evt)
+	}
+	return msg
+}
+
+func missionDeltaTypeToProto(t BeaconDeltaType) pb.MissionBeaconDeltaType {
+	switch t {
+	case BeaconDeltaDiscovered:
+		return pb.MissionBeaconDeltaType_MISSION_BEACON_DELTA_DISCOVERED
+	case BeaconDeltaHoldProgress:
+		return pb.MissionBeaconDeltaType_MISSION_BEACON_DELTA_HOLD_PROGRESS
+	case BeaconDeltaHoldReset:
+		return pb.MissionBeaconDeltaType_MISSION_BEACON_DELTA_HOLD_RESET
+	case BeaconDeltaBeaconLocked:
+		return pb.MissionBeaconDeltaType_MISSION_BEACON_DELTA_LOCKED
+	case BeaconDeltaCooldownSet:
+		return pb.MissionBeaconDeltaType_MISSION_BEACON_DELTA_COOLDOWN
+	case BeaconDeltaMissionCompleted:
+		return pb.MissionBeaconDeltaType_MISSION_BEACON_DELTA_MISSION_COMPLETED
+	default:
+		return pb.MissionBeaconDeltaType_MISSION_BEACON_DELTA_UNSPECIFIED
+	}
+}
+
+func missionEncounterTypeToProto(t EncounterDeltaType) pb.MissionEncounterEventType {
+	switch t {
+	case EncounterDeltaSpawned:
+		return pb.MissionEncounterEventType_MISSION_ENCOUNTER_EVENT_SPAWNED
+	case EncounterDeltaCleared:
+		return pb.MissionEncounterEventType_MISSION_ENCOUNTER_EVENT_CLEARED
+	case EncounterDeltaTimeout:
+		return pb.MissionEncounterEventType_MISSION_ENCOUNTER_EVENT_TIMEOUT
+	case EncounterDeltaPurged:
+		return pb.MissionEncounterEventType_MISSION_ENCOUNTER_EVENT_PURGED
+	default:
+		return pb.MissionEncounterEventType_MISSION_ENCOUNTER_EVENT_UNSPECIFIED
+	}
 }

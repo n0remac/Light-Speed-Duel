@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file proto/ws_messages.proto.
  */
 export const file_proto_ws_messages: GenFile = /*@__PURE__*/
-  fileDesc("Chdwcm90by93c19tZXNzYWdlcy5wcm90bxIRbGlnaHRzcGVlZGR1ZWwud3MiwA0KCldzRW52ZWxvcGUSNgoMc3RhdGVfdXBkYXRlGAEgASgLMh4ubGlnaHRzcGVlZGR1ZWwud3MuU3RhdGVVcGRhdGVIABI1Cglyb29tX2Z1bGwYAiABKAsyIC5saWdodHNwZWVkZHVlbC53cy5Sb29tRnVsbEVycm9ySAASLQoEam9pbhgKIAEoCzIdLmxpZ2h0c3BlZWRkdWVsLndzLkNsaWVudEpvaW5IABIwCglzcGF3bl9ib3QYCyABKAsyGy5saWdodHNwZWVkZHVlbC53cy5TcGF3bkJvdEgAEjYKDGFkZF93YXlwb2ludBgMIAEoCzIeLmxpZ2h0c3BlZWRkdWVsLndzLkFkZFdheXBvaW50SAASPAoPdXBkYXRlX3dheXBvaW50GA0gASgLMiEubGlnaHRzcGVlZGR1ZWwud3MuVXBkYXRlV2F5cG9pbnRIABI4Cg1tb3ZlX3dheXBvaW50GA4gASgLMh8ubGlnaHRzcGVlZGR1ZWwud3MuTW92ZVdheXBvaW50SAASPAoPZGVsZXRlX3dheXBvaW50GA8gASgLMiEubGlnaHRzcGVlZGR1ZWwud3MuRGVsZXRlV2F5cG9pbnRIABI8Cg9jbGVhcl93YXlwb2ludHMYECABKAsyIS5saWdodHNwZWVkZHVlbC53cy5DbGVhcldheXBvaW50c0gAEkAKEWNvbmZpZ3VyZV9taXNzaWxlGBEgASgLMiMubGlnaHRzcGVlZGR1ZWwud3MuQ29uZmlndXJlTWlzc2lsZUgAEkUKFGFkZF9taXNzaWxlX3dheXBvaW50GBIgASgLMiUubGlnaHRzcGVlZGR1ZWwud3MuQWRkTWlzc2lsZVdheXBvaW50SAASVgoddXBkYXRlX21pc3NpbGVfd2F5cG9pbnRfc3BlZWQYEyABKAsyLS5saWdodHNwZWVkZHVlbC53cy5VcGRhdGVNaXNzaWxlV2F5cG9pbnRTcGVlZEgAEkcKFW1vdmVfbWlzc2lsZV93YXlwb2ludBgUIAEoCzImLmxpZ2h0c3BlZWRkdWVsLndzLk1vdmVNaXNzaWxlV2F5cG9pbnRIABJLChdkZWxldGVfbWlzc2lsZV93YXlwb2ludBgVIAEoCzIoLmxpZ2h0c3BlZWRkdWVsLndzLkRlbGV0ZU1pc3NpbGVXYXlwb2ludEgAEkMKE2NsZWFyX21pc3NpbGVfcm91dGUYFiABKAsyJC5saWdodHNwZWVkZHVlbC53cy5DbGVhck1pc3NpbGVSb3V0ZUgAEj8KEWFkZF9taXNzaWxlX3JvdXRlGBcgASgLMiIubGlnaHRzcGVlZGR1ZWwud3MuQWRkTWlzc2lsZVJvdXRlSAASRQoUcmVuYW1lX21pc3NpbGVfcm91dGUYGCABKAsyJS5saWdodHNwZWVkZHVlbC53cy5SZW5hbWVNaXNzaWxlUm91dGVIABJFChRkZWxldGVfbWlzc2lsZV9yb3V0ZRgZIAEoCzIlLmxpZ2h0c3BlZWRkdWVsLndzLkRlbGV0ZU1pc3NpbGVSb3V0ZUgAEkwKGHNldF9hY3RpdmVfbWlzc2lsZV9yb3V0ZRgaIAEoCzIoLmxpZ2h0c3BlZWRkdWVsLndzLlNldEFjdGl2ZU1pc3NpbGVSb3V0ZUgAEjoKDmxhdW5jaF9taXNzaWxlGBsgASgLMiAubGlnaHRzcGVlZGR1ZWwud3MuTGF1bmNoTWlzc2lsZUgAEjAKCWRhZ19zdGFydBgeIAEoCzIbLmxpZ2h0c3BlZWRkdWVsLndzLkRhZ1N0YXJ0SAASMgoKZGFnX2NhbmNlbBgfIAEoCzIcLmxpZ2h0c3BlZWRkdWVsLndzLkRhZ0NhbmNlbEgAEjcKDWRhZ19zdG9yeV9hY2sYICABKAsyHi5saWdodHNwZWVkZHVlbC53cy5EYWdTdG9yeUFja0gAEi4KCGRhZ19saXN0GCEgASgLMhoubGlnaHRzcGVlZGR1ZWwud3MuRGFnTGlzdEgAEkEKEm1pc3Npb25fc3Bhd25fd2F2ZRgoIAEoCzIjLmxpZ2h0c3BlZWRkdWVsLndzLk1pc3Npb25TcGF3bldhdmVIABJDChNtaXNzaW9uX3N0b3J5X2V2ZW50GCkgASgLMiQubGlnaHRzcGVlZGR1ZWwud3MuTWlzc2lvblN0b3J5RXZlbnRIABI/ChFkYWdfbGlzdF9yZXNwb25zZRgyIAEoCzIiLmxpZ2h0c3BlZWRkdWVsLndzLkRhZ0xpc3RSZXNwb25zZUgAQgkKB3BheWxvYWQiswUKC1N0YXRlVXBkYXRlEgsKA25vdxgBIAEoARIkCgJtZRgCIAEoCzIYLmxpZ2h0c3BlZWRkdWVsLndzLkdob3N0EigKBmdob3N0cxgDIAMoCzIYLmxpZ2h0c3BlZWRkdWVsLndzLkdob3N0EikKBG1ldGEYBCABKAsyGy5saWdodHNwZWVkZHVlbC53cy5Sb29tTWV0YRIsCghtaXNzaWxlcxgFIAMoCzIaLmxpZ2h0c3BlZWRkdWVsLndzLk1pc3NpbGUSOAoObWlzc2lsZV9jb25maWcYBiABKAsyIC5saWdodHNwZWVkZHVlbC53cy5NaXNzaWxlQ29uZmlnEjYKEW1pc3NpbGVfd2F5cG9pbnRzGAcgAygLMhsubGlnaHRzcGVlZGR1ZWwud3MuV2F5cG9pbnQSNwoObWlzc2lsZV9yb3V0ZXMYCCADKAsyHy5saWdodHNwZWVkZHVlbC53cy5NaXNzaWxlUm91dGUSHAoUYWN0aXZlX21pc3NpbGVfcm91dGUYCSABKAkSGgoSbmV4dF9taXNzaWxlX3JlYWR5GAogASgBEi0KA2RhZxgLIAEoCzIbLmxpZ2h0c3BlZWRkdWVsLndzLkRhZ1N0YXRlSACIAQESNAoJaW52ZW50b3J5GAwgASgLMhwubGlnaHRzcGVlZGR1ZWwud3MuSW52ZW50b3J5SAGIAQESMQoFc3RvcnkYDSABKAsyHS5saWdodHNwZWVkZHVlbC53cy5TdG9yeVN0YXRlSAKIAQESQAoMY2FwYWJpbGl0aWVzGA4gASgLMiUubGlnaHRzcGVlZGR1ZWwud3MuUGxheWVyQ2FwYWJpbGl0aWVzSAOIAQFCBgoEX2RhZ0IMCgpfaW52ZW50b3J5QggKBl9zdG9yeUIPCg1fY2FwYWJpbGl0aWVzIiAKDVJvb21GdWxsRXJyb3ISDwoHbWVzc2FnZRgBIAEoCSJGCgpDbGllbnRKb2luEgwKBG5hbWUYASABKAkSDAoEcm9vbRgCIAEoCRINCgVtYXBfdxgDIAEoARINCgVtYXBfaBgEIAEoASIKCghTcGF3bkJvdCIyCgtBZGRXYXlwb2ludBIJCgF4GAEgASgBEgkKAXkYAiABKAESDQoFc3BlZWQYAyABKAEiLgoOVXBkYXRlV2F5cG9pbnQSDQoFaW5kZXgYASABKAUSDQoFc3BlZWQYAiABKAEiMwoMTW92ZVdheXBv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a2VyX3NwZWVkGAQgASgBEgwKBGtfdXAYBSABKAESDgoGa19kb3duGAYgASgBEgsKA2V4cBgHIAEoASJ3Cg1VcGdyYWRlRWZmZWN0EjIKBHR5cGUYASABKA4yJC5saWdodHNwZWVkZHVlbC53cy5VcGdyYWRlRWZmZWN0VHlwZRIUCgptdWx0aXBsaWVyGAIgASgBSAASEwoJdW5sb2NrX2lkGAMgASgJSABCBwoFdmFsdWUieQoSUGxheWVyQ2FwYWJpbGl0aWVzEhgKEHNwZWVkX211bHRpcGxpZXIYASABKAESGQoRdW5sb2NrZWRfbWlzc2lsZXMYAiADKAkSFQoNaGVhdF9jYXBhY2l0eRgDIAEoARIXCg9oZWF0X2VmZmljaWVuY3kYBCABKAEi9AEKB0RhZ05vZGUSCgoCaWQYASABKAkSLAoEa2luZBgCIAEoDjIeLmxpZ2h0c3BlZWRkdWVsLndzLkRhZ05vZGVLaW5kEg0KBWxhYmVsGAMgASgJEjAKBnN0YXR1cxgEIAEoDjIgLmxpZ2h0c3BlZWRkdWVsLndzLkRhZ05vZGVTdGF0dXMSEwoLcmVtYWluaW5nX3MYBSABKAESEgoKZHVyYXRpb25fcxgGIAEoARISCgpyZXBlYXRhYmxlGAcgASgIEjEKB2VmZmVjdHMYCCADKAsyIC5saWdodHNwZWVkZHVlbC53cy5VcGdyYWRlRWZmZWN0IjUKCERhZ1N0YXRlEikKBW5vZGVzGAEgAygLMhoubGlnaHRzcGVlZGR1ZWwud3MuRGFnTm9kZSIbCghEYWdTdGFydBIPCgdub2RlX2lkGAEgASgJIhwKCURhZ0NhbmNlbBIPCgdub2RlX2lkGAEgASgJIjEKC0RhZ1N0b3J5QWNrEg8KB25vZGVfaWQYASABKAkSEQoJY2hvaWNlX2lkGAIgASgJIgkKB0RhZ0xpc3QiOwoPRGFnTGlzdFJlc3BvbnNlEigKA2RhZxgBIAEoCzIbLmxpZ2h0c3BlZWRkdWVsLndzLkRhZ1N0YXRlIloKDUludmVudG9yeUl0ZW0SDAoEdHlwZRgBIAEoCRISCgp2YXJpYW50X2lkGAIgASgJEhUKDWhlYXRfY2FwYWNpdHkYAyABKAESEAoIcXVhbnRpdHkYBCABKAUiPAoJSW52ZW50b3J5Ei8KBWl0ZW1zGAEgAygLMiAubGlnaHRzcGVlZGR1ZWwud3MuSW52ZW50b3J5SXRlbSIvChNTdG9yeURpYWxvZ3VlQ2hvaWNlEgoKAmlkGAEgASgJEgwKBHRleHQYAiABKAkiLwoQU3RvcnlUdXRvcmlhbFRpcBINCgV0aXRsZRgBIAEoCRIMCgR0ZXh0GAIgASgJIoACCg1TdG9yeURpYWxvZ3VlEg8KB3NwZWFrZXIYASABKAkSDAoEdGV4dBgCIAEoCRIuCgZpbnRlbnQYAyABKA4yHi5saWdodHNwZWVkZHVlbC53cy5TdG9yeUludGVudBIWCg5jb250aW51ZV9sYWJlbBgEIAEoCRI3CgdjaG9pY2VzGAUgAygLMiYubGlnaHRzcGVlZGR1ZWwud3MuU3RvcnlEaWFsb2d1ZUNob2ljZRI+Cgx0dXRvcmlhbF90aXAYBiABKAsyIy5saWdodHNwZWVkZHVlbC53cy5TdG9yeVR1dG9yaWFsVGlwSACIAQFCDwoNX3R1dG9yaWFsX3RpcCJECgpTdG9yeUV2ZW50EhIKCmNoYXB0ZXJfaWQYASABKAkSDwoHbm9kZV9pZBgCIAEoCRIRCgl0aW1lc3RhbXAYAyABKAEilwIKClN0b3J5U3RhdGUSEwoLYWN0aXZlX25vZGUYASABKAkSNwoIZGlhbG9ndWUYAiABKAsyIC5saWdodHNwZWVkZHVlbC53cy5TdG9yeURpYWxvZ3VlSACIAQESEQoJYXZhaWxhYmxlGAMgAygJEjcKBWZsYWdzGAQgAygLMigubGlnaHRzcGVlZGR1ZWwud3MuU3RvcnlTdGF0ZS5GbGFnc0VudHJ5EjQKDXJlY2VudF9ldmVudHMYBSADKAsyHS5saWdodHNwZWVkZHVlbC53cy5TdG9yeUV2ZW50GiwKCkZsYWdzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgIOgI4AUILCglfZGlhbG9ndWUiJgoQTWlzc2lvblNwYXduV2F2ZRISCgp3YXZlX2luZGV4GAEgASgFIjIKEU1pc3Npb25TdG9yeUV2ZW50Eg0KBWV2ZW50GAEgASgJEg4KBmJlYWNvbhgCIAEoBSqrAQoNRGFnTm9kZVN0YXR1cxIfChtEQUdfTk9ERV9TVEFUVVNfVU5TUEVDSUZJRUQQABIaChZEQUdfTk9ERV9TVEFUVVNfTE9DS0VEEAESHQoZREFHX05PREVfU1RBVFVTX0FWQUlMQUJMRRACEh8KG0RBR19OT0RFX1NUQVRVU19JTl9QUk9HUkVTUxADEh0KGURBR19OT0RFX1NUQVRVU19DT01QTEVURUQQBCqRAQoLRGFnTm9kZUtpbmQSHQoZREFHX05PREVfS0lORF9VTlNQRUNJRklFRBAAEhkKFURBR19OT0RFX0tJTkRfRkFDVE9SWRABEhYKEkRBR19OT0RFX0tJTkRfVU5JVBACEhcKE0RBR19OT0RFX0tJTkRfU1RPUlkQAxIXChNEQUdfTk9ERV9LSU5EX0NSQUZUEAQq2gEKEVVwZ3JhZGVFZmZlY3RUeXBlEiMKH1VQR1JBREVfRUZGRUNUX1RZUEVfVU5TUEVDSUZJRUQQABIoCiRVUEdSQURFX0VGRkVDVF9UWVBFX1NQRUVEX01VTFRJUExJRVIQARImCiJVUEdSQURFX0VGRkVDVF9UWVBFX01JU1NJTEVfVU5MT0NLEAISJQohVVBHUkFERV9FRkZFQ1RfVFlQRV9IRUFUX0NBUEFDSVRZEAMSJwojVVBHUkFERV9FRkZFQ1RfVFlQRV9IRUFUX0VGRklDSUVOQ1kQBCpcCgtTdG9yeUludGVudBIcChhTVE9SWV9JTlRFTlRfVU5TUEVDSUZJRUQQABIYChRTVE9SWV9JTlRFTlRfRkFDVE9SWRABEhUKEVNUT1JZX0lOVEVOVF9VTklUEAJCIlogTGlnaHRTcGVlZER1ZWwvaW50ZXJuYWwvcHJvdG8vd3NiBnByb3RvMw");
+  fileDesc("Chdwcm90by93c19tZXNzYWdlcy5wcm90bxIRbGlnaHRzcGVlZGR1ZWwud3Mi1A4KCldzRW52ZWxvcGUSNgoMc3RhdGVfdXBkYXRlGAEgASgLMh4ubGlnaHRzcGVlZGR1ZWwud3MuU3RhdGVVcGRhdGVIABI1Cglyb29tX2Z1bGwYAiABKAsyIC5saWdodHNwZWVkZHVlbC53cy5Sb29tRnVsbEVycm9ySAASLQoEam9pbhgKIAEoCzIdLmxpZ2h0c3BlZWRkdWVsLndzLkNsaWVudEpvaW5IABIwCglzcGF3bl9ib3QYCyABKAsyGy5saWdodHNwZWVkZHVlbC53cy5TcGF3bkJvdEgAEjYKDGFkZF93YXlwb2ludBgMIAEoCzIeLmxpZ2h0c3BlZWRkdWVsLndzLkFkZFdheXBvaW50SAASPAoPdXBkYXRlX3dheXBvaW50GA0gASgLMiEubGlnaHRzcGVlZGR1ZWwud3MuVXBkYXRlV2F5cG9pbnRIABI4Cg1tb3ZlX3dheXBvaW50GA4gASgLMh8ubGlnaHRzcGVlZGR1ZWwud3MuTW92ZVdheXBvaW50SAASPAoPZGVsZXRlX3dheXBvaW50GA8gASgLMiEubGlnaHRzcGVlZGR1ZWwud3MuRGVsZXRlV2F5cG9pbnRIABI8Cg9jbGVhcl93YXlwb2ludHMYECABKAsyIS5saWdodHNwZWVkZHVlbC53cy5DbGVhcldheXBvaW50c0gAEkAKEWNvbmZpZ3VyZV9taXNzaWxlGBEgASgLMiMubGlnaHRzcGVlZGR1ZWwud3MuQ29uZmlndXJlTWlzc2lsZUgAEkUKFGFkZF9taXNzaWxlX3dheXBvaW50GBIgASgLMiUubGlnaHRzcGVlZGR1ZWwud3MuQWRkTWlzc2lsZVdheXBvaW50SAASVgoddXBkYXRlX21pc3NpbGVfd2F5cG9pbnRfc3BlZWQYEyABKAsyLS5saWdodHNwZWVkZHVlbC53cy5VcGRhdGVNaXNzaWxlV2F5cG9pbnRTcGVlZEgAEkcKFW1vdmVfbWlzc2lsZV93YXlwb2ludBgUIAEoCzImLmxpZ2h0c3BlZWRkdWVsLndzLk1vdmVNaXNzaWxlV2F5cG9pbnRIABJLChdkZWxldGVfbWlzc2lsZV93YXlwb2ludBgVIAEoCzIoLmxpZ2h0c3BlZWRkdWVsLndzLkRlbGV0ZU1pc3NpbGVXYXlwb2ludEgAEkMKE2NsZWFyX21pc3NpbGVfcm91dGUYFiABKAsyJC5saWdodHNwZWVkZHVlbC53cy5DbGVhck1pc3NpbGVSb3V0ZUgAEj8KEWFkZF9taXNzaWxlX3JvdXRlGBcgASgLMiIubGlnaHRzcGVlZGR1ZWwud3MuQWRkTWlzc2lsZVJvdXRlSAASRQoUcmVuYW1lX21pc3NpbGVfcm91dGUYGCABKAsyJS5saWdodHNwZWVkZHVlbC53cy5SZW5hbWVNaXNzaWxlUm91dGVIABJFChRkZWxldGVfbWlzc2lsZV9yb3V0ZRgZIAEoCzIlLmxpZ2h0c3BlZWRkdWVsLndzLkRlbGV0ZU1pc3NpbGVSb3V0ZUgAEkwKGHNldF9hY3RpdmVfbWlzc2lsZV9yb3V0ZRgaIAEoCzIoLmxpZ2h0c3BlZWRkdWVsLndzLlNldEFjdGl2ZU1pc3NpbGVSb3V0ZUgAEjoKDmxhdW5jaF9taXNzaWxlGBsgASgLMiAubGlnaHRzcGVlZGR1ZWwud3MuTGF1bmNoTWlzc2lsZUgAEjAKCWRhZ19zdGFydBgeIAEoCzIbLmxpZ2h0c3BlZWRkdWVsLndzLkRhZ1N0YXJ0SAASMgoKZGFnX2NhbmNlbBgfIAEoCzIcLmxpZ2h0c3BlZWRkdWVsLndzLkRhZ0NhbmNlbEgAEjcKDWRhZ19zdG9yeV9hY2sYICABKAsyHi5saWdodHNwZWVkZHVlbC53cy5EYWdTdG9yeUFja0gAEi4KCGRhZ19saXN0GCEgASgLMhoubGlnaHRzcGVlZGR1ZWwud3MuRGFnTGlzdEgAEkEKEm1pc3Npb25fc3Bhd25fd2F2ZRgoIAEoCzIjLmxpZ2h0c3BlZWRkdWVsLndzLk1pc3Npb25TcGF3bldhdmVIABJDChNtaXNzaW9uX3N0b3J5X2V2ZW50GCkgASgLMiQubGlnaHRzcGVlZGR1ZWwud3MuTWlzc2lvblN0b3J5RXZlbnRIABI/ChFkYWdfbGlzdF9yZXNwb25zZRgyIAEoCzIiLmxpZ2h0c3BlZWRkdWVsLndzLkRhZ0xpc3RSZXNwb25zZUgAEksKF21pc3Npb25fYmVhY29uX3NuYXBzaG90GDwgASgLMigubGlnaHRzcGVlZGR1ZWwud3MuTWlzc2lvbkJlYWNvblNuYXBzaG90SAASRQoUbWlzc2lvbl9iZWFjb25fZGVsdGEYPSABKAsyJS5saWdodHNwZWVkZHVlbC53cy5NaXNzaW9uQmVhY29uRGVsdGFIAEIJCgdwYXlsb2FkIrMFCgtTdGF0ZVVwZGF0ZRILCgNub3cYASABKAESJAoCbWUYAiABKAsyGC5saWdodHNwZWVkZHVlbC53cy5HaG9zdBIoCgZnaG9zdHMYAyADKAsyGC5saWdodHNwZWVkZHVlbC53cy5HaG9zdBIpCgRtZXRhGAQgASgLMhsubGlnaHRzcGVlZGR1ZWwud3MuUm9vbU1ldGESLAoIbWlzc2lsZXMYBSADKAsyGi5saWdodHNwZWVkZHVlbC53cy5NaXNzaWxlEjgKDm1pc3NpbGVfY29uZmlnGAYgASgLMiAubGlnaHRzcGVlZGR1ZWwud3MuTWlzc2lsZUNvbmZpZxI2ChFtaXNzaWxlX3dheXBvaW50cxgHIAMoCzIbLmxpZ2h0c3BlZWRkdWVsLndzLldheXBvaW50EjcKDm1pc3NpbGVfcm91dGVzGAggAygLMh8ubGlnaHRzcGVlZGR1ZWwud3MuTWlzc2lsZVJvdXRlEhwKFGFjdGl2ZV9taXNzaWxlX3JvdXRlGAkgASgJEhoKEm5leHRfbWlzc2lsZV9yZWFkeRgKIAEoARItCgNkYWcYCyABKAsyGy5saWdodHNwZWVkZHVlbC53cy5EYWdTdGF0ZUgAiAEBEjQKCWludmVudG9yeRgMIAEoCzIcLmxpZ2h0c3BlZWRkdWVsLndzLkludmVudG9yeUgBiAEBEjEKBXN0b3J5GA0gASgLMh0ubGlnaHRzcGVlZGR1ZWwud3MuU3RvcnlTdGF0ZUgCiAEBEkAKDGNhcGFiaWxpdGllcxgOIAEoCzIlLmxpZ2h0c3BlZWRkdWVsLndzLlBsYXllckNhcGFiaWxpdGllc0gDiAEBQgYKBF9kYWdCDAoKX2ludmVudG9yeUIICgZfc3RvcnlCDwoNX2NhcGFiaWxpdGllcyIgCg1Sb29tRnVsbEVycm9yEg8KB21lc3NhZ2UYASABKAkiRgoKQ2xpZW50Sm9pbhIMCgRuYW1lGAEgASgJEgwKBHJvb20YAiABKAkSDQoFbWFw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IAEoARIJCgFvGAQgASgBEgoKAm1zGAUgASgBEgoKAnN1GAYgASgBEgoKAmt1GAcgASgBEgoKAmtkGAggASgBEgoKAmV4GAkgASgBIoABCgpIZWF0UGFyYW1zEgsKA21heBgBIAEoARIPCgd3YXJuX2F0GAIgASgBEhMKC292ZXJoZWF0X2F0GAMgASgBEhQKDG1hcmtlcl9zcGVlZBgEIAEoARIMCgRrX3VwGAUgASgBEg4KBmtfZG93bhgGIAEoARILCgNleHAYByABKAEidwoNVXBncmFkZUVmZmVjdBIyCgR0eXBlGAEgASgOMiQubGlnaHRzcGVlZGR1ZWwud3MuVXBncmFkZUVmZmVjdFR5cGUSFAoKbXVsdGlwbGllchgCIAEoAUgAEhMKCXVubG9ja19pZBgDIAEoCUgAQgcKBXZhbHVlInkKElBsYXllckNhcGFiaWxpdGllcxIYChBzcGVlZF9tdWx0aXBsaWVyGAEgASgBEhkKEXVubG9ja2VkX21pc3NpbGVzGAIgAygJEhUKDWhlYXRfY2FwYWNpdHkYAyABKAESFwoPaGVhdF9lZmZpY2llbmN5GAQgASgBIvQBCgdEYWdOb2RlEgoKAmlkGAEgASgJEiwKBGtpbmQYAiABKA4yHi5saWdodHNwZWVkZHVlbC53cy5EYWdOb2RlS2luZBINCgVsYWJlbBgDIAEoCRIwCgZzdGF0dXMYBCABKA4yIC5saWdodHNwZWVkZHVlbC53cy5EYWdOb2RlU3RhdHVzEhMKC3JlbWFpbmluZ19zGAUgASgBEhIKCmR1cmF0aW9uX3MYBiABKAESEgoKcmVwZWF0YWJsZRgHIAEoCBIxCgdlZmZlY3RzGAggAygLMiAubGlnaHRzcGVlZGR1ZWwud3MuVXBncmFkZUVmZmVjdCI1CghEYWdTdGF0ZRIpCgVub2RlcxgBIAMoCzIaLmxpZ2h0c3BlZWRkdWVsLndzLkRhZ05vZGUiGwoIRGFnU3RhcnQSDwoHbm9kZV9pZBgBIAEoCSIcCglEYWdDYW5jZWwSDwoHbm9kZV9pZBgBIAEoCSIxCgtEYWdTdG9yeUFjaxIPCgdub2RlX2lkGAEgASgJEhEKCWNob2ljZV9pZBgCIAEoCSIJCgdEYWdMaXN0IjsKD0RhZ0xpc3RSZXNwb25zZRIoCgNkYWcYASABKAsyGy5saWdodHNwZWVkZHVlbC53cy5EYWdTdGF0ZSJaCg1JbnZlbnRvcnlJdGVtEgwKBHR5cGUYASABKAkSEgoKdmFyaWFudF9pZBgCIAEoCRIVCg1oZWF0X2NhcGFjaXR5GAMgASgBEhAKCHF1YW50aXR5GAQgASgFIjwKCUludmVudG9yeRIvCgVpdGVtcxgBIAMoCzIgLmxpZ2h0c3BlZWRkdWVsLndzLkludmVudG9yeUl0ZW0iLwoTU3RvcnlEaWFsb2d1ZUNob2ljZRIKCgJpZBgBIAEoCRIMCgR0ZXh0GAIgASgJIi8KEFN0b3J5VHV0b3JpYWxUaXASDQoFdGl0bGUYASABKAkSDAoEdGV4dBgCIAEoCSKAAgoNU3RvcnlEaWFsb2d1ZRIPCgdzcGVha2VyGAEgASgJEgwKBHRleHQYAiABKAkSLgoGaW50ZW50GAMgASgOMh4ubGlnaHRzcGVlZGR1ZWwud3MuU3RvcnlJbnRlbnQSFgoOY29udGludWVfbGFiZWwYBCABKAkSNwoHY2hvaWNlcxgFIAMoCzImLmxpZ2h0c3BlZWRkdWVsLndzLlN0b3J5RGlhbG9ndWVDaG9pY2USPgoMdHV0b3JpYWxfdGlwGAYgASgLMiMubGlnaHRzcGVlZGR1ZWwud3MuU3RvcnlUdXRvcmlhbFRpcEgAiAEBQg8KDV90dXRvcmlhbF90aXAiRAoKU3RvcnlFdmVudBISCgpjaGFwdGVyX2lkGAEgASgJEg8KB25vZGVfaWQYAiABKAkSEQoJdGltZXN0YW1wGAMgASgBIpcCCgpTdG9yeVN0YXRlEhMKC2FjdGl2ZV9ub2RlGAEgASgJEjcKCGRpYWxvZ3VlGAIgASgLMiAubGlnaHRzcGVlZGR1ZWwud3MuU3RvcnlEaWFsb2d1ZUgAiAEBEhEKCWF2YWlsYWJsZRgDIAMoCRI3CgVmbGFncxgEIAMoCzIoLmxpZ2h0c3BlZWRkdWVsLndzLlN0b3J5U3RhdGUuRmxhZ3NFbnRyeRI0Cg1yZWNlbnRfZXZlbnRzGAUgAygLMh0ubGlnaHRzcGVlZGR1ZWwud3MuU3RvcnlFdmVudBosCgpGbGFnc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCDoCOAFCCwoJX2RpYWxvZ3VlIiYKEE1pc3Npb25TcGF3bldhdmUSEgoKd2F2ZV9pbmRleBgBIAEoBSIyChFNaXNzaW9uU3RvcnlFdmVudBINCgVldmVudBgBIAEoCRIOCgZiZWFjb24YAiABKAUiigIKFU1pc3Npb25CZWFjb25TbmFwc2hvdBISCgptaXNzaW9uX2lkGAEgASgJEhMKC2xheW91dF9zZWVkGAIgASgEEhMKC3NlcnZlcl90aW1lGAMgASgBEjsKB2JlYWNvbnMYBCADKAsyKi5saWdodHNwZWVkZHVlbC53cy5NaXNzaW9uQmVhY29uRGVmaW5pdGlvbhI3CgdwbGF5ZXJzGAUgAygLMiYubGlnaHRzcGVlZGR1ZWwud3MuTWlzc2lvbkJlYWNvblBsYXllchI9CgplbmNvdW50ZXJzGAYgAygLMikubGlnaHRzcGVlZGR1ZWwud3MuTWlzc2lvbkJlYWNvbkVuY291bnRlciJqChdNaXNzaW9uQmVhY29uRGVmaW5pdGlvbhIKCgJpZBgBIAEoCRIPCgdvcmRpbmFsGAIgASgFEgkKAXgYAyABKAESCQoBeRgEIAEoARIOCgZyYWRpdXMYBSABKAESDAoEc2VlZBgGIAEoAyKkAgoTTWlzc2lvbkJlYWNvblBsYXllchIRCglwbGF5ZXJfaWQYASABKAkSFQoNY3VycmVudF9pbmRleBgCIAEoBRISCgpob2xkX2FjY3VtGAMgASgBEhUKDWhvbGRfcmVxdWlyZWQYBCABKAESFQoNYWN0aXZlX2JlYWNvbhgFIAEoCRISCgpkaXNjb3ZlcmVkGAYgAygJEhEKCWNvbXBsZXRlZBgHIAMoCRJICgljb29sZG93bnMYCCADKAsyNS5saWdodHNwZWVkZHVlbC53cy5NaXNzaW9uQmVhY29uUGxheWVyLkNvb2xkb3duc0VudHJ5GjAKDkNvb2xkb3duc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoAToCOAEilgEKEk1pc3Npb25CZWFjb25EZWx0YRI8CgdwbGF5ZXJzGAEgAygLMisubGlnaHRzcGVlZGR1ZWwud3MuTWlzc2lvbkJlYWNvblBsYXllckRlbHRhEkIKCmVuY291bnRlcnMYAiADKAsyLi5saWdodHNwZWVkZHVlbC53cy5NaXNzaW9uQmVhY29uRW5jb3VudGVyRXZlbnQi4gEKGE1pc3Npb25CZWFjb25QbGF5ZXJEZWx0YRI3CgR0eXBlGAEgASgOMikubGlnaHRzcGVlZGR1ZWwud3MuTWlzc2lvbkJlYWNvbkRlbHRhVHlwZRIRCglwbGF5ZXJfaWQYAiABKAkSEQoJYmVhY29uX2lkGAMgASgJEg8KB29yZGluYWwYBCABKAUSEgoKaG9sZF9hY2N1bRgFIAEoARIVCg1ob2xkX3JlcXVpcmVkGAYgASgBEhYKDmNvb2xkb3duX3VudGlsGAcgASgBEhMKC3NlcnZlcl90aW1lGAggASgBIn0KFk1pc3Npb25CZWFjb25FbmNvdW50ZXISFAoMZW5jb3VudGVyX2lkGAEgASgJEhEKCWJlYWNvbl9pZBgCIAEoCRISCgp3YXZlX2luZGV4GAMgASgFEhIKCnNwYXduZWRfYXQYBCABKAESEgoKZXhwaXJlc19hdBgFIAEoASLOAQobTWlzc2lvbkJlYWNvbkVuY291bnRlckV2ZW50EjoKBHR5cGUYASABKA4yLC5saWdodHNwZWVkZHVlbC53cy5NaXNzaW9uRW5jb3VudGVyRXZlbnRUeXBlEhQKDGVuY291bnRlcl9pZBgCIAEoCRIRCgliZWFjb25faWQYAyABKAkSEgoKd2F2ZV9pbmRleBgEIAEoBRISCgpzcGF3bmVkX2F0GAUgASgBEhIKCmV4cGlyZXNfYXQYBiABKAESDgoGcmVhc29uGAcgASgJKqsBCg1EYWdOb2RlU3RhdHVzEh8KG0RBR19OT0RFX1NUQVRVU19VTlNQRUNJRklFRBAAEhoKFkRBR19OT0RFX1NUQVRVU19MT0NLRUQQARIdChlEQUdfTk9ERV9TVEFUVVNfQVZBSUxBQkxFEAISHwobREFHX05PREVfU1RBVFVTX0lOX1BST0dSRVNTEAMSHQoZREFHX05PREVfU1RBVFVTX0NPTVBMRVRFRBAEKpEBCgtEYWdOb2RlS2luZBIdChlEQUdfTk9ERV9LSU5EX1VOU1BFQ0lGSUVEEAASGQoVREFHX05PREVfS0lORF9GQUNUT1JZEAESFgoSREFHX05PREVfS0lORF9VTklUEAISFwoTREFHX05PREVfS0lORF9TVE9SWRADEhcKE0RBR19OT0RFX0tJTkRfQ1JBRlQQBCraAQoRVXBncmFkZUVmZmVjdFR5cGUSIwofVVBHUkFERV9FRkZFQ1RfVFlQRV9VTlNQRUNJRklFRBAAEigKJFVQR1JBREVfRUZGRUNUX1RZUEVfU1BFRURfTVVMVElQTElFUhABEiYKIlVQR1JBREVfRUZGRUNUX1RZUEVfTUlTU0lMRV9VTkxPQ0sQAhIlCiFVUEdSQURFX0VGRkVDVF9UWVBFX0hFQVRfQ0FQQUNJVFkQAxInCiNVUEdSQURFX0VGRkVDVF9UWVBFX0hFQVRfRUZGSUNJRU5DWRAEKlwKC1N0b3J5SW50ZW50EhwKGFNUT1JZX0lOVEVOVF9VTlNQRUNJRklFRBAAEhgKFFNUT1JZX0lOVEVOVF9GQUNUT1JZEAESFQoRU1RPUllfSU5URU5UX1VOSVQQAiqgAgoWTWlzc2lvbkJlYWNvbkRlbHRhVHlwZRIkCiBNSVNTSU9OX0JFQUNPTl9ERUxUQV9VTlNQRUNJRklFRBAAEiMKH01JU1NJT05fQkVBQ09OX0RFTFRBX0RJU0NPVkVSRUQQARImCiJNSVNTSU9OX0JFQUNPTl9ERUxUQV9IT0xEX1BST0dSRVNTEAISIwofTUlTU0lPTl9CRUFDT05fREVMVEFfSE9MRF9SRVNFVBADEh8KG01JU1NJT05fQkVBQ09OX0RFTFRBX0xPQ0tFRBAEEiEKHU1JU1NJT05fQkVBQ09OX0RFTFRBX0NPT0xET1dOEAUSKgomTUlTU0lPTl9CRUFDT05fREVMVEFfTUlTU0lPTl9DT01QTEVURUQQBirXAQoZTWlzc2lvbkVuY291bnRlckV2ZW50VHlwZRInCiNNSVNTSU9OX0VOQ09VTlRFUl9FVkVOVF9VTlNQRUNJRklFRBAAEiMKH01JU1NJT05fRU5DT1VOVEVSX0VWRU5UX1NQQVdORUQQARIjCh9NSVNTSU9OX0VOQ09VTlRFUl9FVkVOVF9DTEVBUkVEEAISIwofTUlTU0lPTl9FTkNPVU5URVJfRVZFTlRfVElNRU9VVBADEiIKHk1JU1NJT05fRU5DT1VOVEVSX0VWRU5UX1BVUkdFRBAEQiJaIExpZ2h0U3BlZWREdWVsL2ludGVybmFsL3Byb3RvL3dzYgZwcm90bzM");
 
 /**
  * WsEnvelope wraps all WebSocket messages in a discriminated union
@@ -193,6 +193,18 @@ export type WsEnvelope = Message<"lightspeedduel.ws.WsEnvelope"> & {
      */
     value: DagListResponse;
     case: "dagListResponse";
+  } | {
+    /**
+     * @generated from field: lightspeedduel.ws.MissionBeaconSnapshot mission_beacon_snapshot = 60;
+     */
+    value: MissionBeaconSnapshot;
+    case: "missionBeaconSnapshot";
+  } | {
+    /**
+     * @generated from field: lightspeedduel.ws.MissionBeaconDelta mission_beacon_delta = 61;
+     */
+    value: MissionBeaconDelta;
+    case: "missionBeaconDelta";
   } | { case: undefined; value?: undefined };
 };
 
@@ -1706,6 +1718,304 @@ export const MissionStoryEventSchema: GenMessage<MissionStoryEvent> = /*@__PURE_
   messageDesc(file_proto_ws_messages, 46);
 
 /**
+ * Server → Client: Mission beacon authoritative snapshot
+ *
+ * @generated from message lightspeedduel.ws.MissionBeaconSnapshot
+ */
+export type MissionBeaconSnapshot = Message<"lightspeedduel.ws.MissionBeaconSnapshot"> & {
+  /**
+   * @generated from field: string mission_id = 1;
+   */
+  missionId: string;
+
+  /**
+   * @generated from field: uint64 layout_seed = 2;
+   */
+  layoutSeed: bigint;
+
+  /**
+   * @generated from field: double server_time = 3;
+   */
+  serverTime: number;
+
+  /**
+   * @generated from field: repeated lightspeedduel.ws.MissionBeaconDefinition beacons = 4;
+   */
+  beacons: MissionBeaconDefinition[];
+
+  /**
+   * @generated from field: repeated lightspeedduel.ws.MissionBeaconPlayer players = 5;
+   */
+  players: MissionBeaconPlayer[];
+
+  /**
+   * @generated from field: repeated lightspeedduel.ws.MissionBeaconEncounter encounters = 6;
+   */
+  encounters: MissionBeaconEncounter[];
+};
+
+/**
+ * Describes the message lightspeedduel.ws.MissionBeaconSnapshot.
+ * Use `create(MissionBeaconSnapshotSchema)` to create a new message.
+ */
+export const MissionBeaconSnapshotSchema: GenMessage<MissionBeaconSnapshot> = /*@__PURE__*/
+  messageDesc(file_proto_ws_messages, 47);
+
+/**
+ * @generated from message lightspeedduel.ws.MissionBeaconDefinition
+ */
+export type MissionBeaconDefinition = Message<"lightspeedduel.ws.MissionBeaconDefinition"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: int32 ordinal = 2;
+   */
+  ordinal: number;
+
+  /**
+   * @generated from field: double x = 3;
+   */
+  x: number;
+
+  /**
+   * @generated from field: double y = 4;
+   */
+  y: number;
+
+  /**
+   * @generated from field: double radius = 5;
+   */
+  radius: number;
+
+  /**
+   * @generated from field: int64 seed = 6;
+   */
+  seed: bigint;
+};
+
+/**
+ * Describes the message lightspeedduel.ws.MissionBeaconDefinition.
+ * Use `create(MissionBeaconDefinitionSchema)` to create a new message.
+ */
+export const MissionBeaconDefinitionSchema: GenMessage<MissionBeaconDefinition> = /*@__PURE__*/
+  messageDesc(file_proto_ws_messages, 48);
+
+/**
+ * @generated from message lightspeedduel.ws.MissionBeaconPlayer
+ */
+export type MissionBeaconPlayer = Message<"lightspeedduel.ws.MissionBeaconPlayer"> & {
+  /**
+   * @generated from field: string player_id = 1;
+   */
+  playerId: string;
+
+  /**
+   * @generated from field: int32 current_index = 2;
+   */
+  currentIndex: number;
+
+  /**
+   * @generated from field: double hold_accum = 3;
+   */
+  holdAccum: number;
+
+  /**
+   * @generated from field: double hold_required = 4;
+   */
+  holdRequired: number;
+
+  /**
+   * @generated from field: string active_beacon = 5;
+   */
+  activeBeacon: string;
+
+  /**
+   * @generated from field: repeated string discovered = 6;
+   */
+  discovered: string[];
+
+  /**
+   * @generated from field: repeated string completed = 7;
+   */
+  completed: string[];
+
+  /**
+   * @generated from field: map<string, double> cooldowns = 8;
+   */
+  cooldowns: { [key: string]: number };
+};
+
+/**
+ * Describes the message lightspeedduel.ws.MissionBeaconPlayer.
+ * Use `create(MissionBeaconPlayerSchema)` to create a new message.
+ */
+export const MissionBeaconPlayerSchema: GenMessage<MissionBeaconPlayer> = /*@__PURE__*/
+  messageDesc(file_proto_ws_messages, 49);
+
+/**
+ * Server → Client: incremental mission beacon updates
+ *
+ * @generated from message lightspeedduel.ws.MissionBeaconDelta
+ */
+export type MissionBeaconDelta = Message<"lightspeedduel.ws.MissionBeaconDelta"> & {
+  /**
+   * @generated from field: repeated lightspeedduel.ws.MissionBeaconPlayerDelta players = 1;
+   */
+  players: MissionBeaconPlayerDelta[];
+
+  /**
+   * @generated from field: repeated lightspeedduel.ws.MissionBeaconEncounterEvent encounters = 2;
+   */
+  encounters: MissionBeaconEncounterEvent[];
+};
+
+/**
+ * Describes the message lightspeedduel.ws.MissionBeaconDelta.
+ * Use `create(MissionBeaconDeltaSchema)` to create a new message.
+ */
+export const MissionBeaconDeltaSchema: GenMessage<MissionBeaconDelta> = /*@__PURE__*/
+  messageDesc(file_proto_ws_messages, 50);
+
+/**
+ * @generated from message lightspeedduel.ws.MissionBeaconPlayerDelta
+ */
+export type MissionBeaconPlayerDelta = Message<"lightspeedduel.ws.MissionBeaconPlayerDelta"> & {
+  /**
+   * @generated from field: lightspeedduel.ws.MissionBeaconDeltaType type = 1;
+   */
+  type: MissionBeaconDeltaType;
+
+  /**
+   * @generated from field: string player_id = 2;
+   */
+  playerId: string;
+
+  /**
+   * @generated from field: string beacon_id = 3;
+   */
+  beaconId: string;
+
+  /**
+   * @generated from field: int32 ordinal = 4;
+   */
+  ordinal: number;
+
+  /**
+   * @generated from field: double hold_accum = 5;
+   */
+  holdAccum: number;
+
+  /**
+   * @generated from field: double hold_required = 6;
+   */
+  holdRequired: number;
+
+  /**
+   * @generated from field: double cooldown_until = 7;
+   */
+  cooldownUntil: number;
+
+  /**
+   * @generated from field: double server_time = 8;
+   */
+  serverTime: number;
+};
+
+/**
+ * Describes the message lightspeedduel.ws.MissionBeaconPlayerDelta.
+ * Use `create(MissionBeaconPlayerDeltaSchema)` to create a new message.
+ */
+export const MissionBeaconPlayerDeltaSchema: GenMessage<MissionBeaconPlayerDelta> = /*@__PURE__*/
+  messageDesc(file_proto_ws_messages, 51);
+
+/**
+ * @generated from message lightspeedduel.ws.MissionBeaconEncounter
+ */
+export type MissionBeaconEncounter = Message<"lightspeedduel.ws.MissionBeaconEncounter"> & {
+  /**
+   * @generated from field: string encounter_id = 1;
+   */
+  encounterId: string;
+
+  /**
+   * @generated from field: string beacon_id = 2;
+   */
+  beaconId: string;
+
+  /**
+   * @generated from field: int32 wave_index = 3;
+   */
+  waveIndex: number;
+
+  /**
+   * @generated from field: double spawned_at = 4;
+   */
+  spawnedAt: number;
+
+  /**
+   * @generated from field: double expires_at = 5;
+   */
+  expiresAt: number;
+};
+
+/**
+ * Describes the message lightspeedduel.ws.MissionBeaconEncounter.
+ * Use `create(MissionBeaconEncounterSchema)` to create a new message.
+ */
+export const MissionBeaconEncounterSchema: GenMessage<MissionBeaconEncounter> = /*@__PURE__*/
+  messageDesc(file_proto_ws_messages, 52);
+
+/**
+ * @generated from message lightspeedduel.ws.MissionBeaconEncounterEvent
+ */
+export type MissionBeaconEncounterEvent = Message<"lightspeedduel.ws.MissionBeaconEncounterEvent"> & {
+  /**
+   * @generated from field: lightspeedduel.ws.MissionEncounterEventType type = 1;
+   */
+  type: MissionEncounterEventType;
+
+  /**
+   * @generated from field: string encounter_id = 2;
+   */
+  encounterId: string;
+
+  /**
+   * @generated from field: string beacon_id = 3;
+   */
+  beaconId: string;
+
+  /**
+   * @generated from field: int32 wave_index = 4;
+   */
+  waveIndex: number;
+
+  /**
+   * @generated from field: double spawned_at = 5;
+   */
+  spawnedAt: number;
+
+  /**
+   * @generated from field: double expires_at = 6;
+   */
+  expiresAt: number;
+
+  /**
+   * @generated from field: string reason = 7;
+   */
+  reason: string;
+};
+
+/**
+ * Describes the message lightspeedduel.ws.MissionBeaconEncounterEvent.
+ * Use `create(MissionBeaconEncounterEventSchema)` to create a new message.
+ */
+export const MissionBeaconEncounterEventSchema: GenMessage<MissionBeaconEncounterEvent> = /*@__PURE__*/
+  messageDesc(file_proto_ws_messages, 53);
+
+/**
  * DAG node status enum
  *
  * @generated from enum lightspeedduel.ws.DagNodeStatus
@@ -1846,4 +2156,86 @@ export enum StoryIntent {
  */
 export const StoryIntentSchema: GenEnum<StoryIntent> = /*@__PURE__*/
   enumDesc(file_proto_ws_messages, 3);
+
+/**
+ * @generated from enum lightspeedduel.ws.MissionBeaconDeltaType
+ */
+export enum MissionBeaconDeltaType {
+  /**
+   * @generated from enum value: MISSION_BEACON_DELTA_UNSPECIFIED = 0;
+   */
+  MISSION_BEACON_DELTA_UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: MISSION_BEACON_DELTA_DISCOVERED = 1;
+   */
+  MISSION_BEACON_DELTA_DISCOVERED = 1,
+
+  /**
+   * @generated from enum value: MISSION_BEACON_DELTA_HOLD_PROGRESS = 2;
+   */
+  MISSION_BEACON_DELTA_HOLD_PROGRESS = 2,
+
+  /**
+   * @generated from enum value: MISSION_BEACON_DELTA_HOLD_RESET = 3;
+   */
+  MISSION_BEACON_DELTA_HOLD_RESET = 3,
+
+  /**
+   * @generated from enum value: MISSION_BEACON_DELTA_LOCKED = 4;
+   */
+  MISSION_BEACON_DELTA_LOCKED = 4,
+
+  /**
+   * @generated from enum value: MISSION_BEACON_DELTA_COOLDOWN = 5;
+   */
+  MISSION_BEACON_DELTA_COOLDOWN = 5,
+
+  /**
+   * @generated from enum value: MISSION_BEACON_DELTA_MISSION_COMPLETED = 6;
+   */
+  MISSION_BEACON_DELTA_MISSION_COMPLETED = 6,
+}
+
+/**
+ * Describes the enum lightspeedduel.ws.MissionBeaconDeltaType.
+ */
+export const MissionBeaconDeltaTypeSchema: GenEnum<MissionBeaconDeltaType> = /*@__PURE__*/
+  enumDesc(file_proto_ws_messages, 4);
+
+/**
+ * @generated from enum lightspeedduel.ws.MissionEncounterEventType
+ */
+export enum MissionEncounterEventType {
+  /**
+   * @generated from enum value: MISSION_ENCOUNTER_EVENT_UNSPECIFIED = 0;
+   */
+  MISSION_ENCOUNTER_EVENT_UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: MISSION_ENCOUNTER_EVENT_SPAWNED = 1;
+   */
+  MISSION_ENCOUNTER_EVENT_SPAWNED = 1,
+
+  /**
+   * @generated from enum value: MISSION_ENCOUNTER_EVENT_CLEARED = 2;
+   */
+  MISSION_ENCOUNTER_EVENT_CLEARED = 2,
+
+  /**
+   * @generated from enum value: MISSION_ENCOUNTER_EVENT_TIMEOUT = 3;
+   */
+  MISSION_ENCOUNTER_EVENT_TIMEOUT = 3,
+
+  /**
+   * @generated from enum value: MISSION_ENCOUNTER_EVENT_PURGED = 4;
+   */
+  MISSION_ENCOUNTER_EVENT_PURGED = 4,
+}
+
+/**
+ * Describes the enum lightspeedduel.ws.MissionEncounterEventType.
+ */
+export const MissionEncounterEventTypeSchema: GenEnum<MissionEncounterEventType> = /*@__PURE__*/
+  enumDesc(file_proto_ws_messages, 5);
 

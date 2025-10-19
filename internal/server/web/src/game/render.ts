@@ -236,25 +236,28 @@ export function createRenderer({
 
   function drawBeacons(): void {
     const mission = state.mission;
-    if (!mission || !mission.active || mission.beacons.length === 0) {
+    if (!mission || mission.beacons.length === 0) {
       return;
     }
 
     const world = camera.getWorldSize();
     const scale = Math.min(canvas.width / world.w, canvas.height / world.h) * uiState.zoom;
     const me = state.me;
-    const holdRequired = mission.holdRequired || 10;
+    const player = mission.player;
+    const activeBeaconId = player?.activeBeaconId ?? null;
+    const holdRequired = player?.holdRequired ?? 0;
+    const holdAccum = player?.displayHold ?? player?.holdAccum ?? 0;
 
-    mission.beacons.forEach((beacon, index) => {
-      const center = camera.worldToCanvas({ x: beacon.cx, y: beacon.cy });
-      const edge = camera.worldToCanvas({ x: beacon.cx + beacon.radius, y: beacon.cy });
+    mission.beacons.forEach((beacon) => {
+      const center = camera.worldToCanvas({ x: beacon.x, y: beacon.y });
+      const edge = camera.worldToCanvas({ x: beacon.x + beacon.radius, y: beacon.y });
       const radius = Math.hypot(edge.x - center.x, edge.y - center.y);
       if (!Number.isFinite(radius) || radius <= 0.5) {
         return;
       }
 
-      const isLocked = index < mission.beaconIndex;
-      const isActive = index === mission.beaconIndex;
+      const isLocked = beacon.completed;
+      const isActive = activeBeaconId === beacon.id;
       const baseLineWidth = Math.max(1.5, 2.5 * Math.min(1, scale * 1.2));
       const strokeStyle = isLocked
         ? "rgba(74,222,128,0.85)"
@@ -274,8 +277,8 @@ export function createRenderer({
       const inside =
         isActive && me
           ? (() => {
-              const dx = me.x - beacon.cx;
-              const dy = me.y - beacon.cy;
+              const dx = me.x - beacon.x;
+              const dy = me.y - beacon.y;
               return dx * dx + dy * dy <= beacon.radius * beacon.radius;
             })()
           : false;
@@ -288,7 +291,7 @@ export function createRenderer({
       }
 
       if (isActive) {
-        const progress = holdRequired > 0 ? Math.max(0, Math.min(1, mission.holdAccum / holdRequired)) : 0;
+        const progress = holdRequired > 0 ? Math.max(0, Math.min(1, holdAccum / holdRequired)) : 0;
         if (progress > 0) {
           ctx.beginPath();
           ctx.strokeStyle = "rgba(56,189,248,0.95)";

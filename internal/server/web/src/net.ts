@@ -2,13 +2,23 @@ import { type EventBus } from "./bus";
 import {
   type AppState,
   type MissileRoute,
+  type MissionState,
+  type MissionBeacon,
+  type MissionEncounterState,
+  type MissionPlayerState,
   monotonicNow,
   sanitizeMissileConfig,
   updateMissileLimits,
 } from "./state";
 import type { DialogueContent } from "./story/types";
 import { create, toBinary, fromBinary } from "@bufbuild/protobuf";
-import { WsEnvelopeSchema, type WsEnvelope } from "./proto/proto/ws_messages_pb";
+import {
+  WsEnvelopeSchema,
+  type WsEnvelope,
+  MissionBeaconDeltaType,
+  MissionEncounterEventType,
+} from "./proto/proto/ws_messages_pb";
+import type { MissionBeaconSnapshot, MissionBeaconDelta } from "./proto/proto/ws_messages_pb";
 import { protoToState, protoToDagState } from "./proto_helpers";
 
 interface ConnectOptions {
@@ -266,28 +276,6 @@ export function sendDagList(): void {
   }));
 }
 
-// ========== Phase 2: Mission Event Functions ==========
-
-export function sendMissionSpawnWave(waveIndex: number): void {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  sendProto(create(WsEnvelopeSchema, {
-    payload: {
-      case: "missionSpawnWave",
-      value: { waveIndex },
-    },
-  }));
-}
-
-export function sendMissionStoryEvent(event: string, beacon: number = 0): void {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  sendProto(create(WsEnvelopeSchema, {
-    payload: {
-      case: "missionStoryEvent",
-      value: { event, beacon },
-    },
-  }));
-}
-
 export function connectWebSocket({
   room,
   state,
@@ -352,6 +340,10 @@ export function connectWebSocket({
           if (dagData) {
             bus.emit("dag:list", protoToDagState(dagData));
           }
+        } else if (envelope.payload.case === "missionBeaconSnapshot") {
+          handleMissionSnapshot(state, envelope.payload.value, bus);
+        } else if (envelope.payload.case === "missionBeaconDelta") {
+          handleMissionDelta(state, envelope.payload.value, bus);
         } else {
           console.warn("[ws] Unknown protobuf message type:", envelope.payload.case);
         }
@@ -544,6 +536,305 @@ function handleProtoStateMessage(
   // Emit cooldown update
   const cooldownRemaining = Math.max(0, state.nextMissileReadyAt - getApproxServerNow(state));
   bus.emit("missile:cooldownUpdated", { secondsRemaining: cooldownRemaining });
+}
+
+function handleMissionSnapshot(state: AppState, snapshot: MissionBeaconSnapshot, bus: EventBus): void {
+  const mission = ensureMissionState(state);
+  const previousMissionId = mission.missionId;
+  mission.missionId = snapshot.missionId || mission.missionId || "";
+  mission.layoutSeed = Number(snapshot.layoutSeed ?? mission.layoutSeed ?? 0);
+  mission.serverTime = Number.isFinite(snapshot.serverTime) ? snapshot.serverTime : mission.serverTime;
+
+  const previousBeacons = new Map(mission.beacons.map((b) => [b.id, b]));
+  mission.beacons = snapshot.beacons
+    .slice()
+    .sort((a, b) => a.ordinal - b.ordinal)
+    .map((def): MissionBeacon => {
+      const prev = previousBeacons.get(def.id);
+      return {
+        id: def.id,
+        ordinal: def.ordinal,
+        x: def.x,
+        y: def.y,
+        radius: def.radius,
+        seed: Number(def.seed || 0),
+        discovered: prev?.discovered ?? false,
+        completed: prev?.completed ?? false,
+        cooldownUntil: prev?.cooldownUntil ?? null,
+      };
+    });
+
+  const localPlayerId = getLocalPlayerId(state);
+  let playerProto = localPlayerId
+    ? snapshot.players.find((p) => p.playerId === localPlayerId) || null
+    : null;
+  if (!playerProto && snapshot.players.length === 1) {
+    playerProto = snapshot.players[0];
+  }
+
+  if (playerProto) {
+    const nowMs = monotonicNow();
+    const discoveredSet = new Set(playerProto.discovered ?? []);
+    const completedSet = new Set(playerProto.completed ?? []);
+    for (const beacon of mission.beacons) {
+      beacon.discovered = discoveredSet.has(beacon.id);
+      beacon.completed = completedSet.has(beacon.id);
+      const cooldown = playerProto.cooldowns?.[beacon.id];
+      beacon.cooldownUntil = Number.isFinite(cooldown) ? cooldown : null;
+    }
+
+    let player = mission.player;
+    if (!player || player.playerId !== playerProto.playerId) {
+      player = {
+        playerId: playerProto.playerId,
+        currentIndex: playerProto.currentIndex ?? 0,
+        activeBeaconId: playerProto.activeBeacon || null,
+        holdAccum: playerProto.holdAccum ?? 0,
+        holdRequired: Math.max(0, playerProto.holdRequired ?? 0),
+        displayHold: playerProto.holdAccum ?? 0,
+        lastServerUpdate: Number.isFinite(snapshot.serverTime) ? snapshot.serverTime : getApproxServerNow(state),
+        lastDisplaySync: nowMs,
+        insideActiveBeacon: false,
+      };
+      mission.player = player;
+    } else {
+      player.currentIndex = playerProto.currentIndex ?? player.currentIndex;
+      player.activeBeaconId = playerProto.activeBeacon || null;
+      player.holdAccum = playerProto.holdAccum ?? player.holdAccum;
+      player.holdRequired = Math.max(0, playerProto.holdRequired ?? player.holdRequired);
+      player.displayHold = playerProto.holdAccum ?? player.displayHold ?? 0;
+      player.lastServerUpdate = Number.isFinite(snapshot.serverTime) ? snapshot.serverTime : getApproxServerNow(state);
+      player.lastDisplaySync = nowMs;
+    }
+
+    mission.status = completedSet.size > 0 && completedSet.size >= mission.beacons.length && mission.beacons.length > 0
+      ? "completed"
+      : "active";
+  } else if (!mission.player || mission.player.playerId === "") {
+    mission.player = null;
+    mission.status = "idle";
+    for (const beacon of mission.beacons) {
+      beacon.discovered = false;
+      beacon.completed = false;
+      beacon.cooldownUntil = null;
+    }
+  }
+
+  mission.encounters = snapshot.encounters.map((enc): MissionEncounterState => ({
+    id: enc.encounterId,
+    beaconId: enc.beaconId,
+    waveIndex: enc.waveIndex,
+    spawnedAt: enc.spawnedAt,
+    expiresAt: enc.expiresAt,
+    active: true,
+  }));
+
+  // If this is a new mission id, reset transient player state
+  if (mission.player && mission.missionId !== previousMissionId) {
+    mission.player.displayHold = mission.player.holdAccum;
+    mission.player.lastDisplaySync = monotonicNow();
+    mission.player.insideActiveBeacon = false;
+  }
+
+  alignMissionProgress(mission);
+  bus.emit("mission:update", { reason: "snapshot" });
+}
+
+function handleMissionDelta(state: AppState, delta: MissionBeaconDelta, bus: EventBus): void {
+  const mission = ensureMissionState(state);
+  const nowMs = monotonicNow();
+  const approxNow = getApproxServerNow(state);
+  const localPlayerId = getLocalPlayerId(state) ?? mission.player?.playerId ?? null;
+  let changed = false;
+
+  for (const entry of delta.players ?? []) {
+    if (localPlayerId && entry.playerId !== localPlayerId) {
+      continue;
+    }
+    const player = ensureMissionPlayer(mission, entry.playerId);
+    if (Number.isFinite(entry.holdRequired) && entry.holdRequired > 0) {
+      player.holdRequired = entry.holdRequired;
+    }
+    if (Number.isFinite(entry.holdAccum)) {
+      player.holdAccum = entry.holdAccum;
+    }
+    player.lastServerUpdate = Number.isFinite(entry.serverTime) ? entry.serverTime : approxNow;
+    player.lastDisplaySync = nowMs;
+
+    const beacon = findBeaconForDelta(mission, entry);
+
+    switch (entry.type) {
+      case MissionBeaconDeltaType.MISSION_BEACON_DELTA_DISCOVERED:
+        if (beacon) {
+          beacon.discovered = true;
+          changed = true;
+        }
+        break;
+      case MissionBeaconDeltaType.MISSION_BEACON_DELTA_HOLD_PROGRESS:
+        changed = true;
+        break;
+      case MissionBeaconDeltaType.MISSION_BEACON_DELTA_HOLD_RESET:
+        player.holdAccum = 0;
+        player.displayHold = Math.min(player.displayHold, 0);
+        changed = true;
+        break;
+      case MissionBeaconDeltaType.MISSION_BEACON_DELTA_LOCKED:
+        if (beacon) {
+          beacon.completed = true;
+          const cooldown = Number.isFinite(entry.cooldownUntil) ? entry.cooldownUntil : null;
+          beacon.cooldownUntil = cooldown;
+          changed = true;
+        }
+        player.holdAccum = 0;
+        player.displayHold = 0;
+        break;
+      case MissionBeaconDeltaType.MISSION_BEACON_DELTA_COOLDOWN:
+        if (beacon) {
+          const cooldown = Number.isFinite(entry.cooldownUntil) ? entry.cooldownUntil : null;
+          beacon.cooldownUntil = cooldown;
+          changed = true;
+        }
+        break;
+      case MissionBeaconDeltaType.MISSION_BEACON_DELTA_MISSION_COMPLETED:
+        mission.status = "completed";
+        player.holdAccum = 0;
+        player.displayHold = 0;
+        player.activeBeaconId = null;
+        changed = true;
+        break;
+      default:
+        break;
+    }
+  }
+
+  if (delta.encounters && delta.encounters.length > 0) {
+    const encounterMap = new Map<string, MissionEncounterState>();
+    for (const enc of mission.encounters) {
+      encounterMap.set(enc.id, { ...enc });
+    }
+    for (const event of delta.encounters) {
+      let encounter = encounterMap.get(event.encounterId);
+      if (!encounter) {
+        encounter = {
+          id: event.encounterId,
+          beaconId: event.beaconId,
+          waveIndex: event.waveIndex,
+          spawnedAt: event.spawnedAt,
+          expiresAt: event.expiresAt,
+          active: false,
+        };
+        encounterMap.set(event.encounterId, encounter);
+      }
+      encounter.beaconId = event.beaconId || encounter.beaconId;
+      encounter.waveIndex = event.waveIndex ?? encounter.waveIndex;
+      encounter.spawnedAt = Number.isFinite(event.spawnedAt) ? event.spawnedAt : encounter.spawnedAt;
+      encounter.expiresAt = Number.isFinite(event.expiresAt) ? event.expiresAt : encounter.expiresAt;
+      switch (event.type) {
+        case MissionEncounterEventType.MISSION_ENCOUNTER_EVENT_SPAWNED:
+          encounter.active = true;
+          encounter.reason = undefined;
+          break;
+        case MissionEncounterEventType.MISSION_ENCOUNTER_EVENT_CLEARED:
+          encounter.active = false;
+          encounter.reason = event.reason || "cleared";
+          break;
+        case MissionEncounterEventType.MISSION_ENCOUNTER_EVENT_TIMEOUT:
+          encounter.active = false;
+          encounter.reason = event.reason || "timeout";
+          break;
+        case MissionEncounterEventType.MISSION_ENCOUNTER_EVENT_PURGED:
+          encounter.active = false;
+          encounter.reason = event.reason || "purged";
+          break;
+        default:
+          break;
+      }
+    }
+    mission.encounters = Array.from(encounterMap.values()).sort((a, b) => a.spawnedAt - b.spawnedAt);
+    changed = true;
+  }
+
+  if (mission.player) {
+    mission.player.displayHold = Math.min(mission.player.displayHold, mission.player.holdAccum);
+  }
+
+  if (changed) {
+    alignMissionProgress(mission);
+    bus.emit("mission:update", { reason: "delta" });
+  }
+}
+
+function ensureMissionState(state: AppState): MissionState {
+  if (!state.mission) {
+    state.mission = {
+      missionId: "",
+      layoutSeed: 0,
+      serverTime: 0,
+      status: "idle",
+      beacons: [],
+      player: null,
+      encounters: [],
+    };
+  }
+  return state.mission;
+}
+
+function ensureMissionPlayer(mission: MissionState, playerId: string): MissionPlayerState {
+  const nowMs = monotonicNow();
+  if (!mission.player || mission.player.playerId !== playerId) {
+    mission.player = {
+      playerId,
+      currentIndex: mission.player?.currentIndex ?? 0,
+      activeBeaconId: mission.player?.activeBeaconId ?? null,
+      holdAccum: mission.player?.holdAccum ?? 0,
+      holdRequired: mission.player?.holdRequired ?? 0,
+      displayHold: mission.player?.displayHold ?? 0,
+      lastServerUpdate: mission.player?.lastServerUpdate ?? 0,
+      lastDisplaySync: nowMs,
+      insideActiveBeacon: mission.player?.insideActiveBeacon ?? false,
+    };
+  }
+  return mission.player;
+}
+
+function getLocalPlayerId(state: AppState): string | null {
+  if (state.mission?.player?.playerId) {
+    return state.mission.player.playerId;
+  }
+  const id = state.me?.id;
+  if (!id) return null;
+  if (id.startsWith("ship-")) {
+    return id.slice("ship-".length);
+  }
+  return id;
+}
+
+function findBeaconForDelta(mission: MissionState, delta: { beaconId: string; ordinal: number }): MissionBeacon | undefined {
+  if (!mission.beacons.length) return undefined;
+  if (delta.beaconId) {
+    const beacon = mission.beacons.find((b) => b.id === delta.beaconId);
+    if (beacon) return beacon;
+  }
+  return mission.beacons.find((b) => b.ordinal === delta.ordinal);
+}
+
+function alignMissionProgress(mission: MissionState): void {
+  const player = mission.player;
+  if (!player) {
+    mission.status = "idle";
+    return;
+  }
+  const nextBeacon = mission.beacons.find((b) => !b.completed);
+  if (!nextBeacon) {
+    mission.status = "completed";
+    player.currentIndex = mission.beacons.length;
+    player.activeBeaconId = null;
+    player.insideActiveBeacon = false;
+    return;
+  }
+  mission.status = "active";
+  player.currentIndex = nextBeacon.ordinal;
+  player.activeBeaconId = nextBeacon.id;
 }
 
 function diffRoutes(prevRoutes: Map<string, MissileRoute>, nextRoutes: MissileRoute[], bus: EventBus): void {

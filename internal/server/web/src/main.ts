@@ -93,21 +93,6 @@ const CALL_SIGN_STORAGE_KEY = "lsd:callsign";
   const enableTutorial = mode === "campaign" || mode === "tutorial";
   const enableStory = mode === "campaign";
 
-  if (mode === "campaign") {
-    const dispatchedWaves = new Set<number>();
-    bus.on("mission:beacon-locked", ({ index }) => {
-      const waveIndex = index + 1;
-      if (waveIndex < 1 || waveIndex > 3) {
-        return;
-      }
-      if (dispatchedWaves.has(waveIndex)) {
-        return;
-      }
-      dispatchedWaves.add(waveIndex);
-      sendMessage({ type: "mission_spawn_wave", wave_index: waveIndex });
-    });
-  }
-
   let tutorial: ReturnType<typeof mountTutorial> | null = null;
   let tutorialStarted = false;
 

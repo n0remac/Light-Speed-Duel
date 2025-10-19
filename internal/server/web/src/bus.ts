@@ -59,9 +59,12 @@ export interface EventMap {
   "story:flagUpdated": { flag: string; value: boolean };
   "story:progressed": { chapterId: string; nodeId: string };
   "story:nodeActivated": { nodeId: string; dialogue?: DialogueContent };
+  "mission:update": { reason: "snapshot" | "delta" };
   "mission:start": void;
   "mission:beacon-locked": { index: number };
   "mission:completed": void;
+  "beacon:discovered": { id: string; ordinal: number };
+  "beacon:activated": { id: string; ordinal: number };
   "audio:resume": void;
   "audio:mute": void;
   "audio:unmute": void;

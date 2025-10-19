@@ -35,6 +35,7 @@ export interface HeatView {
 }
 
 export interface ShipSnapshot {
+  id?: string;
   x: number;
   y: number;
   vx: number;
@@ -193,13 +194,50 @@ export interface BeaconDefinition {
   radius: number;
 }
 
-export interface MissionState {
+export interface MissionBeacon {
+  id: string;
+  ordinal: number;
+  x: number;
+  y: number;
+  radius: number;
+  seed: number;
+  discovered: boolean;
+  completed: boolean;
+  cooldownUntil: number | null;
+}
+
+export interface MissionEncounterState {
+  id: string;
+  beaconId: string;
+  waveIndex: number;
+  spawnedAt: number;
+  expiresAt: number;
   active: boolean;
-  missionId: string;
-  beaconIndex: number;
+  reason?: string;
+}
+
+export interface MissionPlayerState {
+  playerId: string;
+  currentIndex: number;
+  activeBeaconId: string | null;
   holdAccum: number;
   holdRequired: number;
-  beacons: BeaconDefinition[];
+  displayHold: number;
+  lastServerUpdate: number;
+  lastDisplaySync: number;
+  insideActiveBeacon: boolean;
+}
+
+export type MissionStatus = "idle" | "active" | "completed";
+
+export interface MissionState {
+  missionId: string;
+  layoutSeed: number;
+  serverTime: number;
+  status: MissionStatus;
+  beacons: MissionBeacon[];
+  player: MissionPlayerState | null;
+  encounters: MissionEncounterState[];
 }
 
 export interface StoryEvent {
