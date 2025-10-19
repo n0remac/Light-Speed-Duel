@@ -15,9 +15,7 @@ Build a beacon-to-beacon campaign loop that scatters sparse, evenly spaced beaco
 
 - [Phase 1 – Beacon Foundation](phase-01-beacon-foundation.md)
 - [Phase 2 – Mission Templates & UI](phase-02-missions-and-ui.md)
-- [Phase 3 – Progression & Rewards](phase-03-progression-and-rewards.md)
-- [Phase 4 – Content & Polish](phase-04-content-and-polish.md)
-- [Phase 5 – Balancing & Telemetry](phase-05-balancing-and-telemetry.md)
+- [Phase 3 – Encounters & Spawn Tables](phase-03-encounters-and-spawn-tables.md)
 
 ## Supporting Threads
 
