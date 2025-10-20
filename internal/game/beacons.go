@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"math"
 	"math/rand"
+	"sort"
 	"strings"
 )
 
@@ -17,9 +18,12 @@ type BeaconDirector struct {
 	spec      MissionSpec
 	seed      int64
 
-	beacons    []BeaconLayout
-	player     map[string]*playerBeaconProgress
-	encounters map[string]*EncounterState
+	beacons            []BeaconLayout
+	player             map[string]*playerBeaconProgress
+	encounters         map[string]*EncounterState
+	encounterCooldowns map[string]float64
+	spawnTableID       string
+	rng                *rand.Rand
 
 	nextEncounterID int
 
@@ -44,17 +48,12 @@ type MissionSpec struct {
 	RevisitCooldown     float64
 	MaxActiveEncounters int
 	EncounterTimeout    float64
-	BeaconTemplates     []BeaconTemplate
-}
-
-// BeaconTemplate defines a normalized beacon anchor before jitter is applied.
-type BeaconTemplate struct {
-	ID      string
-	Fx      float64
-	Fy      float64
-	Radius  float64
-	JitterX float64
-	JitterY float64
+	BeaconCount         int
+	MinDistance         float64
+	MaxAttempts         int
+	DensityFactor       float64
+	DesignerPins        []BeaconPin
+	SpawnTableID        string
 }
 
 // BeaconLayout is a concrete beacon placement (normalized coordinates) derived from a template seed.
@@ -64,6 +63,8 @@ type BeaconLayout struct {
 	Normalized Vec2
 	Radius     float64
 	Seed       int64
+	Tags       map[string]bool
+	Pinned     bool
 }
 
 // playerBeaconProgress tracks per-player mission progression.
@@ -84,13 +85,40 @@ type playerBeaconProgress struct {
 
 // EncounterState tracks spawned backend encounters so we can cleanly despawn them.
 type EncounterState struct {
-	ID        string
-	BeaconID  string
-	WaveIndex int
-	EntityIDs []EntityID
-	SpawnedAt float64
-	ExpiresAt float64
-	Reason    string
+	ID          string
+	BeaconID    string
+	EncounterID string
+	WaveIndex   int
+	RuleIndex   int
+	EntityIDs   []EntityID
+	SpawnedAt   float64
+	ExpiresAt   float64
+	Reason      string
+}
+
+// Debug DTOs for beacon and encounter snapshots.
+type DebugBeaconsDTO struct {
+	Beacons []DebugBeaconInfo `json:"beacons"`
+}
+
+type DebugBeaconInfo struct {
+	ID     string   `json:"id"`
+	X      float64  `json:"x"`
+	Y      float64  `json:"y"`
+	Tags   []string `json:"tags"`
+	Pinned bool     `json:"pinned"`
+}
+
+type DebugEncountersDTO struct {
+	Encounters []DebugEncounterInfo `json:"encounters"`
+}
+
+type DebugEncounterInfo struct {
+	EncounterID string  `json:"encounterId"`
+	BeaconID    string  `json:"beaconId"`
+	SpawnTime   float64 `json:"spawnTime"`
+	Lifetime    float64 `json:"lifetime"`
+	EntityCount int     `json:"entityCount"`
 }
 
 // BeaconDeltaType enumerates per-tick beacon events.
@@ -153,12 +181,12 @@ var missionSpecs = map[string]MissionSpec{
 		RevisitCooldown:     30,
 		MaxActiveEncounters: 2,
 		EncounterTimeout:    120,
-		BeaconTemplates: []BeaconTemplate{
-			{ID: "beacon-1", Fx: 0.15, Fy: 0.55, Radius: 420, JitterX: 0.03, JitterY: 0.08},
-			{ID: "beacon-2", Fx: 0.40, Fy: 0.50, Radius: 360, JitterX: 0.04, JitterY: 0.10},
-			{ID: "beacon-3", Fx: 0.65, Fy: 0.47, Radius: 300, JitterX: 0.05, JitterY: 0.12},
-			{ID: "beacon-4", Fx: 0.85, Fy: 0.44, Radius: 260, JitterX: 0.03, JitterY: 0.12},
-		},
+		BeaconCount:         4,
+		MinDistance:         2500,
+		MaxAttempts:         30,
+		DensityFactor:       1.0,
+		DesignerPins:        nil,
+		SpawnTableID:        "campaign-1-standard",
 	},
 }
 
@@ -172,7 +200,7 @@ func deriveSeed(roomID, missionID string) int64 {
 }
 
 // NewBeaconDirector builds a mission director for the provided room/mission context.
-func NewBeaconDirector(roomID, missionID string) (*BeaconDirector, bool) {
+func NewBeaconDirector(roomID, missionID string, worldW, worldH float64) (*BeaconDirector, bool) {
 	spec, ok := missionSpecs[missionID]
 	if !ok {
 		spec, ok = missionSpecs["campaign-1"]
@@ -181,58 +209,101 @@ func NewBeaconDirector(roomID, missionID string) (*BeaconDirector, bool) {
 		}
 	}
 	seed := deriveSeed(roomID, spec.ID)
-	layout := instantiateLayout(spec, seed)
+	layout := instantiateLayout(spec, seed, worldW, worldH)
 	var tmpl *MissionTemplate
 	if candidate, err := GetTemplate(spec.ID); err == nil {
 		tmpl = candidate
 	}
 	return &BeaconDirector{
-		missionID:         spec.ID,
-		spec:              spec,
-		seed:              seed,
-		beacons:           layout,
-		player:            make(map[string]*playerBeaconProgress),
-		encounters:        make(map[string]*EncounterState),
-		layoutDirty:       true,
-		snapshotDirty:     true,
-		holdBroadcastStep: 0.1,
-		holdEpsilon:       0.0001,
-		CurrentMissionID:  spec.ID,
-		ActiveObjectives:  make(map[string]ObjectiveEvaluator),
-		ObjectiveProgress: make(map[string]float64),
-		currentTemplate:   tmpl,
+		missionID:          spec.ID,
+		spec:               spec,
+		seed:               seed,
+		beacons:            layout,
+		player:             make(map[string]*playerBeaconProgress),
+		encounters:         make(map[string]*EncounterState),
+		encounterCooldowns: make(map[string]float64),
+		spawnTableID:       spec.SpawnTableID,
+		rng:                rand.New(rand.NewSource(seed)),
+		layoutDirty:        true,
+		snapshotDirty:      true,
+		holdBroadcastStep:  0.1,
+		holdEpsilon:        0.0001,
+		CurrentMissionID:   spec.ID,
+		ActiveObjectives:   make(map[string]ObjectiveEvaluator),
+		ObjectiveProgress:  make(map[string]float64),
+		currentTemplate:    tmpl,
 	}, true
 }
 
 // instantiateLayout converts templates into jittered normalized coordinates.
-func instantiateLayout(spec MissionSpec, seed int64) []BeaconLayout {
-	rnd := rand.New(rand.NewSource(seed))
-	layout := make([]BeaconLayout, len(spec.BeaconTemplates))
-	for idx, tmpl := range spec.BeaconTemplates {
-		norm := Vec2{
-			X: clampUnit(jitterAxis(tmpl.Fx, tmpl.JitterX, rnd)),
-			Y: clampUnit(jitterAxis(tmpl.Fy, tmpl.JitterY, rnd)),
+func instantiateLayout(spec MissionSpec, seed int64, worldW, worldH float64) []BeaconLayout {
+	if worldW <= 0 {
+		worldW = WorldW
+	}
+	if worldH <= 0 {
+		worldH = WorldH
+	}
+
+	bounds := Rect{
+		MinX: 0,
+		MinY: 0,
+		MaxX: worldW,
+		MaxY: worldH,
+	}
+
+	config := SamplerConfig{
+		MinDistance:   spec.MinDistance,
+		MaxAttempts:   spec.MaxAttempts,
+		DensityFactor: spec.DensityFactor,
+		WorldBounds:   bounds,
+		Seed:          seed,
+		DesignerPins:  spec.DesignerPins,
+		BiomeTaggers: []BiomeTagger{
+			QuadrantTagger(bounds),
+		},
+	}
+
+	count := spec.BeaconCount
+	if count <= 0 {
+		count = len(spec.DesignerPins)
+		if count == 0 {
+			count = 1
 		}
+	}
+
+	candidates := NewPoissonDiscSampler(config).Sample(count)
+	layout := make([]BeaconLayout, len(candidates))
+	width := bounds.MaxX - bounds.MinX
+	height := bounds.MaxY - bounds.MinY
+
+	for idx, candidate := range candidates {
+		id := fmt.Sprintf("beacon-%d", idx+1)
+
+		normalized := Vec2{}
+		if width > 0 {
+			normalized.X = Clamp((candidate.X-bounds.MinX)/width, 0, 1)
+		}
+		if height > 0 {
+			normalized.Y = Clamp((candidate.Y-bounds.MinY)/height, 0, 1)
+		}
+
+		radius := candidate.Radius
+		if radius <= 0 {
+			radius = 300
+		}
+
 		layout[idx] = BeaconLayout{
-			ID:         tmpl.ID,
+			ID:         id,
 			Ordinal:    idx,
-			Normalized: norm,
-			Radius:     tmpl.Radius,
-			Seed:       rnd.Int63(),
+			Normalized: normalized,
+			Radius:     radius,
+			Seed:       seed + int64(idx),
+			Tags:       copyTags(candidate.Tags),
+			Pinned:     candidate.Pinned,
 		}
 	}
+
 	return layout
-}
-
-func jitterAxis(base, amplitude float64, rnd *rand.Rand) float64 {
-	if amplitude <= 0 {
-		return base
-	}
-	return base + (rnd.Float64()-0.5)*2*amplitude
-}
-
-func clampUnit(v float64) float64 {
-	return Clamp(v, 0.05, 0.95)
 }
 
 // MissionID returns the active mission identifier.
@@ -473,6 +544,270 @@ func (d *BeaconDirector) Tick(r *Room) {
 			}
 		}
 	}
+
+	if d.spawnTableID != "" {
+		d.checkEncounterSpawns(r)
+	}
+}
+
+func (d *BeaconDirector) checkEncounterSpawns(r *Room) {
+	if d == nil || r == nil || d.spawnTableID == "" {
+		return
+	}
+	table, err := GetSpawnTable(d.spawnTableID)
+	if err != nil {
+		return
+	}
+
+	for playerID, p := range r.Players {
+		if p == nil || p.IsBot {
+			continue
+		}
+		state := d.ensurePlayerState(playerID)
+		if state == nil {
+			continue
+		}
+		shipTransform := r.World.Transform(p.Ship)
+		if shipTransform == nil {
+			continue
+		}
+
+		for idx := range d.beacons {
+			beacon := &d.beacons[idx]
+			if beacon == nil || !state.Discovered[beacon.ID] {
+				continue
+			}
+			if d.hasActiveEncounterAtBeacon(beacon.ID) {
+				continue
+			}
+
+			center := d.beaconWorldPosition(beacon, r)
+			offset := shipTransform.Pos.Sub(center)
+			if offset.Dot(offset) > (beacon.Radius*2)*(beacon.Radius*2) {
+				continue
+			}
+
+			if d.rng.Float64() > 0.05 {
+				continue
+			}
+
+			encounterID, ruleIdx, err := table.SelectEncounter(beacon, p.StoryFlags, d.rng)
+			if err != nil {
+				continue
+			}
+			template, err := GetEncounter(encounterID)
+			if err != nil {
+				continue
+			}
+
+			if template.MaxConcurrency > 0 && d.countEncountersForTemplate(encounterID) >= template.MaxConcurrency {
+				continue
+			}
+
+			rule := SpawnRule{}
+			if ruleIdx >= 0 && ruleIdx < len(table.Rules) {
+				rule = table.Rules[ruleIdx]
+				if rule.MaxConcurrent > 0 && d.countEncountersForRule(ruleIdx) >= rule.MaxConcurrent {
+					continue
+				}
+				if !d.cooldownReady(fmt.Sprintf("rule:%d", ruleIdx), r.Now) {
+					continue
+				}
+			}
+
+			if !d.cooldownReady("encounter:"+encounterID, r.Now) {
+				continue
+			}
+
+			d.spawnEncounterFromTemplate(r, encounterID, ruleIdx, beacon, template, rule)
+		}
+	}
+}
+
+func (d *BeaconDirector) spawnEncounterFromTemplate(r *Room, encounterID string, ruleIdx int, beacon *BeaconLayout, template *EncounterTemplate, rule SpawnRule) {
+	if d == nil || r == nil || beacon == nil || template == nil {
+		return
+	}
+	center := d.beaconWorldPosition(beacon, r)
+	seed := beacon.Seed + int64(ruleIdx+1)*31 + int64(d.nextEncounterID+1)*17
+	entities := SpawnFromTemplate(r, template, center, seed)
+	if len(entities) == 0 {
+		return
+	}
+
+	encID := fmt.Sprintf("enc-%d", d.nextEncounterID+1)
+	d.nextEncounterID++
+	lifetime := template.Lifetime
+	if lifetime <= 0 {
+		lifetime = d.spec.EncounterTimeout
+	}
+	state := &EncounterState{
+		ID:          encID,
+		BeaconID:    beacon.ID,
+		EncounterID: encounterID,
+		WaveIndex:   0,
+		RuleIndex:   ruleIdx,
+		EntityIDs:   entities,
+		SpawnedAt:   r.Now,
+		ExpiresAt:   r.Now + lifetime,
+	}
+	d.encounters[encID] = state
+	d.pendingEncounters = append(d.pendingEncounters, EncounterDelta{
+		Type: EncounterDeltaSpawned,
+		Encounter: EncounterSummary{
+			ID:        state.ID,
+			BeaconID:  state.BeaconID,
+			WaveIndex: state.WaveIndex,
+			SpawnedAt: state.SpawnedAt,
+			ExpiresAt: state.ExpiresAt,
+			Active:    true,
+		},
+	})
+	d.snapshotDirty = true
+
+	d.setCooldown("encounter:"+encounterID, r.Now, template.Cooldown)
+	if ruleIdx >= 0 && rule.Cooldown > 0 {
+		d.setCooldown(fmt.Sprintf("rule:%d", ruleIdx), r.Now, rule.Cooldown)
+	}
+}
+
+func (d *BeaconDirector) beaconWorldPosition(beacon *BeaconLayout, r *Room) Vec2 {
+	worldW := r.WorldWidth
+	worldH := r.WorldHeight
+	return Vec2{
+		X: Clamp(beacon.Normalized.X, 0, 1) * worldW,
+		Y: Clamp(beacon.Normalized.Y, 0, 1) * worldH,
+	}
+}
+
+func (d *BeaconDirector) hasActiveEncounterAtBeacon(beaconID string) bool {
+	for _, enc := range d.encounters {
+		if enc == nil {
+			continue
+		}
+		if enc.BeaconID == beaconID {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *BeaconDirector) countEncountersForTemplate(encounterID string) int {
+	count := 0
+	for _, enc := range d.encounters {
+		if enc == nil {
+			continue
+		}
+		if enc.EncounterID == encounterID {
+			count++
+		}
+	}
+	return count
+}
+
+func (d *BeaconDirector) countEncountersForRule(ruleIdx int) int {
+	if ruleIdx < 0 {
+		return 0
+	}
+	count := 0
+	for _, enc := range d.encounters {
+		if enc == nil {
+			continue
+		}
+		if enc.RuleIndex == ruleIdx {
+			count++
+		}
+	}
+	return count
+}
+
+func (d *BeaconDirector) cooldownReady(key string, now float64) bool {
+	if d.encounterCooldowns == nil || key == "" {
+		return true
+	}
+	if until, ok := d.encounterCooldowns[key]; ok && now < until {
+		return false
+	}
+	return true
+}
+
+func (d *BeaconDirector) setCooldown(key string, now, duration float64) {
+	if key == "" || duration <= 0 {
+		if d.encounterCooldowns != nil {
+			delete(d.encounterCooldowns, key)
+		}
+		return
+	}
+	if d.encounterCooldowns == nil {
+		d.encounterCooldowns = make(map[string]float64)
+	}
+	d.encounterCooldowns[key] = now + duration
+}
+
+// BuildDebugSnapshot returns DTOs describing current beacon layout and active encounters.
+func (d *BeaconDirector) BuildDebugSnapshot(worldW, worldH float64) (DebugBeaconsDTO, DebugEncountersDTO) {
+	var beaconDTO DebugBeaconsDTO
+	var encounterDTO DebugEncountersDTO
+
+	if d == nil {
+		beaconDTO.Beacons = []DebugBeaconInfo{}
+		encounterDTO.Encounters = []DebugEncounterInfo{}
+		return beaconDTO, encounterDTO
+	}
+
+	positions := d.Positions(worldW, worldH)
+	for idx, beacon := range d.beacons {
+		var pos Vec2
+		if idx < len(positions) {
+			pos = positions[idx]
+		}
+
+		tags := make([]string, 0, len(beacon.Tags))
+		for tag := range beacon.Tags {
+			tags = append(tags, tag)
+		}
+		sort.Strings(tags)
+
+		beaconDTO.Beacons = append(beaconDTO.Beacons, DebugBeaconInfo{
+			ID:     beacon.ID,
+			X:      pos.X,
+			Y:      pos.Y,
+			Tags:   tags,
+			Pinned: beacon.Pinned,
+		})
+	}
+	sort.Slice(beaconDTO.Beacons, func(i, j int) bool {
+		return beaconDTO.Beacons[i].ID < beaconDTO.Beacons[j].ID
+	})
+
+	for _, enc := range d.encounters {
+		if enc == nil {
+			continue
+		}
+		lifetime := enc.ExpiresAt - enc.SpawnedAt
+		if lifetime < 0 {
+			lifetime = 0
+		}
+		encounterDTO.Encounters = append(encounterDTO.Encounters, DebugEncounterInfo{
+			EncounterID: enc.EncounterID,
+			BeaconID:    enc.BeaconID,
+			SpawnTime:   enc.SpawnedAt,
+			Lifetime:    lifetime,
+			EntityCount: len(enc.EntityIDs),
+		})
+	}
+	sort.Slice(encounterDTO.Encounters, func(i, j int) bool {
+		return encounterDTO.Encounters[i].EncounterID < encounterDTO.Encounters[j].EncounterID
+	})
+
+	if beaconDTO.Beacons == nil {
+		beaconDTO.Beacons = []DebugBeaconInfo{}
+	}
+	if encounterDTO.Encounters == nil {
+		encounterDTO.Encounters = []DebugEncounterInfo{}
+	}
+
+	return beaconDTO, encounterDTO
 }
 
 // MissionTemplate returns the current template reference, fetching from registry if needed.
@@ -802,12 +1137,14 @@ func (d *BeaconDirector) launchEncounter(r *Room, beaconID string, waveIndex int
 	encID := fmt.Sprintf("enc-%d", d.nextEncounterID+1)
 	d.nextEncounterID++
 	state := &EncounterState{
-		ID:        encID,
-		BeaconID:  beaconID,
-		WaveIndex: waveIndex,
-		EntityIDs: entityIDs,
-		SpawnedAt: r.Now,
-		ExpiresAt: r.Now + d.spec.EncounterTimeout,
+		ID:          encID,
+		BeaconID:    beaconID,
+		EncounterID: fmt.Sprintf("wave-%d", waveIndex),
+		WaveIndex:   waveIndex,
+		RuleIndex:   -1,
+		EntityIDs:   entityIDs,
+		SpawnedAt:   r.Now,
+		ExpiresAt:   r.Now + d.spec.EncounterTimeout,
 	}
 	d.encounters[encID] = state
 	d.pendingEncounters = append(d.pendingEncounters, EncounterDelta{

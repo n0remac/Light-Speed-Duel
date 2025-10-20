@@ -1,6 +1,7 @@
 import { createEventBus } from "./bus";
 import { connectWebSocket, sendMessage } from "./net";
 import { initGame } from "./game";
+import { initEncounterDebugOverlay } from "./debug/encounter-overlay";
 import { createInitialState, createInitialUIState } from "./state";
 import { mountTutorial, BASIC_TUTORIAL_ID } from "./tutorial";
 import { clearProgress as clearTutorialProgress } from "./tutorial/storage";
@@ -62,6 +63,7 @@ const CALL_SIGN_STORAGE_KEY = "lsd:callsign";
 
   const game = initGame({ state, uiState, bus });
   mountMissionController({ state, bus, mode, missionId });
+  initEncounterDebugOverlay({ state, bus });
 
   // Initialize upgrades panel
   initUpgradesPanel(state, bus);

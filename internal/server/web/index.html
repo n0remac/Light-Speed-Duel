@@ -360,6 +360,17 @@
       font-size: 11px;
     }
 
+    #debug-overlay-toggle {
+      min-width: 60px;
+    }
+
+    #debug-overlay-toggle[data-active="true"] {
+      background: rgba(34, 197, 94, 0.28);
+      border-color: rgba(16, 185, 129, 0.7);
+      color: #bbf7d0;
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.45);
+    }
+
     .ghost-btn:hover,
     #join-form button:hover {
       background: rgba(96, 165, 250, 0.25);
@@ -1040,6 +1051,7 @@
           </div>
         </div>
         <div id="top-right">
+          <button id="debug-overlay-toggle" class="ghost-btn small" title="Toggle encounter debug overlay (D)">Debug</button>
           <button id="spawn-bot" class="ghost-btn"><span id="spawn-bot-text">Bot</span></button>
           <div id="route-switcher">
             <button id="route-prev" title="Previous missile route">◀</button>

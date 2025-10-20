@@ -297,6 +297,30 @@ export interface StoryState {
   recentEvents: StoryEvent[];
 }
 
+export interface DebugBeaconInfo {
+  id: string;
+  x: number;
+  y: number;
+  tags: string[];
+  pinned: boolean;
+}
+
+export interface DebugEncounterInfo {
+  encounterId: string;
+  beaconId: string;
+  spawnTime: number;
+  lifetime: number;
+  entityCount: number;
+}
+
+export interface DebugState {
+  visible: boolean;
+  beacons: DebugBeaconInfo[];
+  encounters: DebugEncounterInfo[];
+  lastRequestedAt: number | null;
+  lastReceivedAt: number | null;
+}
+
 export interface AppState {
   now: number;
   nowSyncedAt: number;
@@ -315,6 +339,7 @@ export interface AppState {
   story: StoryState | null;
   craftHeatCapacity: number; // Heat capacity slider value for crafting
   capabilities: PlayerCapabilities | null;
+  debug: DebugState;
 }
 
 export interface Selection {
@@ -390,6 +415,13 @@ export function createInitialState(limits: MissileLimits = {
     story: null,
     craftHeatCapacity: 80, // Default to basic missile heat capacity
     capabilities: null,
+    debug: {
+      visible: false,
+      beacons: [],
+      encounters: [],
+      lastRequestedAt: null,
+      lastReceivedAt: null,
+    },
   };
 }
 

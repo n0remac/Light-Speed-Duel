@@ -213,7 +213,7 @@ func (r *Room) EnsureBeaconDirectorLocked(missionID string) *BeaconDirector {
 	if r.missionDirector != nil && r.missionDirector.MissionID() == missionID {
 		return r.missionDirector
 	}
-	director, ok := NewBeaconDirector(r.ID, missionID)
+	director, ok := NewBeaconDirector(r.ID, missionID, r.WorldWidth, r.WorldHeight)
 	if !ok {
 		return nil
 	}

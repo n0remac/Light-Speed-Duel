@@ -1,39 +1,45 @@
 package game
 
-import (
-	"testing"
-)
+import "testing"
 
-func TestLerpVec(t *testing.T) {
-	a := Vec2{X: 0, Y: 0}
-	b := Vec2{X: 100, Y: 100}
-
-	mid := lerpVec(a, b, 0.5)
-	if mid.X != 50 || mid.Y != 50 {
-		t.Fatalf("expected midpoint (50,50), got (%.2f, %.2f)", mid.X, mid.Y)
+func TestSpawnMissionWaveUsesTemplates(t *testing.T) {
+	room := &Room{
+		ID:          "test-room",
+		World:       newWorld(),
+		Players:     map[string]*Player{},
+		WorldWidth:  WorldW,
+		WorldHeight: WorldH,
 	}
 
-	start := lerpVec(a, b, 0.0)
-	if start.X != 0 || start.Y != 0 {
-		t.Fatalf("expected start (0,0), got (%.2f, %.2f)", start.X, start.Y)
+	beacons := []Vec2{
+		{X: 1000, Y: 1000},
+		{X: 2000, Y: 2000},
+		{X: 3000, Y: 3000},
+		{X: 4000, Y: 4000},
 	}
 
-	end := lerpVec(a, b, 1.0)
-	if end.X != 100 || end.Y != 100 {
-		t.Fatalf("expected end (100,100), got (%.2f, %.2f)", end.X, end.Y)
+	entities := room.SpawnMissionWave(1, beacons)
+	if len(entities) == 0 {
+		t.Fatalf("expected entities for wave 1")
+	}
+
+	for _, id := range entities {
+		tags := room.World.Tags(id)
+		if tags == nil || tags.Tags == nil {
+			t.Fatalf("expected tags on spawned entity %d", id)
+		}
 	}
 }
 
-func TestLerpVecWithVerticalSpreadBounds(t *testing.T) {
-	a := Vec2{X: 0, Y: 5000}
-	b := Vec2{X: 10000, Y: 5000}
-	worldHeight := 10000.0
-	spread := 0.15
-
-	for i := 0; i < 10; i++ {
-		result := lerpVecWithVerticalSpread(a, b, 0.5, worldHeight, spread)
-		if result.Y < 0 || result.Y > worldHeight {
-			t.Fatalf("expected Y within [0, %.2f], got %.2f", worldHeight, result.Y)
-		}
+func TestSpawnMissionWaveUnknownWave(t *testing.T) {
+	room := &Room{
+		World:       newWorld(),
+		Players:     map[string]*Player{},
+		WorldWidth:  WorldW,
+		WorldHeight: WorldH,
+	}
+	beacons := []Vec2{{X: 1000, Y: 1000}}
+	if ids := room.SpawnMissionWave(99, beacons); len(ids) != 0 {
+		t.Fatalf("expected no entities for unknown wave, got %d", len(ids))
 	}
 }

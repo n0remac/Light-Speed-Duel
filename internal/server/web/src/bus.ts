@@ -1,4 +1,9 @@
-import type { MissileSelection, MissionObjectiveState } from "./state";
+import type {
+  MissileSelection,
+  MissionObjectiveState,
+  DebugBeaconInfo,
+  DebugEncounterInfo,
+} from "./state";
 import type { DialogueContent } from "./story/types";
 
 export type ShipContext = "ship" | "missile";
@@ -95,6 +100,9 @@ export interface EventMap {
   "upgrades:show": void;
   "upgrades:hide": void;
   "upgrades:countUpdated": { count: number };
+  "debug:beacons": { beacons: DebugBeaconInfo[] };
+  "debug:encounters": { encounters: DebugEncounterInfo[] };
+  "debug:overlay:visibility": { visible: boolean };
 }
 
 export type EventKey = keyof EventMap;

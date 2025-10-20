@@ -7,6 +7,8 @@ import {
   type MissionEncounterState,
   type MissionPlayerState,
   type MissionObjectiveState,
+  type DebugBeaconInfo,
+  type DebugEncounterInfo,
   monotonicNow,
   sanitizeMissileConfig,
   updateMissileLimits,
@@ -503,6 +505,26 @@ function handleJsonMessage(state: AppState, bus: EventBus, raw: string): void {
       break;
     }
 
+    case "debug:beacons": {
+      const payload = msg.payload as { beacons?: unknown } | undefined;
+      const beaconsArray = Array.isArray(payload?.beacons) ? payload!.beacons : [];
+      const beacons: DebugBeaconInfo[] = beaconsArray.map(normalizeDebugBeacon);
+      state.debug.beacons = beacons;
+      state.debug.lastReceivedAt = getApproxServerNow(state);
+      bus.emit("debug:beacons", { beacons });
+      break;
+    }
+
+    case "debug:encounters": {
+      const payload = msg.payload as { encounters?: unknown } | undefined;
+      const encountersArray = Array.isArray(payload?.encounters) ? payload!.encounters : [];
+      const encounters: DebugEncounterInfo[] = encountersArray.map(normalizeDebugEncounter);
+      state.debug.encounters = encounters;
+      state.debug.lastReceivedAt = getApproxServerNow(state);
+      bus.emit("debug:encounters", { encounters });
+      break;
+    }
+
     default:
       break;
   }
@@ -536,6 +558,35 @@ function calculateMissionProgress(objectives: MissionObjectiveState[]): number {
   const total = objectives.reduce((sum, obj) => sum + clampProgress(obj.progress), 0);
   const mean = total / objectives.length;
   return clampProgress(mean);
+}
+
+function normalizeDebugBeacon(raw: any): DebugBeaconInfo {
+  const id = typeof raw?.id === "string" ? raw.id : String(raw?.id ?? "");
+  const x = Number(raw?.x);
+  const y = Number(raw?.y);
+  const tags = Array.isArray(raw?.tags) ? raw.tags.map((tag: unknown) => String(tag ?? "")) : [];
+  return {
+    id,
+    x: Number.isFinite(x) ? x : 0,
+    y: Number.isFinite(y) ? y : 0,
+    tags,
+    pinned: Boolean(raw?.pinned),
+  };
+}
+
+function normalizeDebugEncounter(raw: any): DebugEncounterInfo {
+  const encounterId = typeof raw?.encounterId === "string" ? raw.encounterId : String(raw?.encounterId ?? "");
+  const beaconId = typeof raw?.beaconId === "string" ? raw.beaconId : String(raw?.beaconId ?? "");
+  const spawnTimeNum = Number(raw?.spawnTime);
+  const lifetimeNum = Number(raw?.lifetime);
+  const entityCountNum = Number(raw?.entityCount);
+  return {
+    encounterId,
+    beaconId,
+    spawnTime: Number.isFinite(spawnTimeNum) ? spawnTimeNum : 0,
+    lifetime: Number.isFinite(lifetimeNum) ? Math.max(0, lifetimeNum) : 0,
+    entityCount: Number.isFinite(entityCountNum) ? Math.max(0, Math.floor(entityCountNum)) : 0,
+  };
 }
 
 // Handle protobuf state messages (simplified version of handleStateMessage)

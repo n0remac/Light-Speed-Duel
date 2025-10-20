@@ -7,113 +7,219 @@ import (
 
 const missionOwnerID = "mission"
 
-func (r *Room) SpawnMinefield(cx, cy, count int, radius float64, heatParams HeatParams, lifetime float64) []EntityID {
-	if count <= 0 || radius <= 0 {
-		return nil
-	}
-	center := Vec2{X: float64(cx), Y: float64(cy)}
-	sanitizedHeat := SanitizeHeatParams(heatParams)
-	ids := make([]EntityID, 0, count)
-	for i := 0; i < count; i++ {
-		theta := rand.Float64() * 2 * math.Pi
-		dist := radius * math.Sqrt(rand.Float64())
-		offset := Vec2{
-			X: math.Cos(theta) * dist,
-			Y: math.Sin(theta) * dist,
-		}
-		pos := clampVec(center.Add(offset), r.WorldWidth, r.WorldHeight)
-		cfg := MissileConfig{
-			Speed:      0,
-			AgroRadius: 0,
-			Lifetime:   sampleLifetime(lifetime),
-			HeatParams: sanitizedHeat,
-		}
-		waypoints := []RouteWaypoint{
-			{Pos: pos, Speed: 0},
-		}
-		if id := r.LaunchMissile(missionOwnerID, 0, cfg, waypoints, pos, Vec2{}); id != 0 {
-			ids = append(ids, id)
-		}
-	}
-	return ids
+var waveEncounterMap = map[int]string{
+	1: "minefield-basic",
+	2: "mixed-hazard",
+	3: "seeker-swarm",
 }
 
-func (r *Room) SpawnPatrollers(waypoints []Vec2, count int, speedRange [2]float64, agro float64, heatParams HeatParams, lifetime float64) []EntityID {
-	if count <= 0 || len(waypoints) < 2 {
+// SpawnFromTemplate instantiates all spawn groups defined in the encounter template.
+func SpawnFromTemplate(r *Room, template *EncounterTemplate, center Vec2, seed int64) []EntityID {
+	if r == nil || template == nil {
 		return nil
 	}
-	sanitizedHeat := SanitizeHeatParams(heatParams)
-	ids := make([]EntityID, 0, count)
-	for i := 0; i < count; i++ {
-		speed := randomBetween(speedRange[0], speedRange[1])
-		if speed <= 0 {
-			speed = 10
+	rng := rand.New(rand.NewSource(seed))
+	spawned := make([]EntityID, 0)
+
+	for _, group := range template.SpawnGroups {
+		count := group.Count.Min
+		if group.Count.Max > group.Count.Min {
+			count += rng.Intn(group.Count.Max - group.Count.Min + 1)
 		}
-		offset := rand.Intn(len(waypoints))
-		route := make([]RouteWaypoint, 0, len(waypoints)+1)
-		for idx := 0; idx < len(waypoints); idx++ {
-			wp := waypoints[(offset+idx)%len(waypoints)]
-			clamped := clampVec(wp, r.WorldWidth, r.WorldHeight)
-			route = append(route, RouteWaypoint{Pos: clamped, Speed: speed})
+		if count <= 0 {
+			continue
 		}
-		// Close the loop to encourage continuous patrol behaviour.
-		route = append(route, RouteWaypoint{
-			Pos:   route[0].Pos,
-			Speed: speed,
-		})
-		start := route[0].Pos
-		cfg := MissileConfig{
-			Speed:      speed,
-			AgroRadius: agro,
-			Lifetime:   sampleLifetime(lifetime),
-			HeatParams: sanitizedHeat,
+
+		positions := generateFormation(group.Formation, center, count, rng)
+		lifetime := template.Lifetime
+		if lifetime <= 0 {
+			lifetime = 180
 		}
-		if id := r.LaunchMissile(missionOwnerID, 0, cfg, route, start, Vec2{}); id != 0 {
-			ids = append(ids, id)
+
+		switch group.EntityType {
+		case "mine":
+			for i := 0; i < count; i++ {
+				pos := clampVec(positions[i], r.WorldWidth, r.WorldHeight)
+				id := spawnMineEntity(r, pos, group.HeatParams, lifetime, group.Tags)
+				if id != 0 {
+					spawned = append(spawned, id)
+				}
+			}
+		case "patroller":
+			waypoints := waypointsOrDefault(template.WaypointGen, center, rng)
+			for i := 0; i < count; i++ {
+				pos := clampVec(positions[i], r.WorldWidth, r.WorldHeight)
+				speed := randomBetween(group.SpeedRange.Min, group.SpeedRange.Max)
+				if speed <= 0 {
+					speed = 20
+				}
+				agro := randomBetween(group.AgroRange.Min, group.AgroRange.Max)
+				if agro < 0 {
+					agro = MissileMinAgroRadius
+				}
+				id := spawnPatrollerEntity(r, pos, speed, agro, waypoints, group.HeatParams, lifetime, group.Tags)
+				if id != 0 {
+					spawned = append(spawned, id)
+				}
+			}
+		case "seeker":
+			for i := 0; i < count; i++ {
+				pos := clampVec(positions[i], r.WorldWidth, r.WorldHeight)
+				speed := randomBetween(group.SpeedRange.Min, group.SpeedRange.Max)
+				if speed <= 0 {
+					speed = 80
+				}
+				agro := randomBetween(group.AgroRange.Min, group.AgroRange.Max)
+				if agro < 0 {
+					agro = MissileMinAgroRadius
+				}
+				id := spawnSeekerEntity(r, pos, center, speed, agro, group.HeatParams, lifetime, group.Tags)
+				if id != 0 {
+					spawned = append(spawned, id)
+				}
+			}
+		default:
+			// Unknown entity type: skip
 		}
 	}
-	return ids
+
+	return spawned
 }
 
-func (r *Room) SpawnSeekers(cx, cy, count int, ringRadius float64, speedRange [2]float64, agroRange [2]float64, heatParams HeatParams, lifetime float64) []EntityID {
-	if count <= 0 || ringRadius <= 0 {
-		return nil
-	}
-	center := Vec2{X: float64(cx), Y: float64(cy)}
-	sanitizedHeat := SanitizeHeatParams(heatParams)
-	ids := make([]EntityID, 0, count)
-	for i := 0; i < count; i++ {
-		theta := rand.Float64() * 2 * math.Pi
-		radius := ringRadius * (0.7 + 0.3*rand.Float64())
-		spawn := Vec2{
-			X: center.X + math.Cos(theta)*radius,
-			Y: center.Y + math.Sin(theta)*radius,
-		}
-		spawn = clampVec(spawn, r.WorldWidth, r.WorldHeight)
-		target := clampVec(center, r.WorldWidth, r.WorldHeight)
-		speed := randomBetween(speedRange[0], speedRange[1])
-		if speed <= 0 {
-			speed = 80
-		}
-		agro := randomBetween(agroRange[0], agroRange[1])
-		if agro < 0 {
-			agro = 0
-		}
-		cfg := MissileConfig{
-			Speed:      speed,
-			AgroRadius: agro,
-			Lifetime:   sampleLifetime(lifetime),
-			HeatParams: sanitizedHeat,
-		}
-		route := []RouteWaypoint{
-			{Pos: spawn, Speed: speed},
-			{Pos: target, Speed: speed},
-		}
-		if id := r.LaunchMissile(missionOwnerID, 0, cfg, route, spawn, Vec2{}); id != 0 {
-			ids = append(ids, id)
+func waypointsOrDefault(generator WaypointGenerator, center Vec2, rng *rand.Rand) []Vec2 {
+	if generator != nil {
+		if path := generator.Generate(center, rng); len(path) > 0 {
+			return path
 		}
 	}
-	return ids
+	// Default to a small circular patrol if no generator is provided.
+	circle := CircularPathGenerator{Radius: 600, PointCount: 4, Clockwise: true}
+	return circle.Generate(center, rng)
+}
+
+func spawnMineEntity(r *Room, pos Vec2, heatParams HeatParams, lifetime float64, tags map[string]bool) EntityID {
+	cfg := MissileConfig{
+		Speed:      0,
+		AgroRadius: 0,
+		Lifetime:   sampleLifetime(lifetime),
+		HeatParams: SanitizeHeatParams(heatParams),
+	}
+	route := []RouteWaypoint{{Pos: pos, Speed: 0}}
+	id := r.LaunchMissile(missionOwnerID, 0, cfg, route, pos, Vec2{})
+	applyEntityTags(r, id, tags)
+	return id
+}
+
+func spawnPatrollerEntity(r *Room, start Vec2, speed, agro float64, waypoints []Vec2, heatParams HeatParams, lifetime float64, tags map[string]bool) EntityID {
+	if len(waypoints) == 0 {
+		return 0
+	}
+	cfg := MissileConfig{
+		Speed:      speed,
+		AgroRadius: agro,
+		Lifetime:   sampleLifetime(lifetime),
+		HeatParams: SanitizeHeatParams(heatParams),
+	}
+
+	route := make([]RouteWaypoint, 0, len(waypoints)+1)
+	for _, wp := range waypoints {
+		clamped := clampVec(wp, r.WorldWidth, r.WorldHeight)
+		route = append(route, RouteWaypoint{Pos: clamped, Speed: speed})
+	}
+	route = append(route, RouteWaypoint{Pos: route[0].Pos, Speed: speed})
+	id := r.LaunchMissile(missionOwnerID, 0, cfg, route, clampVec(start, r.WorldWidth, r.WorldHeight), Vec2{})
+	applyEntityTags(r, id, tags)
+	return id
+}
+
+func spawnSeekerEntity(r *Room, start Vec2, target Vec2, speed, agro float64, heatParams HeatParams, lifetime float64, tags map[string]bool) EntityID {
+	cfg := MissileConfig{
+		Speed:      speed,
+		AgroRadius: agro,
+		Lifetime:   sampleLifetime(lifetime),
+		HeatParams: SanitizeHeatParams(heatParams),
+	}
+	start = clampVec(start, r.WorldWidth, r.WorldHeight)
+	target = clampVec(target, r.WorldWidth, r.WorldHeight)
+	route := []RouteWaypoint{
+		{Pos: start, Speed: speed},
+		{Pos: target, Speed: speed},
+	}
+	id := r.LaunchMissile(missionOwnerID, 0, cfg, route, start, Vec2{})
+	applyEntityTags(r, id, tags)
+	return id
+}
+
+func applyEntityTags(r *Room, id EntityID, tags map[string]bool) {
+	if r == nil || id == 0 || len(tags) == 0 {
+		return
+	}
+	existing := r.World.Tags(id)
+	if existing == nil {
+		r.World.SetComponent(id, CompTags, &TagComponent{Tags: copyTags(tags)})
+		return
+	}
+	if existing.Tags == nil {
+		existing.Tags = make(map[string]bool)
+	}
+	for k, v := range tags {
+		if v {
+			existing.Tags[k] = true
+		} else {
+			delete(existing.Tags, k)
+		}
+	}
+}
+
+func generateFormation(formation string, center Vec2, count int, rng *rand.Rand) []Vec2 {
+	positions := make([]Vec2, count)
+	switch formation {
+	case "ring":
+		radius := 800.0
+		angleStep := 2 * math.Pi / float64(count)
+		for i := 0; i < count; i++ {
+			angle := float64(i) * angleStep
+			positions[i] = Vec2{
+				X: center.X + radius*math.Cos(angle),
+				Y: center.Y + radius*math.Sin(angle),
+			}
+		}
+	case "cluster":
+		clusterRadius := 300.0
+		for i := 0; i < count; i++ {
+			angle := rng.Float64() * 2 * math.Pi
+			dist := rng.Float64() * clusterRadius
+			positions[i] = Vec2{
+				X: center.X + dist*math.Cos(angle),
+				Y: center.Y + dist*math.Sin(angle),
+			}
+		}
+	case "line":
+		spacing := 200.0
+		angle := rng.Float64() * 2 * math.Pi
+		for i := 0; i < count; i++ {
+			offset := (float64(i) - float64(count-1)/2) * spacing
+			positions[i] = Vec2{
+				X: center.X + offset*math.Cos(angle),
+				Y: center.Y + offset*math.Sin(angle),
+			}
+		}
+	case "scattered":
+		scatterRadius := 600.0
+		for i := 0; i < count; i++ {
+			angle := rng.Float64() * 2 * math.Pi
+			dist := rng.Float64() * scatterRadius
+			positions[i] = Vec2{
+				X: center.X + dist*math.Cos(angle),
+				Y: center.Y + dist*math.Sin(angle),
+			}
+		}
+	default:
+		for i := 0; i < count; i++ {
+			positions[i] = center
+		}
+	}
+	return positions
 }
 
 func sampleLifetime(max float64) float64 {
@@ -152,145 +258,19 @@ func clampVec(v Vec2, maxX, maxY float64) Vec2 {
 // SpawnMissionWave spawns deterministic encounter content for the provided wave index.
 // Returns the entity IDs spawned so the caller can track and clean them up later.
 func (r *Room) SpawnMissionWave(waveIndex int, beacons []Vec2) []EntityID {
-	if len(beacons) < 4 {
+	encounterID, ok := waveEncounterMap[waveIndex]
+	if !ok {
 		return nil
 	}
-	var spawned []EntityID
-	switch waveIndex {
-	case 1:
-		heat := HeatParams{
-			Max:         40,
-			WarnAt:      28,
-			OverheatAt:  40,
-			MarkerSpeed: 60,
-			KUp:         20,
-			KDown:       14,
-			Exp:         HeatExp,
-		}
-		total := 18 + rand.Intn(7) // 18-24
-		points := []Vec2{
-			lerpVecWithVerticalSpread(beacons[0], beacons[1], 0.25, r.WorldHeight, 0.15),
-			lerpVecWithVerticalSpread(beacons[0], beacons[1], 0.5, r.WorldHeight, 0.15),
-			lerpVecWithVerticalSpread(beacons[0], beacons[1], 0.75, r.WorldHeight, 0.15),
-		}
-		radius := math.Max(r.WorldWidth*0.025, 600)
-		distributed := total
-		for idx, center := range points {
-			if distributed <= 0 {
-				break
-			}
-			remainingSlots := len(points) - idx
-			group := distributed / remainingSlots
-			if group <= 0 {
-				group = distributed
-			}
-			if ids := r.SpawnMinefield(int(center.X), int(center.Y), group, radius, heat, 160); len(ids) > 0 {
-				spawned = append(spawned, ids...)
-			}
-			distributed -= group
-		}
-	case 2:
-		minesHeat := HeatParams{
-			Max:         50,
-			WarnAt:      35,
-			OverheatAt:  50,
-			MarkerSpeed: 100,
-			KUp:         24,
-			KDown:       12,
-			Exp:         HeatExp,
-		}
-		total := 28 + rand.Intn(9) // 28-36
-		mineCount := int(math.Round(float64(total) * 0.65))
-		if mineCount < 12 {
-			mineCount = 12
-		}
-		if mineCount > total {
-			mineCount = total
-		}
-		patrollerCount := total - mineCount
-		points := []Vec2{
-			lerpVecWithVerticalSpread(beacons[1], beacons[2], 0.2, r.WorldHeight, 0.15),
-			lerpVecWithVerticalSpread(beacons[1], beacons[2], 0.45, r.WorldHeight, 0.15),
-			lerpVecWithVerticalSpread(beacons[1], beacons[2], 0.7, r.WorldHeight, 0.15),
-		}
-		radius := math.Max(r.WorldWidth*0.02, 500)
-		distributed := mineCount
-		for idx, center := range points {
-			if distributed <= 0 {
-				break
-			}
-			remainingSlots := len(points) - idx
-			group := distributed / remainingSlots
-			if group <= 0 {
-				group = distributed
-			}
-			if ids := r.SpawnMinefield(int(center.X), int(center.Y), group, radius, minesHeat, 200); len(ids) > 0 {
-				spawned = append(spawned, ids...)
-			}
-			distributed -= group
-		}
-		if patrollerCount > 0 {
-			path := []Vec2{
-				lerpVecWithVerticalSpread(beacons[1], beacons[2], 0.15, r.WorldHeight, 0.15),
-				lerpVecWithVerticalSpread(beacons[1], beacons[2], 0.5, r.WorldHeight, 0.15),
-				lerpVecWithVerticalSpread(beacons[1], beacons[2], 0.85, r.WorldHeight, 0.15),
-			}
-			if ids := r.SpawnPatrollers(path, patrollerCount, [2]float64{20, 40}, 320, minesHeat, 200); len(ids) > 0 {
-				spawned = append(spawned, ids...)
-			}
-		}
-	case 3:
-		seekersHeat := HeatParams{
-			Max:         68,
-			WarnAt:      46,
-			OverheatAt:  68,
-			MarkerSpeed: 120,
-			KUp:         20,
-			KDown:       15,
-			Exp:         HeatExp,
-		}
-		seekers := 6 + rand.Intn(5) // 6-10
-		center := lerpVecWithVerticalSpread(beacons[2], beacons[3], 0.55, r.WorldHeight, 0.15)
-		ring := math.Max(r.WorldWidth*0.035, 900)
-		if ids := r.SpawnSeekers(int(center.X), int(center.Y), seekers, ring, [2]float64{60, 100}, [2]float64{600, 900}, seekersHeat, 260); len(ids) > 0 {
-			spawned = append(spawned, ids...)
-		}
+	template, err := GetEncounter(encounterID)
+	if err != nil {
+		return nil
+	}
 
-		supportHeat := HeatParams{
-			Max:         55,
-			WarnAt:      38,
-			OverheatAt:  55,
-			MarkerSpeed: 90,
-			KUp:         22,
-			KDown:       13,
-			Exp:         HeatExp,
-		}
-		mines := 12 + rand.Intn(5)
-		if ids := r.SpawnMinefield(int(center.X), int(center.Y), mines, ring*0.8, supportHeat, 220); len(ids) > 0 {
-			spawned = append(spawned, ids...)
-		}
+	center := Vec2{X: r.WorldWidth * 0.5, Y: r.WorldHeight * 0.5}
+	if idx := waveIndex - 1; idx >= 0 && idx < len(beacons) {
+		center = clampVec(beacons[idx], r.WorldWidth, r.WorldHeight)
 	}
-	return spawned
-}
-
-func lerpVec(a, b Vec2, t float64) Vec2 {
-	return Vec2{
-		X: a.X + (b.X-a.X)*t,
-		Y: a.Y + (b.Y-a.Y)*t,
-	}
-}
-
-// lerpVecWithVerticalSpread interpolates between two points and adds vertical variance.
-// spreadFactor controls how much vertical spread to add (0.0 = no spread, 1.0 = full world height variance).
-func lerpVecWithVerticalSpread(a, b Vec2, t float64, worldHeight float64, spreadFactor float64) Vec2 {
-	base := lerpVec(a, b, t)
-	verticalVariance := (rand.Float64() - 0.5) * 2.0 * spreadFactor * worldHeight
-	base.Y += verticalVariance
-	if base.Y < 0 {
-		base.Y = 0
-	}
-	if base.Y > worldHeight {
-		base.Y = worldHeight
-	}
-	return base
+	seed := int64(waveIndex)*1_000_003 + int64(len(beacons))*97
+	return SpawnFromTemplate(r, template, center, seed)
 }

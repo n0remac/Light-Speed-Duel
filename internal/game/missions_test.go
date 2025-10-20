@@ -65,7 +65,7 @@ func TestBeaconDirectorAcceptMission(t *testing.T) {
 		WorldWidth:  10000,
 		WorldHeight: 6000,
 	}
-	director, ok := NewBeaconDirector(room.ID, "campaign-1")
+	director, ok := NewBeaconDirector(room.ID, "campaign-1", room.WorldWidth, room.WorldHeight)
 	if !ok || director == nil {
 		t.Fatalf("expected beacon director")
 	}

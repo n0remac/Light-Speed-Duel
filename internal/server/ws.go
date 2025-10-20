@@ -400,6 +400,23 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 						}
 					}
 					room.Mu.Unlock()
+				case "debug:request-encounter-info":
+					room.Mu.Lock()
+					director := room.BeaconDirectorLocked()
+					if director == nil && mode == "campaign" {
+						director = room.EnsureBeaconDirectorLocked("")
+					}
+					player := room.Players[playerID]
+					beaconDTO := game.DebugBeaconsDTO{Beacons: []game.DebugBeaconInfo{}}
+					encounterDTO := game.DebugEncountersDTO{Encounters: []game.DebugEncounterInfo{}}
+					if director != nil {
+						beaconDTO, encounterDTO = director.BuildDebugSnapshot(room.WorldWidth, room.WorldHeight)
+					}
+					if player != nil {
+						player.SendMessage("debug:beacons", beaconDTO)
+						player.SendMessage("debug:encounters", encounterDTO)
+					}
+					room.Mu.Unlock()
 				default:
 					log.Printf("unknown text message type: %s", inbound.Type)
 				}
