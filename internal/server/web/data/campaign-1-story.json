@@ -1,0 +1,116 @@
+{
+  "chapterId": "campaign-1",
+  "tutorialId": "campaign-1-tutorial",
+  "startNode": "intro",
+  "nodes": {
+    "intro": {
+      "id": "intro",
+      "speaker": "Ship AI",
+      "text": "Navigation protocols loaded. Mission objective: secure 4 waypoint beacons to establish a safe corridor.",
+      "intent": "factory",
+      "trigger": {
+        "kind": "mission-event",
+        "event": "mission:start",
+        "missionId": "campaign-1"
+      },
+      "autoAdvance": 3200,
+      "next": null
+    },
+    "beacon-1-locked": {
+      "id": "beacon-1-locked",
+      "speaker": "Ship AI",
+      "text": "Beacon 1 secured. Route segment established. Proceed to Beacon 2.",
+      "intent": "factory",
+      "trigger": {
+        "kind": "mission-event",
+        "event": "mission:beacon-locked",
+        "missionId": "campaign-1",
+        "beaconIndex": 1
+      },
+      "tutorialTip": {
+        "title": "Navigation Tip",
+        "text": "Use right-click to set waypoints. Your ship automatically accelerates and decelerates to hold a beacon."
+      },
+      "autoAdvance": 4200,
+      "next": null
+    },
+    "beacon-2-locked": {
+      "id": "beacon-2-locked",
+      "speaker": "Ship AI",
+      "text": "Beacon 2 secured. Warning: hostile signatures detected ahead. Recommend defensive posture.",
+      "intent": "factory",
+      "trigger": {
+        "kind": "mission-event",
+        "event": "mission:beacon-locked",
+        "missionId": "campaign-1",
+        "beaconIndex": 2
+      },
+      "choices": [
+        {
+          "id": "acknowledge",
+          "text": "Acknowledged.",
+          "next": "encounter-warning"
+        }
+      ]
+    },
+    "encounter-warning": {
+      "id": "encounter-warning",
+      "speaker": "Ship AI",
+      "text": "Deploying tactical overlay. Use missiles to clear obstacles. Remember: light-time delay affects targeting.",
+      "intent": "factory",
+      "tutorialTip": {
+        "title": "Missile Tip",
+        "text": "Configure missiles in the right panel. Higher speed reduces lifetime; wider agro radius makes targets easier to detect."
+      },
+      "autoAdvance": 5200,
+      "flags": ["encounter-1-briefed"],
+      "next": null
+    },
+    "beacon-3-locked": {
+      "id": "beacon-3-locked",
+      "speaker": "Ship AI",
+      "text": "Beacon 3 secured. Final waypoint ahead. Mission completion imminent.",
+      "intent": "factory",
+      "trigger": {
+        "kind": "mission-event",
+        "event": "mission:beacon-locked",
+        "missionId": "campaign-1",
+        "beaconIndex": 3
+      },
+      "autoAdvance": 3600,
+      "next": null
+    },
+    "mission-complete": {
+      "id": "mission-complete",
+      "speaker": "Ship AI",
+      "text": "All beacons secured. Navigation corridor established. Mission successful.",
+      "intent": "factory",
+      "trigger": {
+        "kind": "mission-event",
+        "event": "mission:completed",
+        "missionId": "campaign-1"
+      },
+      "autoAdvance": 4000,
+      "flags": ["campaign-1-complete"],
+      "next": null
+    },
+    "mission-failed": {
+      "id": "mission-failed",
+      "speaker": "Ship AI",
+      "text": "Mission failure detected. Reinitialising systems. You may retry from the last checkpoint.",
+      "intent": "factory",
+      "trigger": {
+        "kind": "mission-event",
+        "event": "mission:failed",
+        "missionId": "campaign-1"
+      },
+      "choices": [
+        {
+          "id": "retry",
+          "text": "Retry mission",
+          "next": "intro"
+        }
+      ]
+    }
+  }
+}

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +35,29 @@ type Player struct {
 	ActiveStoryNodeID    string
 	PendingStoryEvents   []StoryEvent
 	Capabilities         dag.PlayerCapabilities
+	PendingMessages      []OutboundMessage
+}
+
+// SendMessage queues an outbound event for the connected player.
+func (p *Player) SendMessage(event string, payload interface{}) {
+	if p == nil || event == "" {
+		return
+	}
+	p.PendingMessages = append(p.PendingMessages, OutboundMessage{
+		Type:    event,
+		Payload: payload,
+	})
+}
+
+// ConsumePendingMessages drains queued outbound events for transport.
+func (p *Player) ConsumePendingMessages() []OutboundMessage {
+	if p == nil || len(p.PendingMessages) == 0 {
+		return nil
+	}
+	out := make([]OutboundMessage, len(p.PendingMessages))
+	copy(out, p.PendingMessages)
+	p.PendingMessages = nil
+	return out
 }
 
 type Room struct {
@@ -401,6 +426,214 @@ func storyNodeForMissionEvent(event string, beaconIndex int) dag.NodeID {
 		return dag.NodeID("story.signal-static-1.complete")
 	}
 	return ""
+}
+
+// BroadcastMissionOffer queues a mission offer payload for the player.
+func (r *Room) BroadcastMissionOffer(p *Player, template *MissionTemplate) {
+	if r == nil || p == nil || template == nil {
+		return
+	}
+	offer := MissionOffer{
+		MissionID:   template.ID,
+		TemplateID:  template.ID,
+		DisplayName: template.DisplayName,
+		Archetype:   archetypeToString(template.Archetype),
+		Objectives:  generateObjectiveDescriptions(template),
+		StoryNodeID: template.StoryNodeID,
+		Timeout:     template.FailureTimeout,
+	}
+	p.SendMessage("mission:offer", offer)
+}
+
+// BroadcastObjectiveProgress queues mission update payloads for incremental progress.
+func (r *Room) BroadcastObjectiveProgress(p *Player, objectiveID string, progress float64) {
+	if r == nil || p == nil || r.missionDirector == nil {
+		return
+	}
+	update := MissionUpdate{
+		MissionID:  r.missionDirector.CurrentMissionID,
+		Status:     "active",
+		Objectives: r.buildObjectiveStates(p),
+		ServerTime: r.Now,
+	}
+	p.SendMessage("mission:update", update)
+}
+
+// BroadcastObjectiveComplete handles objective completion and potential mission completion.
+func (r *Room) BroadcastObjectiveComplete(p *Player, objectiveID string) {
+	if r == nil || p == nil || r.missionDirector == nil {
+		return
+	}
+
+	status := "active"
+	if len(r.missionDirector.ActiveObjectives) == 0 {
+		status = "completed"
+		r.HandleMissionStoryEventLocked(p, "mission:completed", 0)
+	}
+
+	update := MissionUpdate{
+		MissionID:  r.missionDirector.CurrentMissionID,
+		Status:     status,
+		Objectives: r.buildObjectiveStates(p),
+		ServerTime: r.Now,
+	}
+	p.SendMessage("mission:update", update)
+}
+
+func (r *Room) buildObjectiveStates(p *Player) []ObjectiveState {
+	if r == nil || r.missionDirector == nil {
+		return nil
+	}
+	ids := make([]string, 0, len(r.missionDirector.ActiveObjectives))
+	for id := range r.missionDirector.ActiveObjectives {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	states := make([]ObjectiveState, 0, len(ids))
+	for _, id := range ids {
+		evaluator := r.missionDirector.ActiveObjectives[id]
+		if evaluator == nil {
+			continue
+		}
+		complete, progress := evaluator.Evaluate(r, p)
+		states = append(states, ObjectiveState{
+			ID:          id,
+			Type:        getEvaluatorType(evaluator),
+			Progress:    Clamp(progress, 0, 1),
+			Complete:    complete,
+			Description: generateObjectiveDescription(evaluator),
+		})
+	}
+	return states
+}
+
+func archetypeToString(arch MissionArchetype) string {
+	switch arch {
+	case ArchetypeTravel:
+		return "travel"
+	case ArchetypeEscort:
+		return "escort"
+	case ArchetypeKill:
+		return "kill"
+	case ArchetypeHazard:
+		return "hazard"
+	default:
+		return "unknown"
+	}
+}
+
+func generateObjectiveDescriptions(template *MissionTemplate) []string {
+	if template == nil {
+		return nil
+	}
+	switch template.Archetype {
+	case ArchetypeTravel:
+		count, _ := floatFromParam(template.ObjectiveParams["beaconCount"])
+		hold, _ := floatFromParam(template.ObjectiveParams["holdTime"])
+		if count > 0 && hold > 0 {
+			return []string{fmt.Sprintf("Secure %.0f beacons (hold %.0fs each)", count, hold)}
+		}
+		if count > 0 {
+			return []string{fmt.Sprintf("Secure %.0f beacons", count)}
+		}
+		return []string{"Secure mission beacons"}
+	case ArchetypeEscort:
+		return []string{"Escort the target safely to the destination"}
+	case ArchetypeKill:
+		count, _ := floatFromParam(template.ObjectiveParams["requiredKills"])
+		tag := ""
+		if v, ok := template.ObjectiveParams["targetTag"]; ok {
+			if s, ok := v.(string); ok {
+				tag = s
+			}
+		}
+		if count > 0 && tag != "" {
+			return []string{fmt.Sprintf("Destroy %.0f %s targets", count, tag)}
+		}
+		if count > 0 {
+			return []string{fmt.Sprintf("Destroy %.0f hostiles", count)}
+		}
+		return []string{"Eliminate hostiles"}
+	case ArchetypeHazard:
+		return []string{"Clear hazardous mines in the area"}
+	default:
+		return []string{"Complete mission objectives"}
+	}
+}
+
+func getEvaluatorType(eval ObjectiveEvaluator) string {
+	switch eval.(type) {
+	case *DistanceEvaluator:
+		return "distance"
+	case *KillCountEvaluator:
+		return "kill"
+	case *TimerEvaluator:
+		return "timer"
+	case *HazardClearEvaluator:
+		return "hazard"
+	default:
+		return "unknown"
+	}
+}
+
+func floatFromParam(value interface{}) (float64, bool) {
+	switch v := value.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int32:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case string:
+		if parsed, err := strconv.ParseFloat(v, 64); err == nil {
+			return parsed, true
+		}
+	}
+	return 0, false
+}
+
+func generateObjectiveDescription(eval ObjectiveEvaluator) string {
+	switch e := eval.(type) {
+	case *DistanceEvaluator:
+		if e == nil {
+			return "Reach the waypoint"
+		}
+		threshold := e.Threshold
+		if threshold <= 0 {
+			return "Reach the waypoint"
+		}
+		return fmt.Sprintf("Reach the waypoint within %.0f units", threshold)
+	case *KillCountEvaluator:
+		if e == nil {
+			return "Eliminate hostiles"
+		}
+		if e.RequiredKills <= 0 {
+			return "Eliminate hostiles"
+		}
+		if e.TargetTag != "" {
+			return fmt.Sprintf("Destroy %d %s targets", e.RequiredKills, e.TargetTag)
+		}
+		return fmt.Sprintf("Destroy %d hostiles", e.RequiredKills)
+	case *TimerEvaluator:
+		if e == nil || e.RequiredTime <= 0 {
+			return "Survive the encounter"
+		}
+		return fmt.Sprintf("Survive for %.0f seconds", e.RequiredTime)
+	case *HazardClearEvaluator:
+		if e == nil {
+			return "Clear hazardous area"
+		}
+		if e.Radius > 0 {
+			return fmt.Sprintf("Clear hazards within %.0f units", e.Radius)
+		}
+		return "Clear hazardous area"
+	default:
+		return "Complete mission objective"
+	}
 }
 
 func (r *Room) cleanupDestroyedEntitiesLocked() {

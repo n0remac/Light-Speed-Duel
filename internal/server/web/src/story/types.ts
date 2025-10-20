@@ -39,7 +39,14 @@ export type StoryTrigger =
   | { kind: "immediate"; delayMs?: number }
   | { kind: "tutorial-start"; tutorialId: string; delayMs?: number }
   | { kind: "tutorial-step"; tutorialId: string; stepIndex: number; delayMs?: number }
-  | { kind: "tutorial-complete"; tutorialId: string; delayMs?: number };
+  | { kind: "tutorial-complete"; tutorialId: string; delayMs?: number }
+  | {
+      kind: "mission-event";
+      event: string;
+      missionId?: string;
+      beaconIndex?: number;
+      delayMs?: number;
+    };
 
 export interface StoryNode {
   id: string;
@@ -52,6 +59,11 @@ export interface StoryNode {
   trigger?: StoryTrigger;
   autoAdvance?: StoryAutoAdvance;
   typingSpeedMs?: number;
+  tutorialTip?: {
+    title: string;
+    text: string;
+  };
+  flags?: string[];
 }
 
 export interface StoryChapter {

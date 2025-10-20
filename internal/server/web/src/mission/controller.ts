@@ -1,6 +1,7 @@
 import type { EventBus } from "../bus";
 import type { AppState, MissionPlayerState } from "../state";
 import { clamp, monotonicNow } from "../state";
+import { acceptMission } from "../net";
 
 export interface MissionController {
   destroy(): void;
@@ -23,7 +24,6 @@ export function mountMissionController({ state, bus, mode }: MissionControllerOp
 
   let knownMissionId: string | null = null;
   let missionStarted = false;
-  let missionCompleted = false;
   let activeBeaconId: string | null = null;
   const discoveredBeacons = new Set<string>();
   const completedBeacons = new Set<string>();
@@ -31,7 +31,6 @@ export function mountMissionController({ state, bus, mode }: MissionControllerOp
   function reset(): void {
     knownMissionId = null;
     missionStarted = false;
-    missionCompleted = false;
     activeBeaconId = null;
     discoveredBeacons.clear();
     completedBeacons.clear();
@@ -46,7 +45,6 @@ export function mountMissionController({ state, bus, mode }: MissionControllerOp
     const player = mission.player;
     if (!player) {
       missionStarted = false;
-      missionCompleted = false;
       activeBeaconId = null;
       return;
     }
@@ -54,7 +52,6 @@ export function mountMissionController({ state, bus, mode }: MissionControllerOp
     if (mission.missionId !== knownMissionId) {
       knownMissionId = mission.missionId;
       missionStarted = false;
-      missionCompleted = false;
       activeBeaconId = null;
       discoveredBeacons.clear();
       completedBeacons.clear();
@@ -62,7 +59,6 @@ export function mountMissionController({ state, bus, mode }: MissionControllerOp
 
     if (!missionStarted && mission.status !== "idle") {
       missionStarted = true;
-      bus.emit("mission:start");
     }
 
     for (const beacon of mission.beacons) {
@@ -77,13 +73,6 @@ export function mountMissionController({ state, bus, mode }: MissionControllerOp
         completedBeacons.add(beacon.id);
         bus.emit("mission:beacon-locked", { index: beacon.ordinal });
       }
-    }
-
-    if (!missionCompleted && mission.status === "completed") {
-      missionCompleted = true;
-      bus.emit("mission:completed");
-    } else if (mission.status !== "completed") {
-      missionCompleted = false;
     }
 
     if (player.activeBeaconId && player.activeBeaconId !== activeBeaconId) {
@@ -152,12 +141,22 @@ export function mountMissionController({ state, bus, mode }: MissionControllerOp
   }
 
   const unsubMission = bus.on("mission:update", () => handleMissionUpdate());
+  const unsubMissionStart = bus.on("mission:start", () => {
+    missionStarted = true;
+  });
+  const unsubOffer = bus.on("mission:offered", ({ missionId }) => {
+    if (missionId) {
+      acceptMission(missionId);
+    }
+  });
   const unsubState = bus.on("state:updated", () => handleTick());
 
   return {
     destroy() {
       unsubMission();
       unsubState();
+      unsubOffer();
+      unsubMissionStart();
     },
   };
 }

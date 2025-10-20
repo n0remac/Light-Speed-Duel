@@ -26,6 +26,9 @@ var htmlLobby []byte
 //go:embed web/lobby.js
 var jsLobby []byte
 
+//go:embed web/data/campaign-1-story.json
+var storyCampaign1 []byte
+
 /* ------------------------------- HTTP ------------------------------- */
 
 func startServer(h *Hub, addr string) {
@@ -55,6 +58,10 @@ func startServer(h *Hub, addr string) {
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 		_, _ = w.Write(jsLobby)
 	})
+	http.HandleFunc("/data/campaign-1-story.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_, _ = w.Write(storyCampaign1)
+	})
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		serveWS(h, w, r)
 	})
@@ -70,4 +77,3 @@ func generateRandomSlug() string {
 	}
 	return string(slug)
 }
-

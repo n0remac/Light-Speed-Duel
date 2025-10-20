@@ -192,6 +192,132 @@
       color: var(--text-muted);
     }
 
+    #mission-hud .mission-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    #mission-hud .mission-header h3 {
+      margin: 0;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      color: var(--text-strong);
+    }
+
+    #mission-hud .mission-status {
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.55);
+      border: 1px solid rgba(94, 129, 172, 0.45);
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    #mission-hud .mission-archetype {
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: rgba(148, 163, 184, 0.82);
+    }
+
+    #mission-hud .mission-progress {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    #mission-hud .mission-progress-track {
+      flex: 1;
+      height: 5px;
+      border-radius: 999px;
+      background: rgba(30, 64, 175, 0.35);
+      overflow: hidden;
+    }
+
+    #mission-hud .mission-progress-fill {
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, rgba(59, 130, 246, 0.9), rgba(16, 185, 129, 0.9));
+      transition: width 0.25s ease;
+    }
+
+    #mission-hud .mission-progress-value {
+      font-size: 11px;
+      color: var(--text-strong);
+    }
+
+    #mission-hud .mission-timer {
+      margin-top: 4px;
+      font-size: 11px;
+      color: rgba(148, 163, 184, 0.85);
+    }
+
+    #mission-hud .mission-timer.warning {
+      color: #f97316;
+    }
+
+    #mission-hud .mission-objectives {
+      list-style: none;
+      padding: 0;
+      margin: 6px 0 0 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    #mission-hud .mission-objective {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    #mission-hud .mission-objective-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 11px;
+    }
+
+    #mission-hud .mission-objective-progress {
+      color: rgba(148, 163, 184, 0.75);
+      font-variant-numeric: tabular-nums;
+    }
+
+    #mission-hud .mission-objective-bar {
+      position: relative;
+      height: 4px;
+      border-radius: 999px;
+      background: rgba(41, 72, 128, 0.45);
+      overflow: hidden;
+    }
+
+    #mission-hud .mission-objective-fill {
+      position: absolute;
+      inset: 0;
+      width: 0;
+      background: rgba(56, 189, 248, 0.85);
+      transition: width 0.2s ease;
+    }
+
+    #mission-hud .mission-objective-fill.complete {
+      background: rgba(16, 185, 129, 0.9);
+    }
+
+    #mission-hud .mission-player-status {
+      margin-top: 6px;
+      display: grid;
+      grid-template-columns: repeat(2, max-content);
+      gap: 0 12px;
+      font-size: 11px;
+      color: rgba(203, 213, 225, 0.85);
+    }
+
     #join-form {
       display: inline-flex;
       align-items: center;

@@ -297,6 +297,22 @@ export function createStoryEngine({ bus, overlay, chapter, roomId }: StoryEngine
         listeners.push(disposer);
         break;
       }
+      case "mission-event": {
+        const disposer = bus.on(trigger.event as any, (payload: any) => {
+          if (trigger.missionId && payload?.missionId && payload.missionId !== trigger.missionId) {
+            return;
+          }
+          if (typeof trigger.beaconIndex === "number") {
+            const beaconValue = payload?.beaconIndex ?? payload?.index;
+            if (beaconValue !== trigger.beaconIndex) {
+              return;
+            }
+          }
+          enqueueNode(nodeId, { delayMs: trigger.delayMs });
+        });
+        listeners.push(disposer);
+        break;
+      }
       default:
         break;
     }

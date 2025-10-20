@@ -6,9 +6,11 @@ import {
   type MissionBeacon,
   type MissionEncounterState,
   type MissionPlayerState,
+  type MissionObjectiveState,
   monotonicNow,
   sanitizeMissileConfig,
   updateMissileLimits,
+  clampProgress,
 } from "./state";
 import type { DialogueContent } from "./story/types";
 import { create, toBinary, fromBinary } from "@bufbuild/protobuf";
@@ -20,6 +22,7 @@ import {
 } from "./proto/proto/ws_messages_pb";
 import type { MissionBeaconSnapshot, MissionBeaconDelta } from "./proto/proto/ws_messages_pb";
 import { protoToState, protoToDagState } from "./proto_helpers";
+import type { MissionOfferDTO, MissionUpdateDTO, ObjectiveStateDTO } from "./mission/types";
 
 interface ConnectOptions {
   room: string;
@@ -34,6 +37,8 @@ interface ConnectOptions {
 }
 
 let ws: WebSocket | null = null;
+let connectedState: AppState | null = null;
+let connectedBus: EventBus | null = null;
 
 // Helper to send protobuf messages
 function sendProto(envelope: WsEnvelope) {
@@ -230,6 +235,12 @@ export function sendMessage(payload: unknown): void {
           },
         }));
         return;
+
+      case "mission:accept":
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify(msg));
+        }
+        return;
     }
   }
 }
@@ -276,6 +287,31 @@ export function sendDagList(): void {
   }));
 }
 
+export function acceptMission(missionId: string): void {
+  if (!missionId) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    // Allow local state update even if socket not ready for resilience
+    if (connectedState && connectedBus) {
+      const mission = ensureMissionState(connectedState);
+      mission.missionId = missionId;
+      mission.status = "active";
+      mission.startTime = mission.startTime ?? getApproxServerNow(connectedState);
+      connectedBus.emit("mission:start", { missionId });
+    }
+    return;
+  }
+
+  ws.send(JSON.stringify({ type: "mission:accept", payload: { missionId } }));
+
+  if (connectedState && connectedBus) {
+    const mission = ensureMissionState(connectedState);
+    mission.missionId = missionId;
+    mission.status = "active";
+    mission.startTime = mission.startTime ?? getApproxServerNow(connectedState);
+    connectedBus.emit("mission:start", { missionId });
+  }
+}
+
 export function connectWebSocket({
   room,
   state,
@@ -302,6 +338,8 @@ export function connectWebSocket({
     wsUrl += `&mission=${encodeURIComponent(missionId)}`;
   }
   ws = new WebSocket(wsUrl);
+  connectedState = state;
+  connectedBus = bus;
   // Set binary type for protobuf messages
   ws.binaryType = "arraybuffer";
   ws.addEventListener("open", () => {
@@ -311,7 +349,11 @@ export function connectWebSocket({
       onOpen(socket);
     }
   });
-  ws.addEventListener("close", () => console.log("[ws] close"));
+  ws.addEventListener("close", () => {
+    console.log("[ws] close");
+    connectedState = null;
+    connectedBus = null;
+  });
 
   let prevRoutes = new Map<string, MissileRoute>();
   let prevActiveRoute: string | null = null;
@@ -352,9 +394,149 @@ export function connectWebSocket({
       }
       return;
     }
+
+    if (typeof event.data === "string") {
+      handleJsonMessage(state, bus, event.data);
+      return;
+    }
+
+    if (event.data instanceof Blob) {
+      event.data.text()
+        .then((text) => handleJsonMessage(state, bus, text))
+        .catch((err) => console.error("[ws] Failed to read text message:", err));
+      return;
+    }
   });
 }
 
+
+// Handle protobuf state messages (simplified version of handleStateMessage)
+function handleJsonMessage(state: AppState, bus: EventBus, raw: string): void {
+  if (!raw) {
+    return;
+  }
+  let msg: { type?: string; payload?: unknown };
+  try {
+    msg = JSON.parse(raw);
+  } catch (err) {
+    console.error("[ws] Failed to parse JSON message:", err);
+    return;
+  }
+  if (!msg || typeof msg.type !== "string") {
+    return;
+  }
+
+  switch (msg.type) {
+    case "mission:offer": {
+      const payload = msg.payload as Partial<MissionOfferDTO> | undefined;
+      if (!payload) {
+        return;
+      }
+      const mission = ensureMissionState(state);
+      mission.missionId = payload.missionId ?? mission.missionId ?? "";
+      mission.templateId = payload.templateId ?? "";
+      mission.displayName = payload.displayName ?? mission.displayName ?? "";
+      mission.archetype = payload.archetype ?? mission.archetype ?? "";
+      mission.timeout = Number.isFinite(payload.timeout) ? Number(payload.timeout) : 0;
+      mission.status = "idle";
+      mission.startTime = null;
+      mission.completionTime = null;
+      mission.progress = 0;
+      mission.objectives = [];
+      mission.objectiveSummaries = Array.isArray(payload.objectives) ? [...payload.objectives] : [];
+      mission.serverTime = getApproxServerNow(state);
+
+      bus.emit("mission:offered", {
+        missionId: mission.missionId,
+        templateId: mission.templateId,
+        displayName: mission.displayName,
+        archetype: mission.archetype,
+        objectives: mission.objectiveSummaries,
+        timeout: mission.timeout,
+      });
+      break;
+    }
+
+    case "mission:update": {
+      const payload = msg.payload as Partial<MissionUpdateDTO> | undefined;
+      if (!payload) {
+        return;
+      }
+      const mission = ensureMissionState(state);
+      if (payload.missionId) {
+        mission.missionId = payload.missionId;
+      }
+      if (Number.isFinite(payload.serverTime)) {
+        mission.serverTime = Number(payload.serverTime);
+      }
+      if (typeof payload.status === "string") {
+        mission.status = payload.status as MissionStatus;
+      }
+      if (mission.status === "active" && mission.startTime == null) {
+        mission.startTime = getApproxServerNow(state);
+      }
+      if (payload.objectives) {
+        const objectives = updateMissionObjectives(state, bus, payload.objectives);
+        bus.emit("mission:update", {
+          missionId: mission.missionId,
+          status: mission.status,
+          objectives,
+          serverTime: mission.serverTime,
+        });
+      } else {
+        bus.emit("mission:update", {
+          missionId: mission.missionId,
+          status: mission.status,
+          objectives: mission.objectives,
+          serverTime: mission.serverTime,
+        });
+      }
+
+      if (mission.status === "completed") {
+        mission.completionTime = mission.serverTime;
+        mission.progress = 1;
+        bus.emit("mission:completed", { missionId: mission.missionId });
+      } else if (mission.status === "failed") {
+        mission.completionTime = mission.serverTime;
+        bus.emit("mission:failed", { missionId: mission.missionId });
+      }
+      break;
+    }
+
+    default:
+      break;
+  }
+}
+
+function updateMissionObjectives(state: AppState, bus: EventBus, objectiveDTOs: ObjectiveStateDTO[]): MissionObjectiveState[] {
+  const mission = ensureMissionState(state);
+  const objectives = Array.isArray(objectiveDTOs)
+    ? objectiveDTOs.map((obj) => ({
+      id: obj.id ?? "",
+      type: obj.type ?? "unknown",
+      progress: clampProgress(obj.progress ?? 0),
+      complete: Boolean(obj.complete),
+      description: obj.description ?? "",
+    }))
+    : [];
+
+  mission.objectives = objectives;
+  mission.progress = calculateMissionProgress(objectives);
+
+  bus.emit("mission:objectives-updated", { objectives });
+  bus.emit("mission:progress-changed", { progress: mission.progress, objectives });
+
+  return objectives;
+}
+
+function calculateMissionProgress(objectives: MissionObjectiveState[]): number {
+  if (!objectives || objectives.length === 0) {
+    return 0;
+  }
+  const total = objectives.reduce((sum, obj) => sum + clampProgress(obj.progress), 0);
+  const mean = total / objectives.length;
+  return clampProgress(mean);
+}
 
 // Handle protobuf state messages (simplified version of handleStateMessage)
 function handleProtoStateMessage(
@@ -768,13 +950,32 @@ function ensureMissionState(state: AppState): MissionState {
   if (!state.mission) {
     state.mission = {
       missionId: "",
+      templateId: "",
+      displayName: "",
+      archetype: "",
       layoutSeed: 0,
       serverTime: 0,
       status: "idle",
+      timeout: 0,
+      startTime: null,
+      completionTime: null,
+      progress: 0,
       beacons: [],
       player: null,
       encounters: [],
+      objectives: [],
+      objectiveSummaries: [],
     };
+  } else {
+    state.mission.templateId = state.mission.templateId ?? "";
+    state.mission.displayName = state.mission.displayName ?? "";
+    state.mission.archetype = state.mission.archetype ?? "";
+    state.mission.timeout = state.mission.timeout ?? 0;
+    state.mission.startTime = state.mission.startTime ?? null;
+    state.mission.completionTime = state.mission.completionTime ?? null;
+    state.mission.progress = state.mission.progress ?? 0;
+    state.mission.objectives = state.mission.objectives ?? [];
+    state.mission.objectiveSummaries = state.mission.objectiveSummaries ?? [];
   }
   return state.mission;
 }
@@ -819,6 +1020,9 @@ function findBeaconForDelta(mission: MissionState, delta: { beaconId: string; or
 }
 
 function alignMissionProgress(mission: MissionState): void {
+  if (mission.objectives && mission.objectives.length > 0) {
+    return;
+  }
   const player = mission.player;
   if (!player) {
     mission.status = "idle";

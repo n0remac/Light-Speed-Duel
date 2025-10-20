@@ -1,4 +1,4 @@
-import type { MissileSelection } from "./state";
+import type { MissileSelection, MissionObjectiveState } from "./state";
 import type { DialogueContent } from "./story/types";
 
 export type ShipContext = "ship" | "missile";
@@ -59,10 +59,28 @@ export interface EventMap {
   "story:flagUpdated": { flag: string; value: boolean };
   "story:progressed": { chapterId: string; nodeId: string };
   "story:nodeActivated": { nodeId: string; dialogue?: DialogueContent };
-  "mission:update": { reason: "snapshot" | "delta" };
-  "mission:start": void;
+  "mission:update":
+    | { reason: "snapshot" | "delta" }
+    | {
+        missionId: string;
+        status: string;
+        objectives: MissionObjectiveState[];
+        serverTime: number;
+      };
+  "mission:offered": {
+    missionId: string;
+    templateId: string;
+    displayName: string;
+    archetype: string;
+    objectives: string[];
+    timeout: number;
+  };
+  "mission:start": { missionId: string };
+  "mission:objectives-updated": { objectives: MissionObjectiveState[] };
+  "mission:progress-changed": { progress: number; objectives: MissionObjectiveState[] };
   "mission:beacon-locked": { index: number };
-  "mission:completed": void;
+  "mission:completed": { missionId: string };
+  "mission:failed": { missionId: string; reason?: string };
   "beacon:discovered": { id: string; ordinal: number };
   "beacon:activated": { id: string; ordinal: number };
   "audio:resume": void;

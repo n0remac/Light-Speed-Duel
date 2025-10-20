@@ -228,16 +228,59 @@ export interface MissionPlayerState {
   insideActiveBeacon: boolean;
 }
 
-export type MissionStatus = "idle" | "active" | "completed";
+export interface MissionObjectiveState {
+  id: string;
+  type: string;
+  progress: number;
+  complete: boolean;
+  description: string;
+}
+
+export type MissionStatus = "idle" | "active" | "completed" | "failed";
 
 export interface MissionState {
   missionId: string;
+  templateId: string;
+  displayName: string;
+  archetype: string;
   layoutSeed: number;
   serverTime: number;
   status: MissionStatus;
+  timeout: number;
+  startTime: number | null;
+  completionTime: number | null;
+  progress: number;
   beacons: MissionBeacon[];
   player: MissionPlayerState | null;
   encounters: MissionEncounterState[];
+  objectives: MissionObjectiveState[];
+  objectiveSummaries: string[];
+}
+
+export function resetMissionState(mission: MissionState): void {
+  mission.missionId = "";
+  mission.templateId = "";
+  mission.displayName = "";
+  mission.archetype = "";
+  mission.status = "idle";
+  mission.timeout = 0;
+  mission.startTime = null;
+  mission.completionTime = null;
+  mission.progress = 0;
+  mission.objectives = [];
+  mission.objectiveSummaries = [];
+  mission.player = null;
+  mission.beacons = [];
+  mission.encounters = [];
+}
+
+export function clampProgress(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  if (value <= 0) return 0;
+  if (value >= 1) return 1;
+  return value;
 }
 
 export interface StoryEvent {

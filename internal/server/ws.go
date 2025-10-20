@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -22,6 +23,11 @@ import (
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
+}
+
+type inboundMessage struct {
+	Type    string          `json:"type"`
+	Payload json.RawMessage `json:"payload"`
 }
 
 // sendProtoMessage wraps a protobuf message in an envelope and sends it as a binary WebSocket frame
@@ -223,6 +229,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 	}
 
 	room := h.GetRoom(roomID)
+	var director *BeaconDirector
 	playerID := RandId("p")
 	player := &Player{
 		ID:                playerID,
@@ -250,7 +257,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if mode == "campaign" {
-		room.EnsureBeaconDirectorLocked(missionKey)
+		director = room.EnsureBeaconDirectorLocked(missionKey)
 	}
 
 	defaultMissileSpeed := ShipMaxSpeed * 0.75
@@ -283,6 +290,11 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 		if graph := dag.GetGraph(); graph != nil {
 			effects := game.NewRoomDagEffects(room, player)
 			room.EvaluatePlayerDagLocked(graph, player, effects) // Make method public or add helper
+		}
+		if director != nil {
+			if template := director.MissionTemplate(); template != nil {
+				room.BroadcastMissionOffer(player, template)
+			}
 		}
 	}
 	room.Mu.Unlock()
@@ -364,9 +376,35 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 				default:
 					log.Printf("unknown protobuf payload type: %T", payload)
 				}
+			} else if msgType == websocket.TextMessage {
+				var inbound inboundMessage
+				if err := json.Unmarshal(data, &inbound); err != nil {
+					log.Printf("invalid JSON message: %v", err)
+					continue
+				}
+				switch inbound.Type {
+				case "mission:accept":
+					var payload MissionAcceptDTO
+					if err := json.Unmarshal(inbound.Payload, &payload); err != nil {
+						log.Printf("invalid mission:accept payload: %v", err)
+						continue
+					}
+					room.Mu.Lock()
+					dir := room.BeaconDirectorLocked()
+					p := room.Players[playerID]
+					if dir != nil && p != nil {
+						if err := dir.AcceptMission(room, p, payload.MissionID); err != nil {
+							log.Printf("mission accept error for player %s: %v", playerID, err)
+						} else {
+							room.BroadcastObjectiveProgress(p, "", 0)
+						}
+					}
+					room.Mu.Unlock()
+				default:
+					log.Printf("unknown text message type: %s", inbound.Type)
+				}
 			} else {
-				// All messages must use protobuf - JSON is no longer supported
-				log.Printf("Received non-binary WebSocket message, ignoring (all messages must use protobuf)")
+				log.Printf("Received unsupported WebSocket message type %d", msgType)
 			}
 		}
 	}()
@@ -379,6 +417,7 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 			case <-ctx.Done():
 				return
 			case <-lc.sendTick.C:
+				var outbound []OutboundMessage
 				room.Mu.Lock()
 				now := room.Now
 				p := room.Players[playerID]
@@ -739,6 +778,9 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 						nextDeltaVersion = frameVersion
 					}
 				}
+				if p != nil {
+					outbound = p.ConsumePendingMessages()
+				}
 
 				room.Mu.Unlock()
 
@@ -777,6 +819,16 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 						return
 					}
 					lastMissionFrameVersion = nextDeltaVersion
+				}
+				for _, event := range outbound {
+					frame := map[string]interface{}{
+						"type":    event.Type,
+						"payload": event.Payload,
+					}
+					if err := conn.WriteJSON(frame); err != nil {
+						log.Printf("send json event error: %v", err)
+						return
+					}
 				}
 			}
 		}

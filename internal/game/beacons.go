@@ -30,6 +30,11 @@ type BeaconDirector struct {
 	pendingEncounters []EncounterDelta
 	holdBroadcastStep float64
 	holdEpsilon       float64
+
+	CurrentMissionID  string
+	ActiveObjectives  map[string]ObjectiveEvaluator
+	ObjectiveProgress map[string]float64
+	currentTemplate   *MissionTemplate
 }
 
 // MissionSpec configures a campaign mission's beacons and encounter behaviour.
@@ -177,6 +182,10 @@ func NewBeaconDirector(roomID, missionID string) (*BeaconDirector, bool) {
 	}
 	seed := deriveSeed(roomID, spec.ID)
 	layout := instantiateLayout(spec, seed)
+	var tmpl *MissionTemplate
+	if candidate, err := GetTemplate(spec.ID); err == nil {
+		tmpl = candidate
+	}
 	return &BeaconDirector{
 		missionID:         spec.ID,
 		spec:              spec,
@@ -188,6 +197,10 @@ func NewBeaconDirector(roomID, missionID string) (*BeaconDirector, bool) {
 		snapshotDirty:     true,
 		holdBroadcastStep: 0.1,
 		holdEpsilon:       0.0001,
+		CurrentMissionID:  spec.ID,
+		ActiveObjectives:  make(map[string]ObjectiveEvaluator),
+		ObjectiveProgress: make(map[string]float64),
+		currentTemplate:   tmpl,
 	}, true
 }
 
@@ -431,6 +444,146 @@ func (d *BeaconDirector) Tick(r *Room) {
 		state.LastSeen = r.Now
 		d.updatePlayerProgress(r, p, state)
 	}
+
+	if len(d.ActiveObjectives) > 0 {
+		completed := make([]string, 0)
+		for objID, evaluator := range d.ActiveObjectives {
+			for _, p := range r.Players {
+				if p == nil || p.IsBot {
+					continue
+				}
+				complete, progress := evaluator.Evaluate(r, p)
+				progress = Clamp(progress, 0, 1)
+				last := d.ObjectiveProgress[objID]
+				if math.Abs(progress-last) > 0.01 {
+					d.ObjectiveProgress[objID] = progress
+					r.BroadcastObjectiveProgress(p, objID, progress)
+				}
+				if complete {
+					r.BroadcastObjectiveComplete(p, objID)
+					completed = append(completed, objID)
+					break
+				}
+			}
+		}
+		if len(completed) > 0 {
+			for _, id := range completed {
+				delete(d.ActiveObjectives, id)
+				delete(d.ObjectiveProgress, id)
+			}
+		}
+	}
+}
+
+// MissionTemplate returns the current template reference, fetching from registry if needed.
+func (d *BeaconDirector) MissionTemplate() *MissionTemplate {
+	if d == nil {
+		return nil
+	}
+	if d.currentTemplate != nil {
+		return d.currentTemplate
+	}
+	if tmpl, err := GetTemplate(d.missionID); err == nil {
+		d.currentTemplate = tmpl
+		return tmpl
+	}
+	return nil
+}
+
+// AcceptMission configures active objectives for the mission and sets the current template.
+func (d *BeaconDirector) AcceptMission(r *Room, p *Player, missionID string) error {
+	if d == nil || r == nil || p == nil {
+		return fmt.Errorf("cannot accept mission: invalid context")
+	}
+	if missionID == "" {
+		missionID = d.missionID
+	}
+	tmpl, err := GetTemplate(missionID)
+	if err != nil {
+		return err
+	}
+	if err := tmpl.Validate(); err != nil {
+		return err
+	}
+	if d.ActiveObjectives == nil {
+		d.ActiveObjectives = make(map[string]ObjectiveEvaluator)
+	}
+	if d.ObjectiveProgress == nil {
+		d.ObjectiveProgress = make(map[string]float64)
+	}
+	for id := range d.ActiveObjectives {
+		delete(d.ActiveObjectives, id)
+	}
+	for id := range d.ObjectiveProgress {
+		delete(d.ObjectiveProgress, id)
+	}
+
+	d.currentTemplate = tmpl
+	d.CurrentMissionID = tmpl.ID
+
+	switch tmpl.Archetype {
+	case ArchetypeTravel, ArchetypeEscort:
+		for _, beacon := range d.beacons {
+			objID := fmt.Sprintf("reach-%s", beacon.ID)
+			target := Vec2{
+				X: Clamp(beacon.Normalized.X, 0, 1) * r.WorldWidth,
+				Y: Clamp(beacon.Normalized.Y, 0, 1) * r.WorldHeight,
+			}
+			threshold := beacon.Radius
+			if threshold <= 0 {
+				threshold = math.Max(r.WorldWidth, r.WorldHeight) * 0.05
+			}
+			d.ActiveObjectives[objID] = &DistanceEvaluator{
+				TargetX:    target.X,
+				TargetY:    target.Y,
+				Threshold:  threshold,
+				Identifier: objID,
+			}
+			d.ObjectiveProgress[objID] = 0
+		}
+	case ArchetypeKill:
+		required, ok := floatFromParam(tmpl.ObjectiveParams["requiredKills"])
+		if !ok || required <= 0 {
+			required = 1
+		}
+		tag := ""
+		if v, ok := tmpl.ObjectiveParams["targetTag"]; ok {
+			if s, ok := v.(string); ok {
+				tag = s
+			}
+		}
+		if tag == "" {
+			tag = "enemy"
+		}
+		objID := fmt.Sprintf("kill-%s", tag)
+		d.ActiveObjectives[objID] = &KillCountEvaluator{
+			TargetTag:     tag,
+			RequiredKills: int(math.Ceil(required)),
+		}
+		d.ObjectiveProgress[objID] = 0
+	case ArchetypeHazard:
+		radius, _ := floatFromParam(tmpl.ObjectiveParams["radius"])
+		if radius <= 0 {
+			radius = 500
+		}
+		cx, ok := floatFromParam(tmpl.ObjectiveParams["centerX"])
+		if !ok {
+			cx = r.WorldWidth * 0.5
+		}
+		cy, ok := floatFromParam(tmpl.ObjectiveParams["centerY"])
+		if !ok {
+			cy = r.WorldHeight * 0.5
+		}
+		objID := "hazard-clear"
+		d.ActiveObjectives[objID] = &HazardClearEvaluator{
+			CenterX: cx,
+			CenterY: cy,
+			Radius:  radius,
+		}
+		d.ObjectiveProgress[objID] = 0
+	}
+
+	return nil
 }
 
 func (d *BeaconDirector) ensurePlayerState(playerID string) *playerBeaconProgress {
