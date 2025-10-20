@@ -21,4 +21,5 @@ Build a beacon-to-beacon campaign loop that scatters sparse, evenly spaced beaco
 
 - Networking: Extend protobuf schema and WS handlers alongside phase-specific work.
 - Persistence: Store per-player beacon and mission state early to make later phases easier.
+- Story & Tutorial: Replace the legacy “Signal Static” narrative and tutorial prompts with content backed by the new mission templates so obsolete campaign beats don’t leak into later phases.
 - QA: Build a lightweight simulation harness to iterate on pacing and survivability throughout development.
