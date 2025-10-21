@@ -412,12 +412,11 @@ func storyNodeForMissionEvent(event string, beaconIndex int) dag.NodeID {
 	case "mission:beacon-locked":
 		switch beaconIndex {
 		case 1:
-			fmt.Println("Starting story node for beacon 1")
-			return dag.NodeID("story.signal-static-1.beacon-1")
+			return dag.NodeID("story.signal-static-1.beacon-1-lock")
 		case 2:
-			return dag.NodeID("story.signal-static-1.beacon-2")
+			return dag.NodeID("story.signal-static-1.beacon-2-lock")
 		case 3:
-			return dag.NodeID("story.signal-static-1.beacon-3")
+			return dag.NodeID("story.signal-static-1.beacon-3-lock")
 		case 4:
 			// Allow optional beacon 4 message to map to completion as fallback.
 			return dag.NodeID("story.signal-static-1.complete")
@@ -426,6 +425,129 @@ func storyNodeForMissionEvent(event string, beaconIndex int) dag.NodeID {
 		return dag.NodeID("story.signal-static-1.complete")
 	}
 	return ""
+}
+
+// HandleStoryChoiceBranching activates follow-up story nodes and effects based on player choice.
+func (r *Room) HandleStoryChoiceBranching(p *Player, parentNodeID dag.NodeID, choiceID string, graph *dag.Graph) {
+	if r == nil || p == nil || graph == nil || choiceID == "" {
+		return
+	}
+
+	baseID := string(parentNodeID)
+	childID := baseID + "-" + choiceID
+	if strings.HasSuffix(baseID, "-lock") {
+		childID = strings.TrimSuffix(baseID, "-lock") + "-" + choiceID
+	}
+
+	childNodeID := dag.NodeID(childID)
+	childNode := graph.GetNode(childNodeID)
+	if childNode == nil {
+		log.Printf("[story] No child node found for choice %s on %s", choiceID, parentNodeID)
+		return
+	}
+
+	log.Printf("[story] Player %s chose %s on %s -> activating %s", p.ID, choiceID, parentNodeID, childNodeID)
+	r.tryStartStoryNodeLocked(p, childNodeID)
+	status := p.DagState.GetStatus(childNodeID)
+	if status == dag.StatusLocked {
+		log.Printf("[story] Child node %s remained locked after choice %s", childNodeID, choiceID)
+		return
+	}
+	r.handleStoryNodeEffects(p, childNode)
+}
+
+// handleStoryNodeEffects processes special payload directives for story outcomes.
+func (r *Room) handleStoryNodeEffects(p *Player, node *dag.Node) {
+	if r == nil || p == nil || node == nil {
+		return
+	}
+
+	if upgradeID := node.Payload["grant_upgrade"]; upgradeID != "" {
+		r.grantUpgradeToPlayer(p, dag.NodeID(upgradeID))
+	}
+
+	if spawn := strings.ToLower(strings.TrimSpace(node.Payload["spawn_encounter"])); spawn == "true" {
+		waveIndex := 0
+		if waveStr := node.Payload["encounter_wave"]; waveStr != "" {
+			if parsed, err := strconv.Atoi(waveStr); err == nil {
+				waveIndex = parsed
+			} else {
+				log.Printf("[story] Invalid encounter_wave %q on node %s", waveStr, node.ID)
+			}
+		}
+
+		if waveIndex > 0 {
+			beaconOrdinal := 0
+			if ordStr := node.Payload["encounter_beacon"]; ordStr != "" {
+				if parsed, err := strconv.Atoi(ordStr); err == nil {
+					beaconOrdinal = parsed
+				} else {
+					log.Printf("[story] Invalid encounter_beacon %q on node %s", ordStr, node.ID)
+				}
+			}
+
+			director := r.EnsureBeaconDirectorLocked("campaign-1")
+			if director == nil {
+				log.Printf("[story] Cannot spawn encounter for node %s: no beacon director", node.ID)
+				return
+			}
+
+			beaconID := ""
+			if beaconOrdinal > 0 && beaconOrdinal <= len(director.beacons) {
+				beaconID = director.beacons[beaconOrdinal-1].ID
+			}
+			director.launchEncounter(r, beaconID, waveIndex)
+		}
+	}
+}
+
+// grantUpgradeToPlayer force-completes an upgrade node as an immediate reward.
+func (r *Room) grantUpgradeToPlayer(p *Player, upgradeNodeID dag.NodeID) {
+	if r == nil || p == nil || upgradeNodeID == "" {
+		return
+	}
+
+	p.EnsureDagState()
+	graph := dag.GetGraph()
+	if graph == nil {
+		log.Printf("[story] Cannot grant upgrade %s: DAG not initialized", upgradeNodeID)
+		return
+	}
+
+	node := graph.GetNode(upgradeNodeID)
+	if node == nil {
+		log.Printf("[story] Cannot grant upgrade %s: node not found", upgradeNodeID)
+		return
+	}
+	if node.Kind != dag.NodeKindUpgrade {
+		log.Printf("[story] Node %s is not an upgrade, skipping reward", upgradeNodeID)
+		return
+	}
+
+	effects := NewRoomDagEffects(r, p)
+	r.EvaluatePlayerDagLocked(graph, p, effects)
+
+	status := p.DagState.GetStatus(upgradeNodeID)
+	if status == dag.StatusCompleted {
+		return
+	}
+	if status == dag.StatusLocked {
+		p.DagState.SetStatus(upgradeNodeID, dag.StatusAvailable)
+	}
+
+	if err := dag.Start(graph, p.DagState, upgradeNodeID, r.Now, effects); err != nil {
+		log.Printf("[story] Failed to start upgrade %s for player %s: %v", upgradeNodeID, p.ID, err)
+		return
+	}
+	if err := dag.Complete(graph, p.DagState, upgradeNodeID, effects); err != nil {
+		log.Printf("[story] Failed to complete upgrade %s for player %s: %v", upgradeNodeID, p.ID, err)
+		return
+	}
+
+	// Recompute capabilities after completing the upgrade.
+	r.EvaluatePlayerDagLocked(graph, p, effects)
+
+	log.Printf("[story] Granted upgrade %s to player %s", upgradeNodeID, p.ID)
 }
 
 // BroadcastMissionOffer queues a mission offer payload for the player.

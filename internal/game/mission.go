@@ -13,6 +13,17 @@ var waveEncounterMap = map[int]string{
 	3: "seeker-swarm",
 }
 
+// SpawnContext allows callers to shape where encounter entities are placed
+// relative to the provided center.
+// If SafeRadius > 0, no entities will spawn within SafeRadius of Center.
+// If SpreadRadius > SafeRadius, entities are distributed within the annulus
+// [SafeRadius, SpreadRadius]. If both are zero, spawning behaves as before.
+type SpawnContext struct {
+	Center       Vec2
+	SafeRadius   float64
+	SpreadRadius float64
+}
+
 // SpawnFromTemplate instantiates all spawn groups defined in the encounter template.
 func SpawnFromTemplate(r *Room, template *EncounterTemplate, center Vec2, seed int64) []EntityID {
 	if r == nil || template == nil {
@@ -84,6 +95,177 @@ func SpawnFromTemplate(r *Room, template *EncounterTemplate, center Vec2, seed i
 	}
 
 	return spawned
+}
+
+// SpawnFromTemplateWithContext instantiates spawn groups with placement
+// constrained by the provided SpawnContext (safe ring and spread annulus).
+func SpawnFromTemplateWithContext(r *Room, template *EncounterTemplate, ctx SpawnContext, seed int64) []EntityID {
+	if r == nil || template == nil {
+		return nil
+	}
+	rng := rand.New(rand.NewSource(seed))
+	spawned := make([]EntityID, 0)
+
+	// Derive annulus constraints
+	center := ctx.Center
+	safe := ctx.SafeRadius
+	if safe < 0 {
+		safe = 0
+	}
+	pad := 50.0
+	rmin := safe
+	if rmin > 0 {
+		rmin = rmin + pad
+	}
+	rmax := ctx.SpreadRadius
+	if rmax <= 0 {
+		// Default spread if not provided: at least 1200 or 3x safe
+		candidate := safe * 3.0
+		if candidate < 1200 {
+			candidate = 1200
+		}
+		rmax = candidate
+	}
+	if rmax <= rmin+200 {
+		rmax = rmin + 600
+	}
+	annulusEnabled := rmax > rmin && (rmin > 0 || ctx.SpreadRadius > 0)
+
+	for _, group := range template.SpawnGroups {
+		count := group.Count.Min
+		if group.Count.Max > group.Count.Min {
+			count += rng.Intn(group.Count.Max - group.Count.Min + 1)
+		}
+		if count <= 0 {
+			continue
+		}
+
+		positions := generateFormation(group.Formation, center, count, rng)
+
+		// Enforce annulus constraints (no spawns within safe ring)
+		if annulusEnabled {
+			for i := 0; i < len(positions); i++ {
+				positions[i] = adjustToAnnulus(positions[i], center, rmin, rmax, rng)
+			}
+		}
+
+		lifetime := template.Lifetime
+		if lifetime <= 0 {
+			lifetime = 180
+		}
+
+		switch group.EntityType {
+		case "mine":
+			for i := 0; i < count; i++ {
+				pos := clampVec(positions[i], r.WorldWidth, r.WorldHeight)
+				id := spawnMineEntity(r, pos, group.HeatParams, lifetime, group.Tags)
+				if id != 0 {
+					spawned = append(spawned, id)
+				}
+			}
+		case "patroller":
+			waypoints := waypointsOrDefault(template.WaypointGen, center, rng)
+			for i := 0; i < count; i++ {
+				pos := clampVec(positions[i], r.WorldWidth, r.WorldHeight)
+				speed := randomBetween(group.SpeedRange.Min, group.SpeedRange.Max)
+				if speed <= 0 {
+					speed = 20
+				}
+				agro := randomBetween(group.AgroRange.Min, group.AgroRange.Max)
+				if agro < 0 {
+					agro = MissileMinAgroRadius
+				}
+				if annulusEnabled {
+					agro = scaleAgroByAnnulus(agro, group.AgroRange.Min, group.AgroRange.Max, pos, center, rmin, rmax)
+				}
+				id := spawnPatrollerEntity(r, pos, speed, agro, waypoints, group.HeatParams, lifetime, group.Tags)
+				if id != 0 {
+					spawned = append(spawned, id)
+				}
+			}
+		case "seeker":
+			for i := 0; i < count; i++ {
+				pos := clampVec(positions[i], r.WorldWidth, r.WorldHeight)
+				speed := randomBetween(group.SpeedRange.Min, group.SpeedRange.Max)
+				if speed <= 0 {
+					speed = 80
+				}
+				agro := randomBetween(group.AgroRange.Min, group.AgroRange.Max)
+				if agro < 0 {
+					agro = MissileMinAgroRadius
+				}
+				if annulusEnabled {
+					agro = scaleAgroByAnnulus(agro, group.AgroRange.Min, group.AgroRange.Max, pos, center, rmin, rmax)
+				}
+				id := spawnSeekerEntity(r, pos, center, speed, agro, group.HeatParams, lifetime, group.Tags)
+				if id != 0 {
+					spawned = append(spawned, id)
+				}
+			}
+		default:
+			// Unknown entity type: skip
+		}
+	}
+
+	return spawned
+}
+
+// adjustToAnnulus pushes a position into the annulus [rmin, rmax] around center.
+func adjustToAnnulus(p Vec2, center Vec2, rmin, rmax float64, rng *rand.Rand) Vec2 {
+	if rmax <= rmin {
+		return p
+	}
+	v := p.Sub(center)
+	dist := v.Len()
+	if dist >= rmin && dist <= rmax {
+		return p
+	}
+	// Area-uniform radius sample
+	u := rng.Float64()
+	rr := rmax*rmax - rmin*rmin
+	if rr <= 0 {
+		rr = rmax * rmax
+	}
+	newDist := math.Sqrt(rmin*rmin + u*rr)
+	// Preserve direction if possible, else random
+	angle := 0.0
+	if dist > 1e-6 {
+		angle = math.Atan2(v.Y, v.X)
+	} else {
+		angle = rng.Float64() * 2 * math.Pi
+	}
+	return Vec2{
+		X: center.X + newDist*math.Cos(angle),
+		Y: center.Y + newDist*math.Sin(angle),
+	}
+}
+
+// scaleAgroByAnnulus increases agro toward the outer edge of the annulus.
+func scaleAgroByAnnulus(agro, minAgro, maxAgro float64, pos, center Vec2, rmin, rmax float64) float64 {
+	if rmax <= rmin {
+		return agro
+	}
+	d := pos.Sub(center).Len()
+	t := 0.0
+	if rmax > rmin {
+		t = (d - rmin) / (rmax - rmin)
+	}
+	if t < 0 {
+		t = 0
+	}
+	if t > 1 {
+		t = 1
+	}
+	// Scale from 0.9x at inner edge to 1.2x at outer edge
+	scale := 0.9 + 0.3*t
+	out := agro * scale
+	if out < minAgro {
+		out = minAgro
+	}
+	if maxAgro > 0 && out > maxAgro {
+		out = maxAgro
+	}
+	return out
 }
 
 func waypointsOrDefault(generator WaypointGenerator, center Vec2, rng *rand.Rand) []Vec2 {
@@ -255,9 +437,9 @@ func clampVec(v Vec2, maxX, maxY float64) Vec2 {
 	}
 }
 
-// SpawnMissionWave spawns deterministic encounter content for the provided wave index.
-// Returns the entity IDs spawned so the caller can track and clean them up later.
-func (r *Room) SpawnMissionWave(waveIndex int, beacons []Vec2) []EntityID {
+// SpawnMissionWaveWithContext works like SpawnMissionWave but allows callers
+// to specify per-beacon safe radii for annulus spawning.
+func (r *Room) SpawnMissionWaveWithContext(waveIndex int, beacons []Vec2, radii []float64) []EntityID {
 	encounterID, ok := waveEncounterMap[waveIndex]
 	if !ok {
 		return nil
@@ -266,11 +448,15 @@ func (r *Room) SpawnMissionWave(waveIndex int, beacons []Vec2) []EntityID {
 	if err != nil {
 		return nil
 	}
-
 	center := Vec2{X: r.WorldWidth * 0.5, Y: r.WorldHeight * 0.5}
+	safe := 0.0
 	if idx := waveIndex - 1; idx >= 0 && idx < len(beacons) {
 		center = clampVec(beacons[idx], r.WorldWidth, r.WorldHeight)
+		if idx < len(radii) && radii[idx] > 0 {
+			safe = radii[idx]
+		}
 	}
+	ctx := SpawnContext{Center: center, SafeRadius: safe}
 	seed := int64(waveIndex)*1_000_003 + int64(len(beacons))*97
-	return SpawnFromTemplate(r, template, center, seed)
+	return SpawnFromTemplateWithContext(r, template, ctx, seed)
 }

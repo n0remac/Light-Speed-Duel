@@ -340,6 +340,18 @@ func (d *BeaconDirector) Positions(worldW, worldH float64) []Vec2 {
 	return out
 }
 
+// Radii returns the beacon radii array in ordinal order.
+func (d *BeaconDirector) Radii() []float64 {
+	if d == nil {
+		return nil
+	}
+	out := make([]float64, len(d.beacons))
+	for i, b := range d.beacons {
+		out[i] = b.Radius
+	}
+	return out
+}
+
 // Snapshot builds a view of mission state for websocket consumers.
 func (d *BeaconDirector) Snapshot(now float64, worldW, worldH float64) BeaconSnapshot {
 	if d == nil {
@@ -630,7 +642,13 @@ func (d *BeaconDirector) spawnEncounterFromTemplate(r *Room, encounterID string,
 	}
 	center := d.beaconWorldPosition(beacon, r)
 	seed := beacon.Seed + int64(ruleIdx+1)*31 + int64(d.nextEncounterID+1)*17
-	entities := SpawnFromTemplate(r, template, center, seed)
+
+	ctx := SpawnContext{
+		Center:       center,
+		SafeRadius:   beacon.Radius,
+		SpreadRadius: beacon.Radius * 3.0,
+	}
+	entities := SpawnFromTemplateWithContext(r, template, ctx, seed)
 	if len(entities) == 0 {
 		return
 	}
@@ -1095,28 +1113,8 @@ func (d *BeaconDirector) lockBeacon(r *Room, p *Player, state *playerBeaconProgr
 			Timestamp: r.Now,
 		})
 		r.HandleMissionStoryEventLocked(p, "mission:completed", 0)
-	} else {
-		// Launch campaign encounter tied to this beacon completion.
-		nextWave := beacon.Ordinal + 1
-		if nextWave >= 1 && nextWave <= 3 {
-			d.launchEncounter(r, beacon.ID, nextWave)
-		}
 	}
 	d.snapshotDirty = true
-}
-
-// TriggerEncounterForWaveLocked allows legacy clients to request an encounter spawn.
-// It maps the wave index (1-based) to the corresponding beacon prior to launch.
-func (d *BeaconDirector) TriggerEncounterForWaveLocked(r *Room, waveIndex int) {
-	if d == nil || r == nil {
-		return
-	}
-	ordinal := waveIndex - 1
-	beaconID := ""
-	if ordinal >= 0 && ordinal < len(d.beacons) {
-		beaconID = d.beacons[ordinal].ID
-	}
-	d.launchEncounter(r, beaconID, waveIndex)
 }
 
 func (d *BeaconDirector) launchEncounter(r *Room, beaconID string, waveIndex int) {
@@ -1129,7 +1127,9 @@ func (d *BeaconDirector) launchEncounter(r *Room, beaconID string, waveIndex int
 		d.forceExpireOldestEncounter(r)
 	}
 
-	entityIDs := r.SpawnMissionWave(waveIndex, d.Positions(r.WorldWidth, r.WorldHeight))
+	// Spawn the wave using annulus constraints derived from beacon radii,
+	// so the second swarm spawns like ambient (outside the beacon ring).
+	entityIDs := r.SpawnMissionWaveWithContext(waveIndex, d.Positions(r.WorldWidth, r.WorldHeight), d.Radii())
 	if len(entityIDs) == 0 {
 		return
 	}

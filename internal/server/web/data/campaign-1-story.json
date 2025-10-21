@@ -16,10 +16,10 @@
       "autoAdvance": 3200,
       "next": null
     },
-    "beacon-1-locked": {
-      "id": "beacon-1-locked",
-      "speaker": "Ship AI",
-      "text": "Beacon 1 secured. Route segment established. Proceed to Beacon 2.",
+    "beacon-1-lock": {
+      "id": "beacon-1-lock",
+      "speaker": "Beacon System",
+      "text": "Beacon 1 locked. Triangulation grid stabilizing.\n\n[Security protocols are active. Choose how to proceed.]",
       "intent": "factory",
       "trigger": {
         "kind": "mission-event",
@@ -27,17 +27,37 @@
         "missionId": "campaign-1",
         "beaconIndex": 1
       },
-      "tutorialTip": {
-        "title": "Navigation Tip",
-        "text": "Use right-click to set waypoints. Your ship automatically accelerates and decelerates to hold a beacon."
-      },
-      "autoAdvance": 4200,
+      "choices": [
+        {
+          "id": "friendly",
+          "text": "Negotiate with the beacon AI",
+          "next": "beacon-1-friendly"
+        },
+        {
+          "id": "hostile",
+          "text": "Force an override",
+          "next": "beacon-1-hostile"
+        }
+      ]
+    },
+    "beacon-1-friendly": {
+      "id": "beacon-1-friendly",
+      "speaker": "Beacon AI",
+      "text": "Access granted. Uploading tactical data to missile guidance.\n\n**Reward: Missile Speed Boost I unlocked**",
+      "intent": "unit",
       "next": null
     },
-    "beacon-2-locked": {
-      "id": "beacon-2-locked",
-      "speaker": "Ship AI",
-      "text": "Beacon 2 secured. Warning: hostile signatures detected ahead. Recommend defensive posture.",
+    "beacon-1-hostile": {
+      "id": "beacon-1-hostile",
+      "speaker": "Beacon System",
+      "text": "WARNING: Unauthorized override detected. Deploying countermeasures.",
+      "intent": "factory",
+      "next": null
+    },
+    "beacon-2-lock": {
+      "id": "beacon-2-lock",
+      "speaker": "Beacon System",
+      "text": "Beacon 2 lock achieved. Signal fidelity increasing.\n\n[Humanitarian safeties detected. Choose how to interact.]",
       "intent": "factory",
       "trigger": {
         "kind": "mission-event",
@@ -47,29 +67,35 @@
       },
       "choices": [
         {
-          "id": "acknowledge",
-          "text": "Acknowledged.",
-          "next": "encounter-warning"
+          "id": "friendly",
+          "text": "Respect aid protocols",
+          "next": "beacon-2-friendly"
+        },
+        {
+          "id": "hostile",
+          "text": "Bypass and advance",
+          "next": "beacon-2-hostile"
         }
       ]
     },
-    "encounter-warning": {
-      "id": "encounter-warning",
-      "speaker": "Ship AI",
-      "text": "Deploying tactical overlay. Use missiles to clear obstacles. Remember: light-time delay affects targeting.",
-      "intent": "factory",
-      "tutorialTip": {
-        "title": "Missile Tip",
-        "text": "Configure missiles in the right panel. Higher speed reduces lifetime; wider agro radius makes targets easier to detect."
-      },
-      "autoAdvance": 5200,
-      "flags": ["encounter-1-briefed"],
+    "beacon-2-friendly": {
+      "id": "beacon-2-friendly",
+      "speaker": "Beacon Medical Core",
+      "text": "Aid channel accepted. Rerouting coolant reserves to missile bays.\n\n**Reward: Missile Heat Capacity Boost I unlocked**",
+      "intent": "unit",
       "next": null
     },
-    "beacon-3-locked": {
-      "id": "beacon-3-locked",
-      "speaker": "Ship AI",
-      "text": "Beacon 3 secured. Final waypoint ahead. Mission completion imminent.",
+    "beacon-2-hostile": {
+      "id": "beacon-2-hostile",
+      "speaker": "Beacon System",
+      "text": "ALERT: Firewall breach detected. Deploying mixed hazard drones.",
+      "intent": "factory",
+      "next": null
+    },
+    "beacon-3-lock": {
+      "id": "beacon-3-lock",
+      "speaker": "Beacon System",
+      "text": "Beacon 3 lock complete. Final defense grid online.\n\n[Drone command channels available. Choose your approach.]",
       "intent": "factory",
       "trigger": {
         "kind": "mission-event",
@@ -77,7 +103,31 @@
         "missionId": "campaign-1",
         "beaconIndex": 3
       },
-      "autoAdvance": 3600,
+      "choices": [
+        {
+          "id": "friendly",
+          "text": "Sync defense grid",
+          "next": "beacon-3-friendly"
+        },
+        {
+          "id": "hostile",
+          "text": "Hijack the drones",
+          "next": "beacon-3-hostile"
+        }
+      ]
+    },
+    "beacon-3-friendly": {
+      "id": "beacon-3-friendly",
+      "speaker": "Beacon Command Node",
+      "text": "Alliance acknowledged. Amplifying thrust harmonics.\n\n**Reward: Ship Speed Boost I unlocked**",
+      "intent": "unit",
+      "next": null
+    },
+    "beacon-3-hostile": {
+      "id": "beacon-3-hostile",
+      "speaker": "Beacon System",
+      "text": "EMERGENCY OVERRIDE DECLINED. Seeker strike wing mobilized.",
+      "intent": "factory",
       "next": null
     },
     "mission-complete": {
@@ -91,7 +141,9 @@
         "missionId": "campaign-1"
       },
       "autoAdvance": 4000,
-      "flags": ["campaign-1-complete"],
+      "flags": [
+        "campaign-1-complete"
+      ],
       "next": null
     },
     "mission-failed": {

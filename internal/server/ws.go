@@ -1223,6 +1223,9 @@ func handleDagStoryAck(room *Room, playerID string, msg *pb.DagStoryAck) {
 					if err := dag.Complete(graph, p.DagState, nodeID, effects); err != nil {
 						log.Printf("[story] Complete error for player %s node %s: %v", playerID, nodeID, err)
 					} else {
+						if msg.ChoiceId != "" {
+							room.HandleStoryChoiceBranching(p, nodeID, msg.ChoiceId, graph)
+						}
 						log.Printf("[story] Successfully completed node %s for player %s", nodeID, playerID)
 					}
 				}
@@ -1291,16 +1294,7 @@ func handleMissionSpawnWave(room *Room, playerID string, msg *pb.MissionSpawnWav
 	room.Mu.Lock()
 	defer room.Mu.Unlock()
 
-	director := room.BeaconDirectorLocked()
-	if director == nil {
-		director = room.EnsureBeaconDirectorLocked("campaign-1")
-	}
-	if director != nil {
-		director.TriggerEncounterForWaveLocked(room, waveIndex)
-	} else if room.SetMissionWaveSpawnedLocked(waveIndex) {
-		positions := missionBeaconFallbackPositions(room)
-		room.SpawnMissionWave(waveIndex, positions)
-	}
+	room.EnsureBeaconDirectorLocked("campaign-1")
 	if p := room.Players[playerID]; p != nil {
 		room.HandleMissionStoryEventLocked(p, "mission:beacon-locked", waveIndex)
 	}
