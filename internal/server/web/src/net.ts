@@ -229,6 +229,15 @@ export function sendMessage(payload: unknown): void {
         }));
         return;
 
+      case "dag_story_ack":
+        sendProto(create(WsEnvelopeSchema, {
+          payload: {
+            case: "dagStoryAck",
+            value: { nodeId: msg.node_id || "", choiceId: msg.choice_id || "" },
+          },
+        }));
+        return;
+
       case "clear_missile_waypoints":
         sendProto(create(WsEnvelopeSchema, {
           payload: {

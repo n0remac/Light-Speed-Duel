@@ -46,7 +46,7 @@ func SeedStoryNodes() []*Node {
 				"node":    "beacon-1-lock",
 				"flag":    "story.signal-static-1.beacon-1-lock",
 			},
-			Requires: []NodeID{"story.signal-static-1.start"},
+			Requires: []NodeID{},
 			Dialogue: &DialogueContent{
 				Speaker: "BEACON SYSTEM",
 				Text: `Beacon 1 locked. Triangulation grid stabilizing.
@@ -117,7 +117,7 @@ func SeedStoryNodes() []*Node {
 				"node":    "beacon-2-lock",
 				"flag":    "story.signal-static-1.beacon-2-lock",
 			},
-			Requires: []NodeID{"story.signal-static-1.beacon-1-lock"},
+			Requires: []NodeID{},
 			Dialogue: &DialogueContent{
 				Speaker: "BEACON SYSTEM",
 				Text: `Beacon 2 locked. Signal fidelity increasing.
@@ -188,7 +188,7 @@ func SeedStoryNodes() []*Node {
 				"node":    "beacon-3-lock",
 				"flag":    "story.signal-static-1.beacon-3-lock",
 			},
-			Requires: []NodeID{"story.signal-static-1.beacon-2-lock"},
+			Requires: []NodeID{},
 			Dialogue: &DialogueContent{
 				Speaker: "BEACON SYSTEM",
 				Text: `Beacon 3 locked. Distress vector fully resolved.

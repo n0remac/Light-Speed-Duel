@@ -432,7 +432,6 @@ func (r *Room) HandleStoryChoiceBranching(p *Player, parentNodeID dag.NodeID, ch
 	if r == nil || p == nil || graph == nil || choiceID == "" {
 		return
 	}
-
 	baseID := string(parentNodeID)
 	childID := baseID + "-" + choiceID
 	if strings.HasSuffix(baseID, "-lock") {
