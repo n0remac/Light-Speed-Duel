@@ -659,9 +659,6 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 									Choices:       choices,
 									TutorialTip:   tip,
 								}
-
-								log.Printf("[story] Sending dialogue for node %s to player %s (speaker: %s, choices: %d)",
-									p.ActiveStoryNodeID, p.ID, storyDTO.Dialogue.Speaker, len(storyDTO.Dialogue.Choices))
 							}
 						}
 					}
